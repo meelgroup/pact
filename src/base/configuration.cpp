@@ -213,6 +213,10 @@ bool Configuration::isBuiltWithCryptominisat() {
   return IS_CRYPTOMINISAT_BUILD;
 }
 
+bool Configuration::isBuiltWithApproxmc() {
+  return IS_APPROXMC_BUILD;
+}
+
 bool Configuration::isBuiltWithKissat() { return IS_KISSAT_BUILD; }
 
 bool Configuration::isBuiltWithEditline() { return IS_EDITLINE_BUILD; }

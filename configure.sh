@@ -58,6 +58,7 @@ The following flags enable optional packages (disable with --no-<option name>).
   --glpk                   use GLPK simplex solver
   --cryptominisat          use the CryptoMiniSat SAT solver
   --kissat                 use the Kissat SAT solver
+  --approxmc               use the ApproxMC Model Counter
   --poly                   use the LibPoly library [default=yes]
   --cocoa                  use the CoCoA library
   --editline               support the editline library
@@ -98,6 +99,7 @@ program_prefix=""
 
 buildtype=default
 
+approxmc=default
 asan=default
 assertions=default
 auto_download=default
@@ -207,6 +209,9 @@ do
 
     --kissat) kissat=ON;;
     --no-kissat) kissat=OFF;;
+
+    --approxmc) approxmc=ON;;
+    --no-approxmc) approxmc=OFF;;
 
     --win64) win64=ON;;
 
@@ -358,6 +363,8 @@ fi
   && cmake_opts="$cmake_opts -DUSE_GLPK=$glpk"
 [ $kissat != default ] \
   && cmake_opts="$cmake_opts -DUSE_KISSAT=$kissat"
+[ $approxmc != default ] \
+  && cmake_opts="$cmake_opts -DUSE_APPROXMC=$approxmc"
 [ $poly != default ] \
   && cmake_opts="$cmake_opts -DUSE_POLY=$poly"
 [ $cocoa != default ] \
