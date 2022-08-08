@@ -335,6 +335,12 @@ void BVSolverBitblast::initSatSolver()
           d_env.getResourceManager(),
           "theory::bv::BVSolverBitblast::"));
       break;
+    case options::SatSolverMode::APPROXMC:
+      d_satSolver.reset(prop::SatSolverFactory::createApproxmc(
+          statisticsRegistry(),
+          d_env.getResourceManager(),
+          "theory::bv::BVSolverBitblast::"));
+      break;
     default:
       d_satSolver.reset(prop::SatSolverFactory::createCadical(
           statisticsRegistry(),

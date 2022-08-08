@@ -84,6 +84,8 @@ ApproxMCounter::ApproxMCounter(StatisticsRegistry& registry,
 
 void ApproxMCounter::init()
 {
+  std::cout << "ApproxMC Init called" << std::endl;
+
   d_true = newVar();
   d_false = newVar();
 
@@ -168,7 +170,7 @@ SatValue ApproxMCounter::solve(){
   std::cout << "ApproxMC called" << std::endl;
   TimerStat::CodeTimer codeTimer(d_statistics.d_solveTime);
   ++d_statistics.d_statCallsToSolve;
-  d_counter->set_verbosity(1);
+  d_counter->set_verbosity(0);
   ApproxMC::SolCount solcount = d_counter->count();
   std::cout << "[ApproxMC] Count = "
             << solcount.cellSolCount << " * 2**" << solcount.hashCount << std::endl;
@@ -186,14 +188,13 @@ SatValue ApproxMCounter::solve(long unsigned int& resource) {
 SatValue ApproxMCounter::solve(const std::vector<SatLiteral>& assumptions)
 {
   std::cout << "[ApproxMC] called with assumptions" << std::endl;
-  TimerStat::CodeTimer codeTimer(d_statistics.d_solveTime);
   std::vector<CMSat::Lit> assumpts;
   for (const SatLiteral& lit : assumptions)
   {
     assumpts.push_back(toInternalLit(lit));
   }
   ++d_statistics.d_statCallsToSolve;
-  std::cout << "[ApproxMC] Skipping " << assumpts.size() << "assumptions (TODO?)" << std::endl;
+  std::cout << "[ApproxMC] Skipping " << assumpts.size() << " assumptions (TODO?)" << std::endl;
   return solve();   // TODO decide what is to be done here.
 }
 

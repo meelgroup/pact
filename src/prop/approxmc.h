@@ -51,7 +51,6 @@ class ApproxMCounter : public SatSolver
   SatValue solve() override;
   SatValue solve(long unsigned int&) override;
   SatValue solve(const std::vector<SatLiteral>& assumptions) override;
-  bool setPropagateOnly() override;
   void getUnsatAssumptions(std::vector<SatLiteral>& assumptions) override;
 
   void interrupt() override;

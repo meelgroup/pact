@@ -242,6 +242,8 @@ libcvc5_add_sources(
   prop/cnf_stream.h
   prop/cryptominisat.cpp
   prop/cryptominisat.h
+  prop/approxmc.cpp
+  prop/approxmc.h
   prop/kissat.cpp
   prop/kissat.h
   prop/learned_db.cpp
