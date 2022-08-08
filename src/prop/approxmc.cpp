@@ -17,7 +17,7 @@
 
 #include "prop/approxmc.h"
 
-// #ifdef CVC5_USE_APPROXMC //TODO remove accordingly
+#ifdef CVC5_USE_APPROXMC
 
 #include <approxmc.h>
 
@@ -225,4 +225,4 @@ ApproxMCounter::Statistics::Statistics(StatisticsRegistry& registry,
 
 }  // namespace prop
 }  // namespace cvc5::internal
-// #endif
+#endif

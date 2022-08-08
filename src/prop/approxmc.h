@@ -22,7 +22,9 @@
 
 #include "prop/sat_solver.h"
 
-#include <approxmc.h>
+namespace ApproxMC {
+  class AppMC;
+}
 
 namespace cvc5::internal {
 namespace prop {
