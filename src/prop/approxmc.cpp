@@ -24,6 +24,7 @@
 #include "base/check.h"
 #include "util/resource_manager.h"
 #include "util/statistics_registry.h"
+#include <bits/stdc++.h>
 
 namespace cvc5::internal {
 namespace prop {
@@ -41,23 +42,6 @@ CMSat::Lit toInternalLit(SatLiteral lit)
     return CMSat::lit_Undef;
   }
   return CMSat::Lit(lit.getSatVariable(), lit.isNegated());
-}
-
-SatLiteral toSatLiteral(CMSat::Lit lit)
-{
-  if (lit == CMSat::lit_Undef )
-  {
-    return undefSatLiteral;
-  }
-  return SatLiteral(lit.var(), lit.sign());
-}
-
-SatValue toSatLiteralValue( CMSat::lbool res)
-{
-  if (res == CMSat::l_True ) return SAT_VALUE_TRUE;
-  if (res == CMSat::l_Undef ) return SAT_VALUE_UNKNOWN;
-  Assert(res == CMSat::l_False );
-  return SAT_VALUE_FALSE;
 }
 
 void toInternalClause(SatClause& clause,
@@ -172,9 +156,12 @@ SatValue ApproxMCounter::solve(){
   ++d_statistics.d_statCallsToSolve;
   d_counter->set_verbosity(0);
   ApproxMC::SolCount solcount = d_counter->count();
+  //d_counter->print_stats(0);  //TODO may be turned on, along with set_verbosity
   std::cout << "[ApproxMC] Count = "
-            << solcount.cellSolCount << " * 2**" << solcount.hashCount << std::endl;
-  d_counter->print_stats(0);
+            << solcount.cellSolCount << "*2**" << solcount.hashCount << std::endl;
+  std::cout << "s mc "
+            <<  (long long int)(solcount.cellSolCount * (long long int)pow(2, solcount.hashCount))
+            << std::endl;
   return SAT_VALUE_UNKNOWN;
 }
 
