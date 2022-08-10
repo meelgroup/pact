@@ -31,7 +31,7 @@
  * Function: computeNewBitwidth
  */
 
-int computeNewBitwidth(int k, int slices, std::map<int, int> varMap)
+int computeNewBitwidth(int k, int slices, std::map<cvc5::Term, int> varMap)
 {
   long long totalBitwidth = 0;
   int newBitwidth;
@@ -48,16 +48,32 @@ int computeNewBitwidth(int k, int slices, std::map<int, int> varMap)
 }
 
 /**
- * Function ExtractExpr
- * TODO
- */
-int zeroExtendExpr(int a, int b) { return 0; }
-
-/**
  * Function zeroExtendExpr
  * TODO
  */
-int extractExpr(int msbPos, int lsbPos, int key) { return 0; }
+cvc5::Term zeroExtendExpr(cvc5::Solver& slv, cvc5::Term var, int bits)
+{
+  cvc5::Op extend_op =
+      slv.mkOp(cvc5::BITVECTOR_ZERO_EXTEND, {static_cast<unsigned int>(bits)});
+  cvc5::Term ext_bit = slv.mkTerm(extend_op, {var});
+  return ext_bit;
+}
+
+/**
+ * Function ExtractExpr
+ * TODO
+ */
+cvc5::Term extractExpr(cvc5::Solver& slv,
+                       cvc5::Term var,
+                       int msbPos,
+                       int lsbPos)
+{
+  cvc5::Op extract_op = slv.mkOp(
+      cvc5::BITVECTOR_EXTRACT,
+      {static_cast<unsigned int>(lsbPos), static_cast<unsigned int>(msbPos)});
+  cvc5::Term ext_bit = slv.mkTerm(extract_op, {var});
+  return ext_bit;
+}
 
 /**
  * Function: generateEquationConstraint
@@ -70,7 +86,8 @@ int extractExpr(int msbPos, int lsbPos, int key) { return 0; }
  *     a1x1 + a2x2 + ... = s*prime + r
  */
 
-cvc5::Term generateEquationConstraint(std::map<int, int> varMap,
+cvc5::Term generateEquationConstraint(cvc5::Solver& slv,
+                                      std::map<cvc5::Term, int> varMap,
                                       std::map<int, int> primesMap,
                                       int maxBitwidth,
                                       int slices)
@@ -93,11 +110,11 @@ cvc5::Term generateEquationConstraint(std::map<int, int> varMap,
 
   for (auto item : varMap)
   {
-    int key = item.first;
-    int originalKey = key;
+    cvc5::Term key = item.first;
+    cvc5::Term originalKey = key;
 
     if (varMap[key] != maxBitwidth)
-      key = zeroExtendExpr(maxBitwidth - varMap[key], key);
+      key = zeroExtendExpr(slv, key, maxBitwidth - varMap[key]);
 
     Assert(maxBitwidth >= slices);
 
@@ -120,7 +137,7 @@ cvc5::Term generateEquationConstraint(std::map<int, int> varMap,
       coeff.push_back(rand() % twoPowerK);
     }
 
-    std::vector<int> keyDivs;
+    std::vector<cvc5::Term> keydivs;
     int msbPos = maxBitwidth - 1;
     int remSlices = 0;
     for (int i = 0; i < slices; i++)
@@ -128,23 +145,23 @@ cvc5::Term generateEquationConstraint(std::map<int, int> varMap,
       int lsbPos = msbPos - keyDivWidthList[i] + 1;
       if (lsbPos < varMap[originalKey])
       {
-        keyDivs.push_back(extractExpr(msbPos, lsbPos, key));
+        keydivs.push_back(extractExpr(slv, key, msbPos, lsbPos));
         remSlices += 1;
       }
       msbPos = msbPos - keyDivWidthList[i];
     }
-    std::vector<int> zxtndKeyDivs;
+    std::vector<cvc5::Term> zxtndKeyDivs;
     for (int i = 0; i < remSlices; i++)
     {
       zxtndKeyDivs.push_back(
-          zeroExtendExpr(newBitwidth - keyDivWidthList[i], keyDivs[i]));
+          zeroExtendExpr(slv, keydivs[i], newBitwidth - keyDivWidthList[i]));
     }
 
     std::vector<int> bvmulStrs;
     for (int i = 0; i < remSlices; i++)
     {
-      bvmulList.push_back(
-          bvmulExpr(constExpr(coeff[i], newBitwidth), zxtndKeyDivs[i]));
+      // bvmulList.push_back(
+      // bvmulExpr(constExpr(coeff[i], newBitwidth), zxtndKeyDivs[i]));
     }
   }
 

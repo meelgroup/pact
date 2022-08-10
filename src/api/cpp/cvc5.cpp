@@ -6264,6 +6264,19 @@ Result Solver::checkSat(void) const
   CVC5_API_TRY_CATCH_END;
 }
 
+Result Solver::modelCount(void) const
+{
+  CVC5_API_TRY_CATCH_BEGIN;
+  CVC5_API_CHECK(!d_slv->isQueryMade()
+                 || d_slv->getOptions().base.incrementalSolving)
+      << "Cannot make multiple queries unless incremental solving is enabled "
+         "(try --incremental)";
+  //////// all checks before this line
+  return d_slv->checkSat();
+  ////////
+  CVC5_API_TRY_CATCH_END;
+}
+
 Result Solver::checkSatAssuming(const Term& assumption) const
 {
   CVC5_API_TRY_CATCH_BEGIN;

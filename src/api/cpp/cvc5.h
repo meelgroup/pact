@@ -3871,6 +3871,14 @@ class CVC5_EXPORT Solver
   Result checkSat() const;
 
   /**
+   * Model count the formula
+   * TODO the return type should be changed.
+   *
+   * @return The result of the satisfiability check.
+   */
+  Result modelCount() const;
+
+  /**
    * Check satisfiability assuming the given formula.
    *
    * SMT-LIB:

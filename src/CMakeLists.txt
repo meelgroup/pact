@@ -311,6 +311,8 @@ libcvc5_add_sources(
   smt/logic_exception.h
   smt/interpolation_solver.cpp
   smt/interpolation_solver.h
+  smt/hash_generator.h
+  smt/hash_generator.cpp
   smt/model.cpp
   smt/model.h
   smt/model_core_builder.cpp
