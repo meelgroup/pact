@@ -16,6 +16,7 @@
 #include "prop/sat_solver_factory.h"
 
 #include "prop/cadical.h"
+#include "prop/approxmc.h"  //TODO this is causing errors
 #include "prop/cryptominisat.h"
 #include "prop/kissat.h"
 #include "prop/minisat/minisat.h"
@@ -43,6 +44,23 @@ SatSolver* SatSolverFactory::createCryptoMinisat(StatisticsRegistry& registry,
   return res;
 #else
   Unreachable() << "cvc5 was not compiled with Cryptominisat support.";
+#endif
+}
+
+SatSolver* SatSolverFactory::createApproxmc(StatisticsRegistry& registry,
+                                                 ResourceManager* resmgr,
+                                                 const std::string& name)
+{
+#ifdef CVC5_USE_APPROXMC
+  ApproxMCounter* res = new ApproxMCounter(registry, name);
+  res->init();
+  if (resmgr->limitOn())
+  {
+    std::cout << "Skip Limiting time for ApproxMC [TODO?]" << std::endl;
+  }
+  return res;
+#else
+  Unreachable() << "cvc5 was not compiled with ApproxMC support.";
 #endif
 }
 

@@ -308,6 +308,16 @@ void OptionsHandler::checkBvSatSolver(const std::string& flag, SatSolverMode m)
     throw OptionException(ss.str());
   }
 
+    if (m == SatSolverMode::APPROXMC
+      && !Configuration::isBuiltWithApproxmc())
+  {
+    std::stringstream ss;
+    ss << "option `" << flag
+       << "' requires a ApproxMC build of cvc5; this binary was not built "
+          "with ApproxMC support";
+    throw OptionException(ss.str());
+  }
+
   if (m == SatSolverMode::KISSAT && !Configuration::isBuiltWithKissat())
   {
     std::stringstream ss;
@@ -319,7 +329,7 @@ void OptionsHandler::checkBvSatSolver(const std::string& flag, SatSolverMode m)
 
   if (d_options->bv.bvSolver != options::BVSolver::BITBLAST
       && (m == SatSolverMode::CRYPTOMINISAT || m == SatSolverMode::CADICAL
-          || m == SatSolverMode::KISSAT))
+          || m == SatSolverMode::APPROXMC || m == SatSolverMode::KISSAT))
   {
     if (d_options->bv.bitblastMode == options::BitblastMode::LAZY
         && d_options->bv.bitblastModeWasSetByUser)
@@ -328,6 +338,10 @@ void OptionsHandler::checkBvSatSolver(const std::string& flag, SatSolverMode m)
       if (m == options::SatSolverMode::CADICAL)
       {
         sat_solver = "CaDiCaL";
+      }
+      else if (m == options::SatSolverMode::APPROXMC)
+      {
+        sat_solver = "ApproxMC";
       }
       else if (m == options::SatSolverMode::KISSAT)
       {
