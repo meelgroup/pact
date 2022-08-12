@@ -6267,13 +6267,22 @@ Result Solver::checkSat(void) const
 Result Solver::modelCount(void) const
 {
   CVC5_API_TRY_CATCH_BEGIN;
-  CVC5_API_CHECK(!d_slv->isQueryMade()
-                 || d_slv->getOptions().base.incrementalSolving)
+  CVC5_API_CHECK(d_slv->getOptions().base.incrementalSolving)
       << "Cannot make multiple queries unless incremental solving is enabled "
          "(try --incremental)";
-  //////// all checks before this line
-  return d_slv->checkSat();
-  ////////
+  uint64_t count = 0;
+  Result res;
+  do {
+    res = d_slv->checkSat();
+    if (res.isSat()){
+      d_slv->blockModel(cvc5::modes::BlockModelsMode::LITERALS);
+      count++;
+    }
+    if (count % 10 == 0)
+        std::cout << "[SMTApproxMC] Count Now = " << count << std::endl;
+  } while(res.isSat());
+  std::cout << "[SMTApproxMC] Count = " << count << std::endl;
+  return res;
   CVC5_API_TRY_CATCH_END;
 }
 

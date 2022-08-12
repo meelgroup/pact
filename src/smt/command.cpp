@@ -375,7 +375,7 @@ void CheckSatCommand::invoke(cvc5::Solver* solver, SymbolManager* sm)
                            << std::endl;
   try
   {
-    d_result = solver->checkSat();
+    d_result = solver->modelCount();
     d_commandStatus = CommandSuccess::instance();
   }
   catch (exception& e)
