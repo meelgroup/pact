@@ -3879,6 +3879,13 @@ class CVC5_EXPORT Solver
   Result modelCount() const;
 
   /**
+   * Model count the formula with some bound
+   *
+   * @return SAT if count is more than bound, UNSAT otherwise
+   */
+  uint64_t boundedCount(uint64_t bound) const;
+
+  /**
    * Check satisfiability assuming the given formula.
    *
    * SMT-LIB:

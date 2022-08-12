@@ -1,6 +1,6 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Arijit Shaw
+ *   Andrew Reynolds, Aina Niemetz, Morgan Deters
  *
  * This file is part of the cvc5 project.
  *
@@ -10,7 +10,13 @@
  * directory for licensing information.
  * ****************************************************************************
  *
- * Word-level function generator.
- *
- * Implementation Hash function generator needed for counting with SMTApproxMC.
+ * SMTApproxMC : Implementation of Approximate Model Counter with
+ * word level hash functions
  */
+
+#include "smt/smtapproxmc.h"
+
+namespace cvc5::internal {
+
+SMTApproxMC::SMTApproxMC(const Options* optr) {}
+}  // namespace cvc5::internal

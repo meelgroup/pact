@@ -351,6 +351,8 @@ libcvc5_add_sources(
   smt/smt_mode.h
   smt/smt_solver.cpp
   smt/smt_solver.h
+  smt/smtapproxmc.h
+  smt/smtapproxmc.cpp
   smt/sygus_solver.cpp
   smt/sygus_solver.h
   smt/term_formula_removal.cpp

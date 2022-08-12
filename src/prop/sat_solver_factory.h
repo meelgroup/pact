@@ -39,10 +39,9 @@ class SatSolverFactory
                                         ResourceManager* resmgr,
                                         const std::string& name = "");
 
-
   static SatSolver* createApproxmc(StatisticsRegistry& registry,
-                                        ResourceManager* resmgr,
-                                        const std::string& name = "");
+                                   ResourceManager* resmgr,
+                                   const std::string& name = "");
 
   static SatSolver* createCadical(StatisticsRegistry& registry,
                                   ResourceManager* resmgr,

@@ -308,8 +308,7 @@ void OptionsHandler::checkBvSatSolver(const std::string& flag, SatSolverMode m)
     throw OptionException(ss.str());
   }
 
-    if (m == SatSolverMode::APPROXMC
-      && !Configuration::isBuiltWithApproxmc())
+  if (m == SatSolverMode::APPROXMC && !Configuration::isBuiltWithApproxmc())
   {
     std::stringstream ss;
     ss << "option `" << flag
