@@ -90,6 +90,12 @@ namespace cvc5::internal {
 #  define IS_CRYPTOMINISAT_BUILD false
 #endif /* CVC5_USE_CRYPTOMINISAT */
 
+#if CVC5_USE_APPROXMC
+#  define IS_APPROXMC_BUILD true
+#else /* CVC5_USE_APPROXMC */
+#  define IS_APPROXMC_BUILD false
+#endif /* CVC5_USE_APPROXMC */
+
 #if CVC5_USE_KISSAT
 #define IS_KISSAT_BUILD true
 #else /* CVC5_USE_KISSAT */

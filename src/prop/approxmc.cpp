@@ -1,6 +1,6 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Liana Hadarean, Mathias Preiner, Gereon Kremer
+ *   Arijit Shaw
  *
  * This file is part of the cvc5 project.
  *
@@ -10,25 +10,27 @@
  * directory for licensing information.
  * ****************************************************************************
  *
- * SAT Solver.
+ * Wrapper for ApproxMC Model Counter
  *
- * Implementation of the cryptominisat for cvc5 (bit-vectors).
+ * Implementation of the  ApproxMC Model Counter for cvc5 (bit-vectors).
  */
 
-#include "prop/cryptominisat.h"
+#include "prop/approxmc.h"
 
-#ifdef CVC5_USE_CRYPTOMINISAT
+#ifdef CVC5_USE_APPROXMC
 
-#include <cryptominisat5/cryptominisat.h>
+#include <approxmc.h>
 
 #include "base/check.h"
 #include "util/resource_manager.h"
 #include "util/statistics_registry.h"
+#include <bits/stdc++.h>
 
 namespace cvc5::internal {
 namespace prop {
 
-using CMSatVar = unsigned;
+// using ApxMCVar = unsigned;
+using ApproxMCVar = unsigned;
 
 // helper functions
 namespace {
@@ -40,23 +42,6 @@ CMSat::Lit toInternalLit(SatLiteral lit)
     return CMSat::lit_Undef;
   }
   return CMSat::Lit(lit.getSatVariable(), lit.isNegated());
-}
-
-SatLiteral toSatLiteral(CMSat::Lit lit)
-{
-  if (lit == CMSat::lit_Undef)
-  {
-    return undefSatLiteral;
-  }
-  return SatLiteral(lit.var(), lit.sign());
-}
-
-SatValue toSatLiteralValue(CMSat::lbool res)
-{
-  if (res == CMSat::l_True) return SAT_VALUE_TRUE;
-  if (res == CMSat::l_Undef) return SAT_VALUE_UNKNOWN;
-  Assert(res == CMSat::l_False);
-  return SAT_VALUE_FALSE;
 }
 
 void toInternalClause(SatClause& clause,
@@ -71,9 +56,9 @@ void toInternalClause(SatClause& clause,
 
 }  // helper functions
 
-CryptoMinisatSolver::CryptoMinisatSolver(StatisticsRegistry& registry,
+ApproxMCounter::ApproxMCounter(StatisticsRegistry& registry,
                                          const std::string& name)
-    : d_solver(new CMSat::SATSolver()),
+    : d_counter(new ApproxMC::AppMC()),
       d_numVariables(0),
       d_okay(true),
       d_statistics(registry, name),
@@ -81,36 +66,24 @@ CryptoMinisatSolver::CryptoMinisatSolver(StatisticsRegistry& registry,
 {
 }
 
-void CryptoMinisatSolver::init()
+void ApproxMCounter::init()
 {
+  std::cout << "ApproxMC Init called" << std::endl;
+
   d_true = newVar();
   d_false = newVar();
 
   std::vector<CMSat::Lit> clause(1);
   clause[0] = CMSat::Lit(d_true, false);
-  d_solver->add_clause(clause);
+  d_counter->add_clause(clause);
 
   clause[0] = CMSat::Lit(d_false, true);
-  d_solver->add_clause(clause);
+  d_counter->add_clause(clause);
 }
 
-CryptoMinisatSolver::~CryptoMinisatSolver() {}
+ApproxMCounter::~ApproxMCounter() {}
 
-void CryptoMinisatSolver::setTimeLimit(ResourceManager* resmgr)
-{
-  d_resmgr = resmgr;
-}
-
-void CryptoMinisatSolver::setMaxTime()
-{
-  if (d_resmgr)
-  {
-    // Set time limit to remaining number of seconds.
-    d_solver->set_max_time(d_resmgr->getRemainingTime() / 1000.0);
-  }
-}
-
-ClauseId CryptoMinisatSolver::addXorClause(SatClause& clause,
+ClauseId ApproxMCounter::addXorClause(SatClause& clause,
                                            bool rhs,
                                            bool removable)
 {
@@ -125,17 +98,17 @@ ClauseId CryptoMinisatSolver::addXorClause(SatClause& clause,
 
   // ensure all sat literals have positive polarity by pushing
   // the negation on the result
-  std::vector<CMSatVar> xor_clause;
+  std::vector<ApproxMCVar> xor_clause;
   for (unsigned i = 0; i < clause.size(); ++i) {
     xor_clause.push_back(toInternalLit(clause[i]).var());
     rhs ^= clause[i].isNegated();
   }
-  bool res = d_solver->add_xor_clause(xor_clause, rhs);
-  d_okay &= res;
+  d_counter->add_xor_clause(xor_clause, rhs);
+
   return ClauseIdError;
 }
 
-ClauseId CryptoMinisatSolver::addClause(SatClause& clause, bool removable){
+ClauseId ApproxMCounter::addClause(SatClause& clause, bool removable){
   Trace("sat::cryptominisat") << "Add clause " << clause <<"\n";
 
   if (!d_okay) {
@@ -147,98 +120,89 @@ ClauseId CryptoMinisatSolver::addClause(SatClause& clause, bool removable){
 
   std::vector<CMSat::Lit> internal_clause;
   toInternalClause(clause, internal_clause);
-  bool nowOkay = d_solver->add_clause(internal_clause);
+  d_counter->add_clause(internal_clause);
 
   ClauseId freshId;
   freshId = ClauseIdError;
 
-  d_okay &= nowOkay;
   return freshId;
 }
 
-bool CryptoMinisatSolver::ok() const { return d_okay; }
+bool ApproxMCounter::ok() const { return d_okay; }
 
-SatVariable  CryptoMinisatSolver::newVar(bool isTheoryAtom, bool preRegister, bool canErase){
-  d_solver->new_var();
+SatVariable  ApproxMCounter::newVar(bool isTheoryAtom, bool preRegister, bool canErase){
+  d_counter->new_var();
   ++d_numVariables;
-  Assert(d_numVariables == d_solver->nVars());
+  Assert(d_numVariables == d_counter->nVars());
   return d_numVariables - 1;
 }
 
-SatVariable CryptoMinisatSolver::trueVar() {
+SatVariable ApproxMCounter::trueVar() {
   return d_true;
 }
 
-SatVariable CryptoMinisatSolver::falseVar() {
+SatVariable ApproxMCounter::falseVar() {
   return d_false;
 }
 
-void CryptoMinisatSolver::markUnremovable(SatLiteral lit) {
-  // cryptominisat supports dynamically adding back variables (?)
-  // so this is a no-op
-  return;
+
+void ApproxMCounter::interrupt(){
+  Unreachable() << "Not sure how to interrupt in ApproxMC";
 }
 
-void CryptoMinisatSolver::interrupt(){
-  d_solver->interrupt_asap();
-}
-
-SatValue CryptoMinisatSolver::solve(){
-  std::cout << "CMS solve called" << std::endl;
+SatValue ApproxMCounter::solve(){
+  std::cout << "ApproxMC called" << std::endl;
   TimerStat::CodeTimer codeTimer(d_statistics.d_solveTime);
   ++d_statistics.d_statCallsToSolve;
-  setMaxTime();
-  return toSatLiteralValue(d_solver->solve());
+  d_counter->set_verbosity(0);
+  ApproxMC::SolCount solcount = d_counter->count();
+  //d_counter->print_stats(0);  //TODO may be turned on, along with set_verbosity
+  std::cout << "[ApproxMC] Count = "
+            << solcount.cellSolCount << "*2**" << solcount.hashCount << std::endl;
+  std::cout << "s mc "
+            <<  (long long int)(solcount.cellSolCount * (long long int)pow(2, solcount.hashCount))
+            << std::endl;
+  return SAT_VALUE_UNKNOWN;
 }
 
-SatValue CryptoMinisatSolver::solve(long unsigned int& resource) {
-  // CMSat::SalverConf conf = d_solver->getConf();
+SatValue ApproxMCounter::solve(long unsigned int& resource) {
+  // ApproxMC::SalverConf conf = d_counter->getConf();
   Unreachable() << "Not sure how to set different limits for calls to solve in "
-                   "Cryptominisat";
+                   "ApproxMC";
   return solve();
 }
 
-SatValue CryptoMinisatSolver::solve(const std::vector<SatLiteral>& assumptions)
+SatValue ApproxMCounter::solve(const std::vector<SatLiteral>& assumptions)
 {
-  std::cout << "CMS solve called with assumptions" << std::endl;
-  TimerStat::CodeTimer codeTimer(d_statistics.d_solveTime);
+  std::cout << "[ApproxMC] called with assumptions" << std::endl;
   std::vector<CMSat::Lit> assumpts;
   for (const SatLiteral& lit : assumptions)
   {
     assumpts.push_back(toInternalLit(lit));
   }
   ++d_statistics.d_statCallsToSolve;
-  setMaxTime();
-  return toSatLiteralValue(d_solver->solve(&assumpts));
+  std::cout << "[ApproxMC] Skipping " << assumpts.size() << " assumptions (TODO?)" << std::endl;
+  return solve();   // TODO decide what is to be done here.
 }
 
-void CryptoMinisatSolver::getUnsatAssumptions(
+void ApproxMCounter::getUnsatAssumptions(
     std::vector<SatLiteral>& assumptions)
-{
-  for (const CMSat::Lit& lit : d_solver->get_conflict())
-  {
-    assumptions.push_back(toSatLiteral(~lit));
-  }
+{}
+
+SatValue ApproxMCounter::value(SatLiteral l){
+  return SAT_VALUE_UNKNOWN;
 }
 
-SatValue CryptoMinisatSolver::value(SatLiteral l){
-  const std::vector<CMSat::lbool> model = d_solver->get_model();
-  CMSatVar var = l.getSatVariable();
-  Assert(var < model.size());
-  CMSat::lbool value = model[var];
-  return toSatLiteralValue(value);
-}
+SatValue ApproxMCounter::modelValue(SatLiteral l) { return value(l); }
 
-SatValue CryptoMinisatSolver::modelValue(SatLiteral l) { return value(l); }
-
-unsigned CryptoMinisatSolver::getAssertionLevel() const {
+unsigned ApproxMCounter::getAssertionLevel() const {
   Unreachable() << "No interface to get assertion level in Cryptominisat";
   return -1;
 }
 
-// Satistics for CryptoMinisatSolver
+// Satistics for ApproxMCounter
 
-CryptoMinisatSolver::Statistics::Statistics(StatisticsRegistry& registry,
+ApproxMCounter::Statistics::Statistics(StatisticsRegistry& registry,
                                             const std::string& prefix)
     : d_statCallsToSolve(registry.registerInt(prefix + "cryptominisat::calls_to_solve")),
       d_xorClausesAdded(registry.registerInt(prefix + "cryptominisat::xor_clauses")),

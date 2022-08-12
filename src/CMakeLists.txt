@@ -242,6 +242,8 @@ libcvc5_add_sources(
   prop/cnf_stream.h
   prop/cryptominisat.cpp
   prop/cryptominisat.h
+  prop/approxmc.cpp
+  prop/approxmc.h
   prop/kissat.cpp
   prop/kissat.h
   prop/learned_db.cpp
@@ -1381,6 +1383,11 @@ if(USE_CRYPTOMINISAT)
   add_dependencies(cvc5-obj CryptoMiniSat)
   target_include_directories(cvc5-obj PRIVATE ${CryptoMiniSat_INCLUDE_DIR})
   target_link_libraries(cvc5 PRIVATE CryptoMiniSat)
+endif()
+if(USE_APPROXMC)
+  add_dependencies(cvc5-obj ApproxMC)
+  target_include_directories(cvc5-obj PRIVATE ${ApproxMC_INCLUDE_DIR})
+  target_link_libraries(cvc5 PRIVATE ApproxMC)
 endif()
 if(USE_KISSAT)
   add_dependencies(cvc5-obj Kissat)
