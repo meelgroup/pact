@@ -28,9 +28,16 @@ namespace internal {
 
 class CVC5_EXPORT SMTApproxMC
 {
+  double epsilon;
+  double numiteration;
+  uint64_t minPivot, maxPivot;
+
  public:
   SMTApproxMC(const Options* optr = nullptr);
   ~SMTApproxMC();
+
+  uint64_t smtApxInnerLoop();
+  uint64_t smtApxOuterLoop();
 };
 
 }  // namespace internal
