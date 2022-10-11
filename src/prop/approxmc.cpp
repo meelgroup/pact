@@ -19,7 +19,7 @@
 
 #ifdef CVC5_USE_APPROXMC
 
-#include "approxmc.h"
+#include "approxmc/approxmc.h"
 #include <bits/stdc++.h>
 
 #include "base/check.h"

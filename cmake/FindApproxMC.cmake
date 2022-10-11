@@ -21,19 +21,25 @@ include(deps-helper)
 find_package(approxmc ${ApproxMC_FIND_VERSION} QUIET)
 
 set(ApproxMC_FOUND_SYSTEM FALSE)
-if(approxmc_FOUND)
-  set(ApproxMC_VERSION ${approxmc_VERSION})
-  set(ApproxMC_FOUND_SYSTEM TRUE)
-  add_library(ApproxMC INTERFACE IMPORTED GLOBAL)
-  target_link_libraries(ApproxMC INTERFACE approxmc)
-  set_target_properties(
-    ApproxMC PROPERTIES INTERFACE_INCLUDE_DIRECTORIES
-                             "${APPROXMC_INCLUDE_DIRS}"
-  )
-endif()
+
+#TODO (arijit) if approxmc is already built somewhere,
+#  cmake here can understand that, but can't link to the
+#  library or headers. fix this. the commented out section
+#  below should work.
+
+#if(approxmc_FOUND)
+  #set(ApproxMC_VERSION ${approxmc_VERSION})
+  #set(ApproxMC_FOUND_SYSTEM TRUE)
+  #add_library(ApproxMC INTERFACE IMPORTED GLOBAL)
+  #target_link_libraries(ApproxMC INTERFACE approxmc)
+  #set_target_properties(
+    #ApproxMC PROPERTIES INTERFACE_INCLUDE_DIRECTORIES
+                             #"${APPROXMC_INCLUDE_DIRS}"
+  #)
+#endif()
 
 if(NOT ApproxMC_FOUND_SYSTEM)
-  set(ApproxMC_VERSION "5.8.0")
+  set(ApproxMC_VERSION "4.1.4")
 
   check_ep_downloaded("ApproxMC-EP")
   if(NOT ApproxMC-EP_DOWNLOADED)
@@ -51,11 +57,9 @@ if(NOT ApproxMC_FOUND_SYSTEM)
   ExternalProject_Add(
     ApproxMC-EP
     ${COMMON_EP_CONFIG}
-    URL https://github.com/msoos/approxmc/archive/refs/tags/${ApproxMC_VERSION}.tar.gz
-    URL_HASH SHA1=f79dfa1ffc6c9c75b3a33f76d3a89a3df2b3f4c2
-    PATCH_COMMAND
-      patch <SOURCE_DIR>/src/packedmatrix.h
-      ${CMAKE_CURRENT_LIST_DIR}/deps-utils/ApproxMC-patch-ba6f76e3.patch
+    BUILD_IN_SOURCE ON
+    URL https://github.com/meelgroup/approxmc/archive/refs/tags/${ApproxMC_VERSION}.tar.gz
+    URL_HASH SHA1=8fb064e31ce937c987aed612bcd1e1a3ff5dd692
     CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release
                # make sure not to register with cmake
                -DCMAKE_EXPORT_NO_PACKAGE_REGISTRY=ON
@@ -64,24 +68,12 @@ if(NOT ApproxMC_FOUND_SYSTEM)
                -DENABLE_ASSERTIONS=OFF
                -DENABLE_PYTHON_INTERFACE=OFF
                # disable what is not needed
-               -DNOBREAKID=ON
-               -DNOM4RI=ON
-               -DNOSQLITE=ON
-               -DNOZLIB=ON
-               -DONLY_SIMPLE=ON
-               -DSTATICCOMPILE=ON
-    BUILD_BYPRODUCTS <INSTALL_DIR>/${CMAKE_INSTALL_LIBDIR}/libapproxmc.a
-  )
-  # remove unused stuff to keep folder small
-  ExternalProject_Add_Step(
-    ApproxMC-EP cleanup
-    DEPENDEES install
-    COMMAND ${CMAKE_COMMAND} -E remove <BINARY_DIR>/approxmc_simple
-    COMMAND ${CMAKE_COMMAND} -E remove <INSTALL_DIR>/bin/approxmc_simple
+               -DSTATICCOMPILE=OFF
+    BUILD_BYPRODUCTS <INSTALL_DIR>/${CMAKE_INSTALL_LIBDIR}/libapproxmc.so
   )
 
   set(ApproxMC_INCLUDE_DIR "${DEPS_BASE}/include/")
-  set(ApproxMC_LIBRARIES "${DEPS_BASE}/${CMAKE_INSTALL_LIBDIR}/${LIBFILENAME}.a")
+  set(ApproxMC_LIBRARIES "${DEPS_BASE}/${CMAKE_INSTALL_LIBDIR}/${LIBFILENAME}.so")
 
   add_library(ApproxMC STATIC IMPORTED GLOBAL)
   set_target_properties(
