@@ -26,6 +26,23 @@ performance and reduce the memory overhead of its predecessors.  It is written
 entirely in C++ and is released under an open-source software license (see file
 [COPYING](https://github.com/cvc5/cvc5/blob/main/COPYING)).
 
+## Build for Counting
+
+`./configure.sh --auto-download --approxmc`
+
+## Use for Counting
+
+Bitblast and count using ApproxMC.
+
+`./cvc5 --approxmc <filenum>`
+
+Count by enumeration.
+
+`./cvc5 --countenum <filename>`
+
+Count as SMTApproxMC.
+
+`./cvc5 --smtapproxmc <filename>`
 
 Website
 -------------------------------------------------------------------------------
