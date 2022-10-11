@@ -38,6 +38,7 @@ class CVC5_EXPORT SMTApproxMC
 
   uint64_t smtApxInnerLoop();
   uint64_t smtApxOuterLoop();
+  uint64_t countByEnumeration(u_int64_t limit);
 };
 
 }  // namespace internal

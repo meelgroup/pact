@@ -26,8 +26,6 @@ if(approxmc_FOUND)
   set(ApproxMC_FOUND_SYSTEM TRUE)
   add_library(ApproxMC INTERFACE IMPORTED GLOBAL)
   target_link_libraries(ApproxMC INTERFACE approxmc)
-  # TODO(gereon): remove this when
-  # https://github.com/msoos/approxmc/pull/645 is merged
   set_target_properties(
     ApproxMC PROPERTIES INTERFACE_INCLUDE_DIRECTORIES
                              "${APPROXMC_INCLUDE_DIRS}"

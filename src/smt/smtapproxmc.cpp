@@ -15,6 +15,7 @@
  */
 
 #include "smt/smtapproxmc.h"
+#include "smt/hash_generator.h"
 
 #include <bits/stdc++.h>
 
@@ -29,12 +30,23 @@ SMTApproxMC::SMTApproxMC(const Options* optr)
   maxPivot = int(2 * ceil(4.94 * (1 + 1 / epsilon) * (1 + 1 / epsilon)));
 }
 
-uint64_t SMTApproxMC::smtApxInnerLoop()
+uint64_t SMTApproxMC::countByEnumeration(u_int64_t limit){
+  return limit; //TODO implement
+}
+
+uint64_t SMTApproxMC::smtApxInnerLoop() // "SMTApproxMCCore"
 {
-  u_int64_t count = 0;
-  // TODO implement this
-  // count = d_slv.modelCount();
-  return count;
+  u_int64_t num_solutions = 0;
+  num_solutions = countByEnumeration(maxPivot);
+  if (num_solutions >= maxPivot) {
+
+  } else if (num_solutions >= minPivot) {
+
+  } else {
+
+  }
+
+  return num_solutions;
 }
 
 uint64_t SMTApproxMC::smtApxOuterLoop()
