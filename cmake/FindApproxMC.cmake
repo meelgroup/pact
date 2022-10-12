@@ -18,14 +18,14 @@
 
 include(deps-helper)
 
-find_package(approxmc ${ApproxMC_FIND_VERSION} QUIET)
-
 set(ApproxMC_FOUND_SYSTEM FALSE)
 
 #TODO (arijit) if approxmc is already built somewhere,
 #  cmake here can understand that, but can't link to the
 #  library or headers. fix this. the commented out section
 #  below should work.
+
+#find_package(approxmc ${ApproxMC_FIND_VERSION} QUIET)
 
 #if(approxmc_FOUND)
   #set(ApproxMC_VERSION ${approxmc_VERSION})
