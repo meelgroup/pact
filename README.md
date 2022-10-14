@@ -34,15 +34,15 @@ entirely in C++ and is released under an open-source software license (see file
 
 Bitblast and count using ApproxMC.
 
-`./cvc5 --approxmc <filenum>`
+`./cvc5 -b <filenum>`
 
 Count by enumeration.
 
-`./cvc5 --countenum <filename>`
+`./cvc5 -e <filename>`
 
 Count as SMTApproxMC.
 
-`./cvc5 --smtapproxmc <filename>`
+`./cvc5 -S <filename>`
 
 Website
 -------------------------------------------------------------------------------
