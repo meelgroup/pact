@@ -422,24 +422,6 @@ void OptionsHandler::showConfiguration(const std::string& flag, bool value)
   print_config_cond("editline", Configuration::isBuiltWithEditline());
 }
 
-void OptionsHandler::smtapproxMC(const std::string& flag, bool value)
-{
-  if (!value) return;
-  std::cout << "TODO : Handle  SMTApproxMC option here" << std::endl;
-}
-
-void OptionsHandler::bitblastApproxMC(const std::string& flag, bool value)
-{
-  if (!value) return;
-  std::cout << "TODO : Handle  bitblastApproxMC option here" << std::endl;
-}
-
-void OptionsHandler::enumerateCount(const std::string& flag, bool value)
-{
-  if (!value) return;
-  std::cout << "TODO : Handle  enumerateCount option here" << std::endl;
-}
-
 void OptionsHandler::showCopyright(const std::string& flag, bool value)
 {
   if (!value) return;

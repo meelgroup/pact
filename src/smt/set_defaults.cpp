@@ -68,6 +68,15 @@ void SetDefaults::setDefaultsPre(Options& opts)
   {
     opts.writeSmt().checkModels = true;
   }
+  if (opts.driver.enumerateCount || opts.driver.smtapproxMC)
+  {
+    opts.writeBase().incrementalSolving = true;
+    opts.writeSmt().produceModels = true;
+  }
+  if (opts.driver.bitblastApproxMC)
+  {
+    opts.writeBv().bvSatSolver = options::SatSolverMode::APPROXMC;
+  }
   if (opts.smt.checkModels || opts.driver.dumpModels)
   {
     opts.writeSmt().produceModels = true;

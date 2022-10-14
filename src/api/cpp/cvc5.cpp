@@ -6264,6 +6264,10 @@ Result Solver::checkSat(void) const
   CVC5_API_TRY_CATCH_END;
 }
 
+/*
+ *  BoundSAT as in ApproxMC literature
+ * bound < 0 => no bound
+ */
 uint64_t Solver::boundedCount(uint64_t bound) const
 {
   uint64_t count = 0;
@@ -6277,8 +6281,8 @@ uint64_t Solver::boundedCount(uint64_t bound) const
       count++;
     }
     if (count % 10 == 0)
-      std::cout << "[SMTApproxMC] Count Now = " << count << std::endl;
-  } while (res.isSat() && count < bound);
+      std::cout << "[BoundSMT] Count Now = " << count << std::endl;
+  } while (res.isSat() && (count < bound || bound < 0));
   return count;
 }
 
@@ -6289,10 +6293,22 @@ Result Solver::modelCount(void) const
       << "Cannot make multiple queries unless incremental solving is enabled "
          "(try --incremental)";
   uint64_t count = 0;
+  bool exactcount = false;
+  if (getOption("countenum") == "true" && !(getOption("smtapxmc") == "true"))
+    exactcount = true;
+  if (exactcount)
+  {
+    std::cout << "c getting count by enumeration" << std::endl;
+    count = boundedCount(-1);
+  }
+  else
+  {
+    std::cout << "c getting approximate count via SMTApproxMC [TODO]"
+              << std::endl;
+    // TODO Start SMTApproxMC module with d_slv from here
+  }
 
-  // Start SMTApproxMC module with d_slv from here
-
-  std::cout << "[SMTApproxMC] Count = " << count << std::endl;
+  std::cout << "s mc " << count << std::endl;
   return Result();
   CVC5_API_TRY_CATCH_END;
 }

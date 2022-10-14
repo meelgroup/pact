@@ -375,7 +375,18 @@ void CheckSatCommand::invoke(cvc5::Solver* solver, SymbolManager* sm)
                            << std::endl;
   try
   {
-    d_result = solver->modelCount();
+    bool count = false;
+    if (solver->getOption("countenum") == "true"
+        || solver->getOption("smtapxmc") == "true")
+      count = true;
+    if (count)
+    {
+      d_result = solver->modelCount();
+    }
+    else
+    {
+      d_result = solver->checkSat();
+    }
     d_commandStatus = CommandSuccess::instance();
   }
   catch (exception& e)

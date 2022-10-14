@@ -68,7 +68,6 @@ name   = "Driver"
   short      = "b"
   type       = "bool"
   default    = "false"
-  predicates = ["bitblastApproxMC"]
   alternate  = false
   help       = "bitblast and count using ApproxMC"
 
@@ -76,9 +75,9 @@ name   = "Driver"
   name       = "enumerateCount"
   category   = "common"
   long       = "countenum"
+  short      = "e"
   type       = "bool"
   default    = "false"
-  predicates = ["enumerateCount"]
   alternate  = false
   help       = "count by enumeration"
 
@@ -86,10 +85,9 @@ name   = "Driver"
   name       = "smtapproxMC"
   category   = "common"
   long       = "smtapxmc"
-  short      = "a"
+  short      = "S"
   type       = "bool"
   default    = "false"
-  predicates = ["smtapproxMC"]
   alternate  = false
   help       = "approximate model count using SMTApproxMC"
 
