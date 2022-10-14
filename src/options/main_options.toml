@@ -62,6 +62,38 @@ name   = "Driver"
   help       = "show all available tags for debugging"
 
 [[option]]
+  name       = "bitblastApproxMC"
+  category   = "common"
+  long       = "blast-apxmc"
+  short      = "b"
+  type       = "bool"
+  default    = "false"
+  predicates = ["bitblastApproxMC"]
+  alternate  = false
+  help       = "bitblast and count using ApproxMC"
+
+[[option]]
+  name       = "enumerateCount"
+  category   = "common"
+  long       = "countenum"
+  type       = "bool"
+  default    = "false"
+  predicates = ["enumerateCount"]
+  alternate  = false
+  help       = "count by enumeration"
+
+[[option]]
+  name       = "smtapproxMC"
+  category   = "common"
+  long       = "smtapxmc"
+  short      = "a"
+  type       = "bool"
+  default    = "false"
+  predicates = ["smtapproxMC"]
+  alternate  = false
+  help       = "approximate model count using SMTApproxMC"
+
+[[option]]
   name       = "showTraceTags"
   category   = "expert"
   long       = "show-trace-tags"

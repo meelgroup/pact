@@ -99,9 +99,13 @@ class OptionsHandler
   void setResourceWeight(const std::string& flag, const std::string& optarg);
 
   /******************************* bv options *******************************/
-
   /** Check that the sat solver mode is compatible with other bv options */
   void checkBvSatSolver(const std::string& flag, SatSolverMode m);
+
+  /**************************** counting options ****************************/
+  void enumerateCount(const std::string& flag, bool value);
+  void bitblastApproxMC(const std::string& flag, bool value);
+  void smtapproxMC(const std::string& flag, bool value);
 
   /******************************* main options *******************************/
   /** Show the solver build configuration and exit */
