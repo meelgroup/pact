@@ -6268,7 +6268,9 @@ Result Solver::checkSat(void) const
  *  BoundSAT as in ApproxMC literature
  * bound < 0 => no bound
  */
-uint64_t Solver::boundedCount(uint64_t bound) const
+uint64_t Solver::boundedCount(uint64_t bound,
+    const std::vector<Sort>& sorts,
+    const std::vector<Term>& vars  ) const
 {
   uint64_t count = 0;
   Result res;
@@ -6277,16 +6279,22 @@ uint64_t Solver::boundedCount(uint64_t bound) const
     res = d_slv->checkSat();
     if (res.isSat())
     {
+      std::cout << d_slv->getModel(Sort::sortVectorToTypeNodes(sorts),
+                                   Term::termVectorToNodes(vars)) << std::endl;
+
       d_slv->blockModel(cvc5::modes::BlockModelsMode::LITERALS);
+      std::cout << "c Blocking this model" << std::endl;
+
       count++;
     }
-    if (count % 10 == 0)
+    if (count % 1 == 0)
       std::cout << "[BoundSMT] Count Now = " << count << std::endl;
   } while (res.isSat() && (count < bound || bound < 0));
   return count;
 }
 
-Result Solver::modelCount(void) const
+Result Solver::modelCount(const std::vector<Sort>& sorts,
+                          const std::vector<Term>& vars) const
 {
   CVC5_API_TRY_CATCH_BEGIN;
   CVC5_API_CHECK(d_slv->getOptions().base.incrementalSolving)
@@ -6299,7 +6307,7 @@ Result Solver::modelCount(void) const
   if (exactcount)
   {
     std::cout << "c getting count by enumeration" << std::endl;
-    count = boundedCount(-1);
+    count = boundedCount(-1,sorts,vars);
   }
   else
   {

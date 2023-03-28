@@ -3876,14 +3876,17 @@ class CVC5_EXPORT Solver
    *
    * @return The result of the satisfiability check.
    */
-  Result modelCount() const;
+  Result modelCount(
+    const std::vector<Sort>& sorts,
+    const std::vector<Term>& vars  ) const;
 
   /**
    * Model count the formula with some bound
    *
    * @return SAT if count is more than bound, UNSAT otherwise
    */
-  uint64_t boundedCount(uint64_t bound) const;
+  uint64_t boundedCount(uint64_t bound, const std::vector<Sort>& sorts,
+    const std::vector<Term>& vars ) const;
 
   /**
    * Check satisfiability assuming the given formula.
