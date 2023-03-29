@@ -27,7 +27,39 @@ ${typechecker_includes}
 namespace cvc5::internal {
 namespace expr {
 
-TypeNode TypeChecker::computeType(NodeManager* nodeManager, TNode n, bool check)
+TypeNode TypeChecker::preComputeType(NodeManager* nodeManager, TNode n)
+{
+  TypeNode typeNode;
+
+  // Infer the type
+  switch (n.getKind())
+  {
+    case kind::VARIABLE:
+    case kind::SKOLEM:
+    case kind::BOUND_VARIABLE:
+    case kind::INST_CONSTANT:
+    case kind::BOOLEAN_TERM_VARIABLE:
+    case kind::RAW_SYMBOL:
+      // variable kinds have their type marked as an attribute upon construction
+      typeNode = nodeManager->getAttribute(n, TypeAttr());
+      break;
+    case kind::BUILTIN:
+      typeNode = nodeManager->builtinOperatorType();
+      break;
+
+      // !!! will auto-generate preComputeType rules when they are available
+
+    default:
+      // not handled
+      break;
+  }
+  return typeNode;
+}
+
+TypeNode TypeChecker::computeType(NodeManager* nodeManager,
+                                  TNode n,
+                                  bool check,
+                                  std::ostream* errOut)
 {
   TypeNode typeNode;
 
@@ -57,7 +89,7 @@ ${typerules}
 
   return typeNode;
 
-}/* TypeChecker::computeType */
+} /* TypeChecker::computeType */
 
 bool TypeChecker::computeIsConst(NodeManager* nodeManager, TNode n)
 {

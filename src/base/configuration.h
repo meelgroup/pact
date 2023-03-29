@@ -23,10 +23,10 @@
 #ifndef CVC5__CONFIGURATION_H
 #define CVC5__CONFIGURATION_H
 
+#include <cvc5/cvc5_export.h>
+
 #include <string>
 #include <vector>
-
-#include "cvc5_export.h"
 
 namespace cvc5::internal {
 
@@ -110,11 +110,6 @@ public:
   static bool isBuiltWithPoly();
 
   static bool isBuiltWithCoCoA();
-
-  /* Return a sorted array of the debug tags name */
-  static const std::vector<std::string>& getDebugTags();
-  /* Test if the given argument is a known debug tag name */
-  static bool isDebugTag(const std::string& tag);
 
   /* Return a sorted array of the trace tags name */
   static const std::vector<std::string>& getTraceTags();

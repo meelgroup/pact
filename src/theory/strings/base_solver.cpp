@@ -57,6 +57,8 @@ void BaseSolver::checkInit()
   d_termIndex.clear();
   d_stringLikeEqc.clear();
 
+  const std::set<Node>& rlvSet = d_termReg.getRelevantTermSet();
+
   Trace("strings-base") << "BaseSolver::checkInit" << std::endl;
   // count of congruent, non-congruent per operator (independent of type),
   // for debugging.
@@ -83,7 +85,7 @@ void BaseSolver::checkInit()
       bool isString = eqc.getType().isString();
       // have we found a constant in this equivalence class
       bool foundConst = false;
-      while (!eqc_i.isFinished())
+      for (; !eqc_i.isFinished(); ++eqc_i)
       {
         Node n = *eqc_i;
         Kind k = n.getKind();
@@ -128,156 +130,164 @@ void BaseSolver::checkInit()
             prevConstLike.push_back(n);
           }
         }
+
         if (tn.isInteger())
         {
           // do nothing
+          continue;
         }
-        // process indexing
-        else if (n.getNumChildren() > 0)
+        else if (d_congruent.find(n) != d_congruent.end())
         {
-          if (k != EQUAL)
+          // skip congruent terms
+          congruentCount[k].first++;
+          continue;
+        }
+
+        congruentCount[k].second++;
+
+        // process indexing
+        if (n.getNumChildren() > 0)
+        {
+          if (k == EQUAL)
           {
-            if (d_congruent.find(n) == d_congruent.end())
+            continue;
+          }
+
+          std::vector<Node> c;
+          Node nc = tti[k].add(n, 0, d_state, emps, false, c);
+          if (nc != n)
+          {
+            Trace("strings-base-debug")
+                << "...found congruent term " << nc << std::endl;
+            // check if we have inferred a new equality by removal of empty
+            // components
+            if (k == STRING_CONCAT && !d_state.areEqual(nc, n))
             {
-              std::vector<Node> c;
-              Node nc = tti[k].add(n, 0, d_state, emps, c);
-              if (nc != n)
+              std::vector<Node> exp;
+              // the number of empty components of n, nc
+              size_t count[2] = {0, 0};
+              while (count[0] < nc.getNumChildren()
+                     || count[1] < n.getNumChildren())
               {
-                Trace("strings-base-debug")
-                    << "...found congruent term " << nc << std::endl;
-                // check if we have inferred a new equality by removal of empty
-                // components
-                if (k == STRING_CONCAT && !d_state.areEqual(nc, n))
+                // explain empty prefixes
+                for (unsigned t = 0; t < 2; t++)
                 {
-                  std::vector<Node> exp;
-                  // the number of empty components of n, nc
-                  size_t count[2] = {0, 0};
-                  while (count[0] < nc.getNumChildren()
-                         || count[1] < n.getNumChildren())
+                  Node nn = t == 0 ? nc : n;
+                  while (count[t] < nn.getNumChildren()
+                         && (nn[count[t]] == emps
+                             || d_state.areEqual(nn[count[t]], emps)))
                   {
-                    // explain empty prefixes
-                    for (unsigned t = 0; t < 2; t++)
+                    if (nn[count[t]] != emps)
                     {
-                      Node nn = t == 0 ? nc : n;
-                      while (count[t] < nn.getNumChildren()
-                             && (nn[count[t]] == emps
-                                 || d_state.areEqual(nn[count[t]], emps)))
-                      {
-                        if (nn[count[t]] != emps)
-                        {
-                          exp.push_back(nn[count[t]].eqNode(emps));
-                        }
-                        count[t]++;
-                      }
+                      exp.push_back(nn[count[t]].eqNode(emps));
                     }
-                    Trace("strings-base-debug")
-                        << "  counts = " << count[0] << ", " << count[1]
-                        << std::endl;
-                    // explain equal components
-                    if (count[0] < nc.getNumChildren())
-                    {
-                      Assert(count[1] < n.getNumChildren());
-                      if (nc[count[0]] != n[count[1]])
-                      {
-                        exp.push_back(nc[count[0]].eqNode(n[count[1]]));
-                      }
-                      count[0]++;
-                      count[1]++;
-                    }
+                    count[t]++;
                   }
-                  // infer the equality
-                  d_im.sendInference(exp, n.eqNode(nc), InferenceId::STRINGS_I_NORM);
                 }
-                else
+                Trace("strings-base-debug") << "  counts = " << count[0] << ", "
+                                            << count[1] << std::endl;
+                // explain equal components
+                if (count[0] < nc.getNumChildren())
                 {
-                  // We cannot mark one of the terms as reduced here (via
-                  // ExtTheory::markCongruent) since extended function terms
-                  // rely on reductions to other extended function terms. We
-                  // may have a pair of extended function terms f(a)=f(b) where
-                  // the reduction of argument a depends on the term b.
-                  // Thus, marking f(b) as reduced by virtue of the fact we
-                  // have f(a) is incorrect, since then we are effectively
-                  // assuming that the reduction of f(a) depends on itself.
-                }
-                // this node is congruent to another one, we can ignore it
-                Trace("strings-base-debug")
-                    << "  congruent term : " << n << " (via " << nc << ")"
-                    << std::endl;
-                d_congruent.insert(n);
-                congruentCount[k].first++;
-              }
-              else if (k == STRING_CONCAT && c.size() == 1)
-              {
-                Trace("strings-base-debug")
-                    << "  congruent term by singular : " << n << " " << c[0]
-                    << std::endl;
-                // singular case
-                if (!d_state.areEqual(c[0], n))
-                {
-                  Node ns;
-                  std::vector<Node> exp;
-                  // explain empty components
-                  bool foundNEmpty = false;
-                  for (const Node& nnc : n)
+                  Assert(count[1] < n.getNumChildren());
+                  if (nc[count[0]] != n[count[1]])
                   {
-                    if (d_state.areEqual(nnc, emps))
-                    {
-                      if (nnc != emps)
-                      {
-                        exp.push_back(nnc.eqNode(emps));
-                      }
-                    }
-                    else
-                    {
-                      Assert(!foundNEmpty);
-                      ns = nnc;
-                      foundNEmpty = true;
-                    }
+                    exp.push_back(nc[count[0]].eqNode(n[count[1]]));
                   }
-                  AlwaysAssert(foundNEmpty);
-                  // infer the equality
-                  d_im.sendInference(exp, n.eqNode(ns), InferenceId::STRINGS_I_NORM_S);
+                  count[0]++;
+                  count[1]++;
                 }
-                d_congruent.insert(n);
-                congruentCount[k].first++;
               }
-              else
-              {
-                congruentCount[k].second++;
-              }
+              // infer the equality
+              d_im.sendInference(
+                  exp, n.eqNode(nc), InferenceId::STRINGS_I_NORM);
             }
             else
             {
-              congruentCount[k].first++;
+              // We cannot mark one of the terms as reduced here (via
+              // ExtTheory::markCongruent) since extended function terms
+              // rely on reductions to other extended function terms. We
+              // may have a pair of extended function terms f(a)=f(b) where
+              // the reduction of argument a depends on the term b.
+              // Thus, marking f(b) as reduced by virtue of the fact we
+              // have f(a) is incorrect, since then we are effectively
+              // assuming that the reduction of f(a) depends on itself.
             }
+            // this node is congruent to another one, we can ignore it
+            if (rlvSet.find(n) != rlvSet.end()
+                && rlvSet.find(nc) == rlvSet.end())
+            {
+              // If `n` is a relevant term and `nc` is not, then we change
+              // the term at its index to `n` and mark `nc` as congruent.
+              // This ensures that if we have mutliple congruent terms, we
+              // reason about one of the relevant ones (if available).
+              tti[k].add(n, 0, d_state, emps, true, c);
+              std::swap(nc, n);
+            }
+            Trace("strings-base-debug")
+                << "  congruent term : " << n << " (via " << nc << ")"
+                << std::endl;
+            d_congruent.insert(n);
+            congruentCount[k].first++;
+          }
+          else if (k == STRING_CONCAT && c.size() == 1)
+          {
+            Trace("strings-base-debug")
+                << "  congruent term by singular : " << n << " " << c[0]
+                << std::endl;
+            // singular case
+            if (!d_state.areEqual(c[0], n))
+            {
+              Node ns;
+              std::vector<Node> exp;
+              // explain empty components
+              bool foundNEmpty = false;
+              for (const Node& nnc : n)
+              {
+                if (d_state.areEqual(nnc, emps))
+                {
+                  if (nnc != emps)
+                  {
+                    exp.push_back(nnc.eqNode(emps));
+                  }
+                }
+                else
+                {
+                  Assert(!foundNEmpty);
+                  ns = nnc;
+                  foundNEmpty = true;
+                }
+              }
+              AlwaysAssert(foundNEmpty);
+              // infer the equality
+              d_im.sendInference(
+                  exp, n.eqNode(ns), InferenceId::STRINGS_I_NORM_S);
+            }
+            d_congruent.insert(n);
           }
         }
         else if (!n.isConst())
         {
-          if (d_congruent.find(n) == d_congruent.end())
+          // We mark all but the oldest variable in the equivalence class as
+          // congruent.
+          if (var.isNull())
           {
-            // We mark all but the oldest variable in the equivalence class as
-            // congruent.
-            if (var.isNull())
-            {
-              var = n;
-            }
-            else if (var > n)
-            {
-              Trace("strings-base-debug")
-                  << "  congruent variable : " << var << std::endl;
-              d_congruent.insert(var);
-              var = n;
-            }
-            else
-            {
-              Trace("strings-base-debug")
-                  << "  congruent variable : " << n << std::endl;
-              d_congruent.insert(n);
-            }
+            var = n;
+          }
+          else if (var > n)
+          {
+            Trace("strings-base-debug")
+                << "  congruent variable : " << var << std::endl;
+            d_congruent.insert(var);
+            var = n;
+          }
+          else
+          {
+            Trace("strings-base-debug")
+                << "  congruent variable : " << n << std::endl;
+            d_congruent.insert(n);
           }
         }
-        ++eqc_i;
       }
     }
     ++eqcs_i;
@@ -344,6 +354,7 @@ bool BaseSolver::processConstantLike(Node a, Node b)
       if (!d_state.areDisequal(s, t))
       {
         d_im.sendSplit(s, t, InferenceId::STRINGS_UNIT_SPLIT);
+        Trace("strings-base") << "...split" << std::endl;
       }
       else if (d_strUnitOobEq.find(eq) == d_strUnitOobEq.end())
       {
@@ -364,7 +375,17 @@ bool BaseSolver::processConstantLike(Node a, Node b)
         // s or t may be concrete integers corresponding to code
         // points of string constants, and thus are not guaranteed to
         // be terms in the equality engine.
-        d_im.sendInference(exp, exp, conc, InferenceId::STRINGS_UNIT_INJ_OOB);
+        NodeManager* nm = NodeManager::currentNM();
+        // We must send this lemma immediately, since otherwise if buffered,
+        // this lemma may be dropped if there is a fact or conflict that
+        // preempts it.
+        Node lem = nm->mkNode(IMPLIES, nm->mkAnd(exp), conc);
+        d_im.lemma(lem, InferenceId::STRINGS_UNIT_INJ_OOB);
+        Trace("strings-base") << "...oob split" << std::endl;
+      }
+      else
+      {
+        Trace("strings-base") << "...already sent oob" << std::endl;
       }
     }
     else
@@ -372,7 +393,12 @@ bool BaseSolver::processConstantLike(Node a, Node b)
       // (seq.unit x) = (seq.unit y) => x=y, or
       // (seq.unit x) = (seq.unit c) => x=c
       d_im.sendInference(exp, eq, InferenceId::STRINGS_UNIT_INJ);
+      Trace("strings-base") << "...inj seq" << std::endl;
     }
+  }
+  else
+  {
+    Trace("strings-base") << "...equal" << std::endl;
   }
   return false;
 }
@@ -589,69 +615,159 @@ void BaseSolver::checkCardinality()
   // between lengths of string terms that are disequal (DEQ-LENGTH-SP).
   std::map<TypeNode, std::vector<std::vector<Node> > > cols;
   std::map<TypeNode, std::vector<Node> > lts;
-  d_state.separateByLength(d_stringLikeEqc, cols, lts);
+  d_state.separateByLengthTyped(d_stringLikeEqc, cols, lts);
   for (std::pair<const TypeNode, std::vector<std::vector<Node> > >& c : cols)
   {
     checkCardinalityType(c.first, c.second, lts[c.first]);
   }
 }
 
+BaseSolver::CardinalityResponse BaseSolver::getCardinalityReq(
+    TypeNode tn, size_t& typeCardSize) const
+{
+  if (tn.isString())  // string-only
+  {
+    typeCardSize = d_cardSize;
+    return CardinalityResponse::REQ;
+  }
+  Assert(tn.isSequence());
+  TypeNode etn = tn.getSequenceElementType();
+  if (!d_env.isFiniteType(etn))
+  {
+    // infinite cardinality, we are fine
+    return CardinalityResponse::NO_REQ;
+  }
+  // we check the cardinality class of the type, assuming that FMF is
+  // disabled.
+  if (isCardinalityClassFinite(etn.getCardinalityClass(), false))
+  {
+    Cardinality c = etn.getCardinality();
+    bool smallCardinality = false;
+    if (!c.isLargeFinite())
+    {
+      Integer ci = c.getFiniteCardinality();
+      if (ci.fitsUnsignedInt())
+      {
+        smallCardinality = true;
+        typeCardSize = ci.toUnsignedInt();
+      }
+    }
+    if (!smallCardinality)
+    {
+      // if it is large finite, then there is no way we could have
+      // constructed that many terms in memory, hence there is nothing
+      // to do.
+      return CardinalityResponse::NO_REQ;
+    }
+  }
+  else
+  {
+    Assert(options().quantifiers.finiteModelFind);
+    // we are in a case where the cardinality of the type is infinite
+    // if not FMF, and finite given the Env's option value for FMF. In this
+    // case, FMF must be true, and the cardinality is finite and dynamic
+    // (i.e. it depends on the model's finite interpretation for uninterpreted
+    // sorts). We do not know how to handle this case, we set incomplete.
+    // TODO (cvc4-projects #23): how to handle sequence for finite types?
+    d_im.setModelUnsound(IncompleteId::SEQ_FINITE_DYNAMIC_CARDINALITY);
+    return CardinalityResponse::UNHANDLED;
+  }
+  return CardinalityResponse::REQ;
+}
+
+bool BaseSolver::isCardinalityOk(size_t typeCardSize,
+                                 Node lr,
+                                 size_t eqcCount,
+                                 size_t& lenNeed) const
+{
+  if (eqcCount <= 1)
+  {
+    return true;
+  }
+  lenNeed = 1;
+  double curr = static_cast<double>(eqcCount);
+  while (curr > typeCardSize)
+  {
+    curr = curr / static_cast<double>(typeCardSize);
+    lenNeed++;
+  }
+  Trace("strings-card")
+      << "Need length " << lenNeed
+      << " for this number of strings (where alphabet size is " << typeCardSize
+      << ")." << std::endl;
+  NodeManager* nm = NodeManager::currentNM();
+  // check if we need to split
+  bool needsSplit = true;
+  if (lr.isConst())
+  {
+    // if constant, compare
+    Node cmp = nm->mkNode(GEQ, lr, nm->mkConstInt(Rational(lenNeed)));
+    cmp = rewrite(cmp);
+    needsSplit = !cmp.getConst<bool>();
+  }
+  else
+  {
+    // find the minimimum constant that we are unknown to be disequal from, or
+    // otherwise stop if we increment such that cardinality does not apply.
+    // We always start with r=1 since by the invariants of our term registry,
+    // a term is either equal to the empty string, or has length >= 1.
+    size_t r = 1;
+    bool success = true;
+    while (r < lenNeed && success)
+    {
+      Node rr = nm->mkConstInt(Rational(r));
+      if (d_state.areDisequal(rr, lr))
+      {
+        r++;
+      }
+      else
+      {
+        success = false;
+      }
+    }
+    if (r > 0)
+    {
+      Trace("strings-card")
+          << "Symbolic length " << lr << " must be at least " << r
+          << " due to constant disequalities." << std::endl;
+    }
+    needsSplit = r < lenNeed;
+  }
+  return !needsSplit;
+}
+bool BaseSolver::isCardinalityOk(size_t typeCardSize,
+                                 Node lr,
+                                 size_t eqcCount) const
+{
+  size_t lenNeed;
+  return isCardinalityOk(typeCardSize, lr, eqcCount, lenNeed);
+}
+
 void BaseSolver::checkCardinalityType(TypeNode tn,
-                                      std::vector<std::vector<Node> >& cols,
+                                      std::vector<std::vector<Node>>& cols,
                                       std::vector<Node>& lts)
 {
   Trace("strings-card") << "Check cardinality (type " << tn << ")..."
                         << std::endl;
+
   NodeManager* nm = NodeManager::currentNM();
-  uint32_t typeCardSize;
-  if (tn.isString())  // string-only
+  size_t typeCardSize;
+  CardinalityResponse cr = getCardinalityReq(tn, typeCardSize);
+  if (cr == CardinalityResponse::NO_REQ)
   {
-    typeCardSize = d_cardSize;
+    // no requirements, return
+    return;
   }
-  else
+  else if (cr == CardinalityResponse::UNHANDLED)
   {
-    Assert(tn.isSequence());
-    TypeNode etn = tn.getSequenceElementType();
-    if (!d_env.isFiniteType(etn))
-    {
-      // infinite cardinality, we are fine
-      return;
-    }
-    // we check the cardinality class of the type, assuming that FMF is
-    // disabled.
-    if (isCardinalityClassFinite(etn.getCardinalityClass(), false))
-    {
-      Cardinality c = etn.getCardinality();
-      bool smallCardinality = false;
-      if (!c.isLargeFinite())
-      {
-        Integer ci = c.getFiniteCardinality();
-        if (ci.fitsUnsignedInt())
-        {
-          smallCardinality = true;
-          typeCardSize = ci.toUnsignedInt();
-        }
-      }
-      if (!smallCardinality)
-      {
-        // if it is large finite, then there is no way we could have
-        // constructed that many terms in memory, hence there is nothing
-        // to do.
-        return;
-      }
-    }
-    else
-    {
-      Assert(options().quantifiers.finiteModelFind);
-      // we are in a case where the cardinality of the type is infinite
-      // if not FMF, and finite given the Env's option value for FMF. In this
-      // case, FMF must be true, and the cardinality is finite and dynamic
-      // (i.e. it depends on the model's finite interpretation for uninterpreted
-      // sorts). We do not know how to handle this case, we set incomplete.
-      // TODO (cvc4-projects #23): how to handle sequence for finite types?
-      d_im.setIncomplete(IncompleteId::SEQ_FINITE_DYNAMIC_CARDINALITY);
-      return;
-    }
+    // we are in a case where the cardinality of the type is infinite
+    // if not FMF, and finite given the Env's option value for FMF. In this
+    // case, FMF must be true, and the cardinality is finite and dynamic
+    // (i.e. it depends on the model's finite interpretation for uninterpreted
+    // sorts). We do not know how to handle this case, we set incomplete.
+    // TODO (cvc4-projects #23): how to handle sequence for finite types?
+    d_im.setModelUnsound(IncompleteId::SEQ_FINITE_DYNAMIC_CARDINALITY);
+    return;
   }
   // for each collection
   for (unsigned i = 0, csize = cols.size(); i < csize; ++i)
@@ -659,64 +775,10 @@ void BaseSolver::checkCardinalityType(TypeNode tn,
     Node lr = lts[i];
     Trace("strings-card") << "Number of strings with length equal to " << lr
                           << " is " << cols[i].size() << std::endl;
-    if (cols[i].size() <= 1)
+    size_t lenNeed;
+    if (isCardinalityOk(typeCardSize, lr, cols[i].size(), lenNeed))
     {
-      // no restriction on sets in the partition of size 1
-      continue;
-    }
-    // size > c^k
-    unsigned card_need = 1;
-    double curr = static_cast<double>(cols[i].size());
-    while (curr > typeCardSize)
-    {
-      curr = curr / static_cast<double>(typeCardSize);
-      card_need++;
-    }
-    Trace("strings-card")
-        << "Need length " << card_need
-        << " for this number of strings (where alphabet size is "
-        << typeCardSize << ") given type " << tn << "." << std::endl;
-    // check if we need to split
-    bool needsSplit = true;
-    if (lr.isConst())
-    {
-      // if constant, compare
-      Node cmp = nm->mkNode(GEQ, lr, nm->mkConstInt(Rational(card_need)));
-      cmp = rewrite(cmp);
-      needsSplit = !cmp.getConst<bool>();
-    }
-    else
-    {
-      // find the minimimum constant that we are unknown to be disequal from, or
-      // otherwise stop if we increment such that cardinality does not apply.
-      // We always start with r=1 since by the invariants of our term registry,
-      // a term is either equal to the empty string, or has length >= 1.
-      unsigned r = 1;
-      bool success = true;
-      while (r < card_need && success)
-      {
-        Node rr = nm->mkConstInt(Rational(r));
-        if (d_state.areDisequal(rr, lr))
-        {
-          r++;
-        }
-        else
-        {
-          success = false;
-        }
-      }
-      if (r > 0)
-      {
-        Trace("strings-card")
-            << "Symbolic length " << lr << " must be at least " << r
-            << " due to constant disequalities." << std::endl;
-      }
-      needsSplit = r < card_need;
-    }
-
-    if (!needsSplit)
-    {
-      // don't need to split
+      // based on cardinality, we are ok
       continue;
     }
     // first, try to split to merge equivalence classes
@@ -738,14 +800,13 @@ void BaseSolver::checkCardinalityType(TypeNode tn,
       }
     }
     // otherwise, we need a length constraint
-    uint32_t int_k = static_cast<uint32_t>(card_need);
     EqcInfo* ei = d_state.getOrMakeEqcInfo(lr, true);
     Trace("strings-card") << "Previous cardinality used for " << lr << " is "
                           << ((int)ei->d_cardinalityLemK.get() - 1)
                           << std::endl;
-    if (int_k + 1 > ei->d_cardinalityLemK.get())
+    if (lenNeed + 1 > ei->d_cardinalityLemK.get())
     {
-      Node k_node = nm->mkConstInt(Rational(int_k));
+      Node k_node = nm->mkConstInt(Rational(lenNeed));
       // add cardinality lemma
       Node dist = nm->mkNode(DISTINCT, cols[i]);
       std::vector<Node> expn;
@@ -764,7 +825,7 @@ void BaseSolver::checkCardinalityType(TypeNode tn,
       Node len = nm->mkNode(STRING_LENGTH, cols[i][0]);
       Node cons = nm->mkNode(GEQ, len, k_node);
       cons = rewrite(cons);
-      ei->d_cardinalityLemK.set(int_k + 1);
+      ei->d_cardinalityLemK.set(lenNeed + 1);
       if (!cons.isConst() || !cons.getConst<bool>())
       {
         d_im.sendInference(
@@ -844,11 +905,12 @@ Node BaseSolver::TermIndex::add(TNode n,
                                 unsigned index,
                                 const SolverState& s,
                                 Node er,
+                                bool overwrite,
                                 std::vector<Node>& c)
 {
   if (index == n.getNumChildren())
   {
-    if (d_data.isNull())
+    if (overwrite || d_data.isNull())
     {
       d_data = n;
     }
@@ -859,10 +921,10 @@ Node BaseSolver::TermIndex::add(TNode n,
   // if it is empty, and doing CONCAT, ignore
   if (nir == er && n.getKind() == STRING_CONCAT)
   {
-    return add(n, index + 1, s, er, c);
+    return add(n, index + 1, s, er, overwrite, c);
   }
   c.push_back(nir);
-  return d_children[nir].add(n, index + 1, s, er, c);
+  return d_children[nir].add(n, index + 1, s, er, overwrite, c);
 }
 
 }  // namespace strings

@@ -18,9 +18,12 @@
 
 #include "theory/builtin/theory_builtin_rewriter.h"
 
+#include <cmath>
+
 #include "expr/attribute.h"
+#include "expr/elim_shadow_converter.h"
 #include "expr/node_algorithm.h"
-#include "theory/rewriter.h"
+#include "theory/builtin/generic_op.h"
 
 using namespace std;
 
@@ -28,15 +31,24 @@ namespace cvc5::internal {
 namespace theory {
 namespace builtin {
 
-Node TheoryBuiltinRewriter::blastDistinct(TNode in) {
+Node TheoryBuiltinRewriter::blastDistinct(TNode in)
+{
   Assert(in.getKind() == kind::DISTINCT);
 
-  if(in.getNumChildren() == 2) {
+  NodeManager* nm = NodeManager::currentNM();
+
+  if (in[0].getType().isCardinalityLessThan(in.getNumChildren()))
+  {
+    // Cardinality of type does not allow to find distinct values for all
+    // children of this node.
+    return nm->mkConst<bool>(false);
+  }
+
+  if (in.getNumChildren() == 2)
+  {
     // if this is the case exactly 1 != pair will be generated so the
     // AND is not required
-    Node eq = NodeManager::currentNM()->mkNode(kind::EQUAL, in[0], in[1]);
-    Node neq = NodeManager::currentNM()->mkNode(kind::NOT, eq);
-    return neq;
+    return nm->mkNode(kind::NOT, nm->mkNode(kind::EQUAL, in[0], in[1]));
   }
 
   // assume that in.getNumChildren() > 2 => diseqs.size() > 1
@@ -44,13 +56,12 @@ Node TheoryBuiltinRewriter::blastDistinct(TNode in) {
   for(TNode::iterator i = in.begin(); i != in.end(); ++i) {
     TNode::iterator j = i;
     while(++j != in.end()) {
-      Node eq = NodeManager::currentNM()->mkNode(kind::EQUAL, *i, *j);
-      Node neq = NodeManager::currentNM()->mkNode(kind::NOT, eq);
+      Node eq = nm->mkNode(kind::EQUAL, *i, *j);
+      Node neq = nm->mkNode(kind::NOT, eq);
       diseqs.push_back(neq);
     }
   }
-  Node out = NodeManager::currentNM()->mkNode(kind::AND, diseqs);
-  return out;
+  return nm->mkNode(kind::AND, diseqs);
 }
 
 RewriteResponse TheoryBuiltinRewriter::postRewrite(TNode node) {
@@ -73,8 +84,18 @@ RewriteResponse TheoryBuiltinRewriter::doRewrite(TNode node)
     }
     case kind::DISTINCT:
       return RewriteResponse(REWRITE_DONE, blastDistinct(node));
-    default: return RewriteResponse(REWRITE_DONE, node);
+    case kind::APPLY_INDEXED_SYMBOLIC:
+    {
+      Node rnode = rewriteApplyIndexedSymbolic(node);
+      if (rnode != node)
+      {
+        return RewriteResponse(REWRITE_AGAIN_FULL, rnode);
+      }
+    }
+    break;
+    default: break;
   }
+  return RewriteResponse(REWRITE_DONE, node);
 }
 
 Node TheoryBuiltinRewriter::rewriteWitness(TNode node)
@@ -110,7 +131,32 @@ Node TheoryBuiltinRewriter::rewriteWitness(TNode node)
     // (witness ((x Bool)) (not x)) ---> false
     return NodeManager::currentNM()->mkConst(false);
   }
-  return node;
+  // eliminate shadowing
+  return ElimShadowNodeConverter::eliminateShadow(node);
+}
+
+Node TheoryBuiltinRewriter::rewriteApplyIndexedSymbolic(TNode node)
+{
+  Assert(node.getNumChildren() > 1);
+  // if all arguments are constant, we return the non-symbolic version
+  // of the operator, e.g. (extract 2 1 #b0000) ---> ((_ extract 2 1) #b0000)
+  for (const Node& nc : node)
+  {
+    if (!nc.isConst())
+    {
+      return node;
+    }
+  }
+  Kind okind = node.getOperator().getConst<GenericOp>().getKind();
+  // determine how many arguments should be passed to the end function,
+  // for now, assume one
+  size_t nargs = 1;
+  std::vector<Node> indices(node.begin(), node.end() - nargs);
+  Node op = GenericOp::getOperatorForIndices(okind, indices);
+  std::vector<Node> args;
+  args.push_back(op);
+  args.insert(args.end(), node.end() - nargs, node.end());
+  return NodeManager::currentNM()->mkNode(okind, args);
 }
 
 }  // namespace builtin

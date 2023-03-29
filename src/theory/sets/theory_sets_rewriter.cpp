@@ -18,6 +18,7 @@
 #include "expr/attribute.h"
 #include "expr/dtype.h"
 #include "expr/dtype_cons.h"
+#include "expr/elim_shadow_converter.h"
 #include "options/sets_options.h"
 #include "theory/datatypes/tuple_utils.h"
 #include "theory/sets/normal_form.h"
@@ -157,12 +158,6 @@ RewriteResponse TheorySetsRewriter::postRewrite(TNode node) {
       Trace("sets-postrewrite")
           << "Sets::postRewrite returning " << node[0] << std::endl;
       return RewriteResponse(REWRITE_AGAIN, node[0]);
-    }
-    else if (node[1].getKind() == kind::SET_MINUS && node[1][0] == node[0])
-    {
-      // (setminus A (setminus A B)) = (intersection A B)
-      Node intersection = nm->mkNode(SET_INTER, node[0], node[1][1]);
-      return RewriteResponse(REWRITE_AGAIN, intersection);
     }
     else if (node[1].getKind() == kind::SET_UNIVERSE)
     {
@@ -332,6 +327,8 @@ RewriteResponse TheorySetsRewriter::postRewrite(TNode node) {
     }
     break;
   }  // kind::SET_IS_SINGLETON
+
+  case SET_COMPREHENSION: return postRewriteComprehension(node); break;
 
   case SET_MAP: return postRewriteMap(node);
   case SET_FILTER: return postRewriteFilter(node);
@@ -638,6 +635,16 @@ RewriteResponse TheorySetsRewriter::preRewrite(TNode node) {
   // could have an efficient normalizer for union here
 
   return RewriteResponse(REWRITE_DONE, node);
+}
+
+RewriteResponse TheorySetsRewriter::postRewriteComprehension(TNode n)
+{
+  Node ne = ElimShadowNodeConverter::eliminateShadow(n);
+  if (ne != n)
+  {
+    return RewriteResponse(REWRITE_AGAIN_FULL, ne);
+  }
+  return RewriteResponse(REWRITE_DONE, n);
 }
 
 RewriteResponse TheorySetsRewriter::postRewriteMap(TNode n)

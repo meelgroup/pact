@@ -123,21 +123,26 @@ class ProofCnfStream : protected EnvObj, public ProofGenerator
 
   /** Notify that current propagation inserted at lower level than current.
    *
-   * The proof of the current propagation (d_currPropagationProccessed) will be
+   * The proof of the current propagation (d_currPropagationProcessed) will be
    * saved in d_optClausesPfs, so that it is not potentially lost when the user
    * context is popped.
    */
-  void notifyCurrPropagationInsertedAtLevel(int explLevel);
+  void notifyCurrPropagationInsertedAtLevel(uint32_t explLevel);
   /** Notify that added clause was inserted at lower level than current.
    *
    * As above, the proof of this clause is saved in  d_optClausesPfs.
    */
-  void notifyClauseInsertedAtLevel(const SatClause& clause, int clLevel);
+  void notifyClauseInsertedAtLevel(const SatClause& clause, uint32_t clLevel);
 
   /** Retrieve the proofs for clauses derived from the input */
   std::vector<std::shared_ptr<ProofNode>> getInputClausesProofs();
   /** Retrieve the proofs for clauses derived from lemmas */
   std::vector<std::shared_ptr<ProofNode>> getLemmaClausesProofs();
+
+  /** Retrieve the clauses derived from the input */
+  std::vector<Node> getInputClauses();
+  /** Retrieve the clauses derived from lemmas */
+  std::vector<Node> getLemmaClauses();
 
  private:
   /**
@@ -222,7 +227,7 @@ class ProofCnfStream : protected EnvObj, public ProofGenerator
       d_blocked;
 
   /** The current propagation being processed via this class. */
-  Node d_currPropagationProccessed;
+  Node d_currPropagationProcessed;
   /** User-context-dependent map assertion level to proof nodes.
    *
    * This map is used to update the internal proof of this class when the

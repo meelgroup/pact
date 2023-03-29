@@ -19,7 +19,7 @@
 set(DEPS_PREFIX "${CMAKE_BINARY_DIR}/deps")
 # base path to installed dependencies
 set(DEPS_BASE "${CMAKE_BINARY_DIR}/deps")
-# CMake wants directories specified via INTERFACE_INCLUDE_DIRECTORIES
+# CMake wants directories specified via INTERFACE_SYSTEM_INCLUDE_DIRECTORIES
 # (and similar) to exist when target property is set.
 file(MAKE_DIRECTORY "${DEPS_BASE}/include/")
 
@@ -37,6 +37,14 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.14")
         LOG_MERGED_STDOUTERR ON
         LOG_OUTPUT_ON_FAILURE ON
     )
+endif()
+
+# On Windows, we need to have a shell interpreter to call 'configure'
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    find_program (SHELL "sh" REQUIRED)
+    message(STATUS "Found shell interpreter: ${SHELL}")
+else()
+    set(SHELL "")
 endif()
 
 macro(force_static_library)

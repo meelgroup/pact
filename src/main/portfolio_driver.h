@@ -17,13 +17,14 @@
 #ifndef CVC5__MAIN__PORTFOLIO_DRIVER_H
 #define CVC5__MAIN__PORTFOLIO_DRIVER_H
 
+#include <cvc5/cvc5.h>
+
 #include <optional>
 
-#include "api/cpp/cvc5.h"
 #include "base/check.h"
 #include "main/command_executor.h"
-#include "parser/parser.h"
-#include "smt/command.h"
+#include "parser/api/cpp/command.h"
+#include "parser/api/cpp/input_parser.h"
 
 namespace cvc5::main {
 
@@ -50,17 +51,17 @@ struct ExecutionContext
    * has been parsed.
    * Returns true if the commands have been executed without being interrupted.
    */
-  bool solveContinuous(parser::Parser* parser, bool stopAtSetLogic);
+  bool solveContinuous(parser::InputParser* parser, bool stopAtSetLogic);
 
   /**
    * Execute the given commands.
    * Returns true if the commands have been executed without being interrupted.
    */
-  bool solveCommands(std::vector<std::unique_ptr<cvc5::Command>>& cmds);
+  bool solveCommands(std::vector<std::unique_ptr<cvc5::parser::Command>>& cmds);
 
   /** Parse the remaining input from d_parser into a vector of commands */
-  std::vector<std::unique_ptr<cvc5::Command>> parseCommands(
-      parser::Parser* parser);
+  std::vector<std::unique_ptr<cvc5::parser::Command>> parseCommands(
+      parser::InputParser* parser);
 };
 
 /**
@@ -130,7 +131,7 @@ struct PortfolioStrategy
 class PortfolioDriver
 {
  public:
-  PortfolioDriver(std::unique_ptr<parser::Parser>& parser)
+  PortfolioDriver(std::unique_ptr<parser::InputParser>& parser)
       : d_parser(parser.get())
   {
   }
@@ -146,7 +147,7 @@ class PortfolioDriver
   PortfolioStrategy getStrategy(const std::string& logic);
 
   /** The parser we use to get the commands */
-  parser::Parser* d_parser;
+  parser::InputParser* d_parser;
 };
 
 }  // namespace cvc5::main

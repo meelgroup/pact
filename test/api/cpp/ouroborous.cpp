@@ -25,14 +25,15 @@
  * below, in SMT-LIBv2 form (but they're good for all languages).
  */
 
+#include <cvc5/cvc5.h>
+
 #include <cassert>
 #include <iostream>
 #include <string>
 
-#include "api/cpp/cvc5.h"
-#include "parser/parser.h"
+#include "parser/api/cpp/command.h"
+#include "parser/parser_antlr.h"
 #include "parser/parser_builder.h"
-#include "smt/command.h"
 
 using namespace cvc5;
 using namespace cvc5::internal;
@@ -95,9 +96,10 @@ std::string parse(std::string instr,
         Input::newStringInput(ilang, declarations, "internal-buffer"));
     // we don't need to execute the commands, but we DO need to parse them to
     // get the declarations
-    while (Command* c = parser->nextCommand())
+    while (std::unique_ptr<Command> c = parser->nextCommand())
     {
-      delete c;
+      // invoke the command, which may bind symbols
+      c->invoke(&solver, &symman);
     }
   assert(parser->done());  // parser should be done
   parser->setInput(Input::newStringInput(ilang, instr, "internal-buffer"));

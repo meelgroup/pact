@@ -15,7 +15,6 @@
 
 #include "theory/arith/theory_arith_type_rules.h"
 
-#include "util/bitvector.h"
 #include "util/rational.h"
 
 namespace cvc5::internal {
@@ -24,7 +23,8 @@ namespace arith {
 
 TypeNode ArithConstantTypeRule::computeType(NodeManager* nodeManager,
                                             TNode n,
-                                            bool check)
+                                            bool check,
+                                            std::ostream* errOut)
 {
   // we use different kinds for constant integers and reals
   if (n.getKind() == kind::CONST_RATIONAL)
@@ -46,20 +46,22 @@ TypeNode ArithConstantTypeRule::computeType(NodeManager* nodeManager,
 }
 
 TypeNode ArithRealAlgebraicNumberOpTypeRule::computeType(
-    NodeManager* nodeManager, TNode n, bool check)
+    NodeManager* nodeManager, TNode n, bool check, std::ostream* errOut)
 {
   return nodeManager->realType();
 }
 TypeNode ArithRealAlgebraicNumberTypeRule::computeType(NodeManager* nodeManager,
                                                        TNode n,
-                                                       bool check)
+                                                       bool check,
+                                                       std::ostream* errOut)
 {
   return nodeManager->realType();
 }
 
 TypeNode ArithOperatorTypeRule::computeType(NodeManager* nodeManager,
                                             TNode n,
-                                            bool check)
+                                            bool check,
+                                            std::ostream* errOut)
 {
   TypeNode integerType = nodeManager->integerType();
   TypeNode realType = nodeManager->realType();
@@ -105,7 +107,8 @@ TypeNode ArithOperatorTypeRule::computeType(NodeManager* nodeManager,
 
 TypeNode ArithRelationTypeRule::computeType(NodeManager* nodeManager,
                                             TNode n,
-                                            bool check)
+                                            bool check,
+                                            std::ostream* errOut)
 {
   if (check)
   {
@@ -122,7 +125,8 @@ TypeNode ArithRelationTypeRule::computeType(NodeManager* nodeManager,
 
 TypeNode RealNullaryOperatorTypeRule::computeType(NodeManager* nodeManager,
                                                   TNode n,
-                                                  bool check)
+                                                  bool check,
+                                                  std::ostream* errOut)
 {
   // for nullary operators, we only computeType for check=true, since they are
   // given TypeAttr() on creation
@@ -137,7 +141,8 @@ TypeNode RealNullaryOperatorTypeRule::computeType(NodeManager* nodeManager,
 
 TypeNode IAndOpTypeRule::computeType(NodeManager* nodeManager,
                                      TNode n,
-                                     bool check)
+                                     bool check,
+                                     std::ostream* errOut)
 {
   if (n.getKind() != kind::IAND_OP)
   {
@@ -152,7 +157,8 @@ TypeNode IAndOpTypeRule::computeType(NodeManager* nodeManager,
 
 TypeNode IAndTypeRule::computeType(NodeManager* nodeManager,
                                    TNode n,
-                                   bool check)
+                                   bool check,
+                                   std::ostream* errOut)
 {
   if (n.getKind() != kind::IAND)
   {
@@ -172,7 +178,8 @@ TypeNode IAndTypeRule::computeType(NodeManager* nodeManager,
 
 TypeNode Pow2TypeRule::computeType(NodeManager* nodeManager,
                                    TNode n,
-                                   bool check)
+                                   bool check,
+                                   std::ostream* errOut)
 {
   if (n.getKind() != kind::POW2)
   {
@@ -191,7 +198,8 @@ TypeNode Pow2TypeRule::computeType(NodeManager* nodeManager,
 
 TypeNode IndexedRootPredicateTypeRule::computeType(NodeManager* nodeManager,
                                                    TNode n,
-                                                   bool check)
+                                                   bool check,
+                                                   std::ostream* errOut)
 {
   if (check)
   {
@@ -209,42 +217,6 @@ TypeNode IndexedRootPredicateTypeRule::computeType(NodeManager* nodeManager,
     }
   }
   return nodeManager->booleanType();
-}
-
-TypeNode IntToBitVectorOpTypeRule::computeType(NodeManager* nodeManager,
-                                               TNode n,
-                                               bool check)
-{
-  Assert(n.getKind() == kind::INT_TO_BITVECTOR_OP);
-  size_t bvSize = n.getConst<IntToBitVector>();
-  if (bvSize == 0)
-  {
-    throw TypeCheckingExceptionPrivate(n, "expecting bit-width > 0");
-  }
-  return nodeManager->mkFunctionType(nodeManager->integerType(),
-                                     nodeManager->mkBitVectorType(bvSize));
-}
-
-TypeNode BitVectorConversionTypeRule::computeType(NodeManager* nodeManager,
-                                                  TNode n,
-                                                  bool check)
-{
-  if (n.getKind() == kind::BITVECTOR_TO_NAT)
-  {
-    if (check && !n[0].getType(check).isBitVector())
-    {
-      throw TypeCheckingExceptionPrivate(n, "expecting bit-vector term");
-    }
-    return nodeManager->integerType();
-  }
-
-  Assert(n.getKind() == kind::INT_TO_BITVECTOR);
-  size_t bvSize = n.getOperator().getConst<IntToBitVector>();
-  if (check && !n[0].getType(check).isInteger())
-  {
-    throw TypeCheckingExceptionPrivate(n, "expecting integer term");
-  }
-  return nodeManager->mkBitVectorType(bvSize);
 }
 
 }  // namespace arith

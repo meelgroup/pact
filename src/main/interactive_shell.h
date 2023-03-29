@@ -27,55 +27,61 @@ namespace cvc5 {
 class Solver;
 
 namespace parser {
-  class Parser;
-  class SymbolManager;
-  }  // namespace parser
+class Command;
+class InputParser;
+class SymbolManager;
+}  // namespace parser
 
-  class Command;
+namespace main {
+class CommandExecutor;
+}
 
-  namespace internal {
+namespace internal {
 
-  class InteractiveShell
-  {
-   public:
-    using CmdSeq = std::vector<std::unique_ptr<cvc5::Command>>;
+class InteractiveShell
+{
+ public:
+  InteractiveShell(main::CommandExecutor* cexec,
+                   std::istream& in,
+                   std::ostream& out,
+                   bool isInteractive = true);
 
-    InteractiveShell(Solver* solver,
-                     cvc5::parser::SymbolManager* sm,
-                     std::istream& in,
-                     std::ostream& out);
+  /**
+   * Close out the interactive session.
+   */
+  ~InteractiveShell();
 
-    /**
-     * Close out the interactive session.
-     */
-    ~InteractiveShell();
+  /**
+   * Read a list of commands from the interactive shell. This will read as
+   * many lines as necessary to parse at least one well-formed command,
+   * and execute them.
+   */
+  bool readAndExecCommands();
 
-    /**
-     * Read a list of commands from the interactive shell. This will read as
-     * many lines as necessary to parse at least one well-formed command.
-     */
-    std::optional<CmdSeq> readCommand();
+  /**
+   * Return the internal parser being used.
+   */
+  cvc5::parser::InputParser* getParser() { return d_parser.get(); }
 
-    /**
-     * Return the internal parser being used.
-     */
-    cvc5::parser::Parser* getParser() { return d_parser.get(); }
+ private:
+  main::CommandExecutor* d_cexec;
+  Solver* d_solver;
+  cvc5::parser::SymbolManager* d_symman;
+  std::istream& d_in;
+  std::ostream& d_out;
+  std::unique_ptr<cvc5::parser::InputParser> d_parser;
+  /** Only true if we are actually asking the user for input */
+  bool d_isInteractive;
+  bool d_quit;
+  bool d_usingEditline;
 
-   private:
-    Solver* d_solver;
-    std::istream& d_in;
-    std::ostream& d_out;
-    std::unique_ptr<cvc5::parser::Parser> d_parser;
-    bool d_quit;
-    bool d_usingEditline;
+  std::string d_historyFilename;
 
-    std::string d_historyFilename;
+  static const std::string INPUT_FILENAME;
+  static const unsigned s_historyLimit = 500;
+}; /* class InteractiveShell */
 
-    static const std::string INPUT_FILENAME;
-    static const unsigned s_historyLimit = 500;
-  }; /* class InteractiveShell */
-
-  }  // namespace internal
-  }  // namespace cvc5
+}  // namespace internal
+}  // namespace cvc5
 
 #endif /* CVC5__INTERACTIVE_SHELL_H */

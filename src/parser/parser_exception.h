@@ -18,12 +18,13 @@
 #ifndef CVC5__PARSER__PARSER_EXCEPTION_H
 #define CVC5__PARSER__PARSER_EXCEPTION_H
 
+#include <cvc5/cvc5_export.h>
+
 #include <iostream>
 #include <sstream>
 #include <string>
 
 #include "base/exception.h"
-#include "cvc5_export.h"
 
 namespace cvc5 {
 namespace parser {
@@ -97,6 +98,12 @@ class ParserEndOfFileException : public ParserException
   }
 
 }; /* class ParserEndOfFileException */
+
+class InputStreamException : public internal::Exception
+{
+ public:
+  InputStreamException(const std::string& msg) : Exception(msg){}
+};
 
 }  // namespace parser
 }  // namespace cvc5

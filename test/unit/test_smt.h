@@ -43,7 +43,6 @@ class TestSmt : public TestInternal
   void SetUp() override
   {
     d_nodeManager = NodeManager::currentNM();
-    d_nodeManager->init();
     d_skolemManager = d_nodeManager->getSkolemManager();
     d_slvEngine.reset(new SolverEngine);
     d_slvEngine->finishInit();
@@ -60,7 +59,6 @@ class TestSmtNoFinishInit : public TestInternal
   void SetUp() override
   {
     d_nodeManager = NodeManager::currentNM();
-    d_nodeManager->init();
     d_skolemManager = d_nodeManager->getSkolemManager();
     d_slvEngine.reset(new SolverEngine);
   }
@@ -131,7 +129,8 @@ class DummyOutputChannel : public theory::OutputChannel
   }
 
   void requirePhase(TNode, bool) override {}
-  void setIncomplete(theory::IncompleteId id) override {}
+  void setModelUnsound(theory::IncompleteId id) override {}
+  void setRefutationUnsound(theory::IncompleteId id) override {}
 
   void clear() { d_callHistory.clear(); }
 

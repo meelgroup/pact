@@ -125,7 +125,7 @@ PreprocessingPassResult LearnedRewrite::applyInternal(
       {
         continue;
       }
-      Node e = rewriteLearnedRec(l, binfer, llrw, visited);
+      Node e = rewriteLearnedRec(l, binfer, learnedLits, llrw, visited);
       if (e.isConst())
       {
         // ignore true
@@ -147,9 +147,10 @@ PreprocessingPassResult LearnedRewrite::applyInternal(
     Node prev = (*assertionsToPreprocess)[i];
     Trace("learned-rewrite-assert")
         << "LearnedRewrite: assert: " << prev << std::endl;
-    Node e = rewriteLearnedRec(prev, binfer, llrw, visited);
+    Node e = rewriteLearnedRec(prev, binfer, learnedLits, llrw, visited);
     if (e != prev)
     {
+      e = rewrite(e);
       Trace("learned-rewrite-assert")
           << ".......................: " << e << std::endl;
       assertionsToPreprocess->replace(i, e);
@@ -164,6 +165,7 @@ PreprocessingPassResult LearnedRewrite::applyInternal(
     Node llc = nm->mkAnd(llrvec);
     Trace("learned-rewrite-assert")
         << "Re-add rewritten learned conjunction: " << llc << std::endl;
+    llc = rewrite(llc);
     assertionsToPreprocess->push_back(llc);
   }
 
@@ -172,6 +174,7 @@ PreprocessingPassResult LearnedRewrite::applyInternal(
 
 Node LearnedRewrite::rewriteLearnedRec(Node n,
                                        arith::BoundInference& binfer,
+                                       const std::vector<Node>& learnedLits,
                                        std::unordered_set<Node>& lems,
                                        std::unordered_map<TNode, Node>& visited)
 {
@@ -222,7 +225,7 @@ Node LearnedRewrite::rewriteLearnedRec(Node n,
         ret = nm->mkNode(cur.getKind(), children);
       }
       // rewrite here
-      ret = rewriteLearned(ret, binfer, lems);
+      ret = rewriteLearned(ret, binfer, learnedLits, lems);
       visited[cur] = ret;
     }
   } while (!visit.empty());
@@ -233,6 +236,7 @@ Node LearnedRewrite::rewriteLearnedRec(Node n,
 
 Node LearnedRewrite::rewriteLearned(Node n,
                                     arith::BoundInference& binfer,
+                                    const std::vector<Node>& learnedLits,
                                     std::unordered_set<Node>& lems)
 {
   NodeManager* nm = NodeManager::currentNM();
@@ -265,6 +269,18 @@ Node LearnedRewrite::rewriteLearned(Node n,
       {
         isNonZeroDen = true;
       }
+      else
+      {
+        // maybe the disequality is in the learned literal set?
+        Node deq =
+            nm->mkNode(EQUAL, den, nm->mkConstInt(Rational(0))).notNode();
+        deq = rewrite(deq);
+        if (std::find(learnedLits.begin(), learnedLits.end(), deq)
+            != learnedLits.end())
+        {
+          isNonZeroDen = true;
+        }
+      }
     }
     if (isNonZeroDen)
     {
@@ -279,7 +295,7 @@ Node LearnedRewrite::rewriteLearned(Node n,
         default: Assert(false); break;
       }
       std::vector<Node> children;
-      children.insert(children.end(), n.begin(), n.end());
+      children.insert(children.end(), nr.begin(), nr.end());
       Node ret = nm->mkNode(nk, children);
       nr = returnRewriteLearned(nr, ret, LearnedRewriteId::NON_ZERO_DEN);
       nr = rewrite(nr);

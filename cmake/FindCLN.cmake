@@ -62,7 +62,7 @@ if(NOT CLN_FOUND_SYSTEM)
       ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> ./autogen.sh
     COMMAND
       ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> autoreconf -iv
-    COMMAND <SOURCE_DIR>/configure --prefix=<INSTALL_DIR> --enable-shared
+    COMMAND ${SHELL} <SOURCE_DIR>/configure --prefix=<INSTALL_DIR> --enable-shared
             --enable-static --with-pic
     BUILD_BYPRODUCTS <INSTALL_DIR>/${CMAKE_INSTALL_LIBDIR}/libcln.a
                      <INSTALL_DIR>/${CMAKE_INSTALL_LIBDIR}/libcln${CMAKE_SHARED_LIBRARY_SUFFIX}
@@ -87,7 +87,7 @@ else()
 endif()
 set_target_properties(CLN PROPERTIES
   IMPORTED_LOCATION "${CLN_LIBRARIES}"
-  INTERFACE_INCLUDE_DIRECTORIES "${CLN_INCLUDE_DIR}"
+  INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${CLN_INCLUDE_DIR}"
 )
 target_link_libraries(CLN INTERFACE GMP)
 

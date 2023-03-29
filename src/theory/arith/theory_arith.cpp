@@ -28,6 +28,7 @@
 #include "theory/ext_theory.h"
 #include "theory/rewriter.h"
 #include "theory/theory_model.h"
+#include "util/cocoa_globals.h"
 
 using namespace std;
 using namespace cvc5::internal::kind;
@@ -52,6 +53,10 @@ TheoryArith::TheoryArith(Env& env, OutputChannel& out, Valuation valuation)
       d_rewriter(d_opElim),
       d_arithModelCacheSet(false)
 {
+#ifdef CVC5_USE_COCOA
+  // must be initialized before using CoCoA.
+  initCocoaGlobalManager();
+#endif /* CVC5_USE_COCOA */
   // currently a cyclic dependency to TheoryArithPrivate
   d_astate.setParent(d_internal);
   // indicate we are using the theory state object and inference manager
@@ -240,19 +245,25 @@ void TheoryArith::postCheck(Effort level)
   {
     d_arithModelCache.clear();
     d_arithModelCacheIllTyped.clear();
-    d_arithModelCacheVars.clear();
     d_arithModelCacheSubs.clear();
     d_arithModelCacheSet = false;
     std::set<Node> termSet;
     if (d_nonlinearExtension != nullptr)
     {
       updateModelCache(termSet);
+      // Check at full effort. This may either send lemmas or otherwise
+      // buffer lemmas that we send at last call.
       d_nonlinearExtension->checkFullEffort(d_arithModelCache, termSet);
+      // if we already sent a lemma, we are done
+      if (d_im.hasSent())
+      {
+        return;
+      }
     }
     else if (d_internal->foundNonlinear())
     {
       // set incomplete
-      d_im.setIncomplete(IncompleteId::ARITH_NL_DISABLED);
+      d_im.setModelUnsound(IncompleteId::ARITH_NL_DISABLED);
     }
     // If we won't be doing a last call effort check (which implies that
     // models will be computed), we must sanity check the integer model
@@ -315,6 +326,25 @@ void TheoryArith::propagate(Effort e) {
 bool TheoryArith::collectModelInfo(TheoryModel* m,
                                    const std::set<Node>& termSet)
 {
+  // If we have a buffered lemma (from the non-linear extension), then we
+  // do not assert model values, since those values are likely incorrect.
+  // Moreover, the model does not need to satisfy the assertions, so
+  // arbitrary values can be used for arithmetic terms. We do, however,
+  // require for the sake of theory combination that the information in the
+  // equality engine is respected. Hence, we run the (default) implementation
+  // of collectModelInfo here. The buffered lemmas will be sent immediately
+  // at LAST_CALL effort (see postCheck).
+  if (d_im.hasPendingLemma())
+  {
+    if (!termSet.empty())
+    {
+      if (!m->assertEqualityEngine(d_equalityEngine, &termSet))
+      {
+        return false;
+      }
+    }
+    return true;
+  }
   // this overrides behavior to not assert equality engine
   return collectModelValues(m, termSet);
 }
@@ -337,6 +367,12 @@ bool TheoryArith::collectModelValues(TheoryModel* m,
   for (const std::pair<const Node, Node>& p : d_arithModelCache)
   {
     if (termSet.find(p.first) == termSet.end())
+    {
+      continue;
+    }
+    // do not assert non-leafs e.g. non-linear multiplication terms,
+    // transcendental functions, etc.
+    if (!Theory::isLeafOf(p.first, TheoryId::THEORY_ARITH))
     {
       continue;
     }
@@ -377,33 +413,43 @@ void TheoryArith::presolve(){
 }
 
 EqualityStatus TheoryArith::getEqualityStatus(TNode a, TNode b) {
-  Trace("arith") << "TheoryArith::getEqualityStatus(" << a << ", " << b << ")" << std::endl;
+  Trace("arith-eq-status") << "TheoryArith::getEqualityStatus(" << a << ", " << b << ")" << std::endl;
   if (a == b)
   {
+    Trace("arith-eq-status") << "...return (trivial) true" << std::endl;
     return EQUALITY_TRUE_IN_MODEL;
   }
   if (d_arithModelCache.empty())
   {
-    return d_internal->getEqualityStatus(a,b);
+    EqualityStatus es = d_internal->getEqualityStatus(a, b);
+    Trace("arith-eq-status") << "...return (from linear) " << es << std::endl;
+    return es;
   }
+  Trace("arith-eq-status") << "Evaluate under " << d_arithModelCacheSubs.d_vars << " / "
+                 << d_arithModelCacheSubs.d_subs << std::endl;
   Node diff = NodeManager::currentNM()->mkNode(Kind::SUB, a, b);
-  std::optional<bool> isZero = isExpressionZero(
-      d_env, diff, d_arithModelCacheVars, d_arithModelCacheSubs);
+  std::optional<bool> isZero =
+      isExpressionZero(d_env, diff, d_arithModelCacheSubs);
   if (isZero)
   {
-    return *isZero ? EQUALITY_TRUE_IN_MODEL : EQUALITY_FALSE_IN_MODEL;
+    EqualityStatus es =
+        *isZero ? EQUALITY_TRUE_IN_MODEL : EQUALITY_FALSE_IN_MODEL;
+    Trace("arith-eq-status") << "...return (from evaluate) " << es << std::endl;
+    return es;
   }
+  Trace("arith-eq-status") << "...return unknown" << std::endl;
   return EQUALITY_UNKNOWN;
 }
 
-Node TheoryArith::getModelValue(TNode var) {
+Node TheoryArith::getCandidateModelValue(TNode var)
+{
   var = var.getKind() == kind::TO_REAL ? var[0] : var;
   std::map<Node, Node>::iterator it = d_arithModelCache.find(var);
   if (it != d_arithModelCache.end())
   {
     return it->second;
   }
-  return d_internal->getModelValue( var );
+  return d_internal->getCandidateModelValue(var);
 }
 
 std::pair<bool, Node> TheoryArith::entailmentCheck(TNode lit)
@@ -420,7 +466,7 @@ void TheoryArith::updateModelCache(std::set<Node>& termSet)
 {
   if (!d_arithModelCacheSet)
   {
-    collectAssertedTerms(termSet);
+    collectAssertedTermsForModel(termSet);
     updateModelCacheInternal(termSet);
   }
 }
@@ -440,10 +486,12 @@ void TheoryArith::finalizeModelCache()
   for (const auto& [node, repl] : d_arithModelCache)
   {
     Assert(repl.getType().isRealOrInt());
-    if (Theory::isLeafOf(repl, TheoryId::THEORY_ARITH))
+    // we only keep the domain of the substitution that is for leafs of
+    // arithmetic; otherwise we are using the value of the abstraction of
+    // non-linear term from the linear solver, which can be incorrect.
+    if (Theory::isLeafOf(node, TheoryId::THEORY_ARITH))
     {
-      d_arithModelCacheVars.emplace_back(node);
-      d_arithModelCacheSubs.emplace_back(repl);
+      d_arithModelCacheSubs.add(node, repl);
     }
   }
 }
@@ -472,11 +520,14 @@ bool TheoryArith::sanityCheckIntegerModel()
                  "integer variable "
               << p.first << " : " << p.second << std::endl;
     // must branch and bound
-    TrustNode lem =
+    std::vector<TrustNode> lems =
         d_bab.branchIntegerVariable(p.first, p.second.getConst<Rational>());
-    if (d_im.trustedLemma(lem, InferenceId::ARITH_BB_LEMMA))
+    for (const TrustNode& lem : lems)
     {
-      addedLemma = true;
+      if (d_im.trustedLemma(lem, InferenceId::ARITH_BB_LEMMA))
+      {
+        addedLemma = true;
+      }
     }
     badAssignment = true;
   }

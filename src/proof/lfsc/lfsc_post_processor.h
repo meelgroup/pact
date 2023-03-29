@@ -64,10 +64,12 @@ class LfscProofPostprocessCallback : protected EnvObj,
   /** The term processor */
   LfscNodeConverter& d_tproc;
   /**
-   * Are we in the first call to update? This is to distinguish the top-most
-   * SCOPE.
+   * Are we in the first 2 calls to update? This is to distinguish the top-most
+   * SCOPEs.
    */
-  bool d_firstTime;
+  uint8_t d_numIgnoredScopes;
+  /** Assumptions corresponding to user-defined functions */
+  std::unordered_set<Node> d_defs;
   /** Add LFSC rule to cdp with children, args, conc */
   void addLfscRule(CDProof* cdp,
                    Node conc,
@@ -76,6 +78,16 @@ class LfscProofPostprocessCallback : protected EnvObj,
                    const std::vector<Node>& args);
   /** Make chained form of a term */
   Node mkChain(Kind k, const std::vector<Node>& children);
+  /** 
+   * Reconstruct the proof for congruence proving res with the given
+   * children, populate into cdp. Used for:
+   * (1) CONG over operator startOp != null,
+   * (2) HO_CONG, where startOp = null.
+   */
+  void updateCong(Node res,
+                  const std::vector<Node>& children,
+                  CDProof* cdp,
+                  Node startOp);
   /** Make fresh dummy predicate */
   static Node mkDummyPredicate();
 };

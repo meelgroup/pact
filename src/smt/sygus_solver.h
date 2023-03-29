@@ -101,6 +101,12 @@ class SygusSolver : protected EnvObj
   /** Add a regular sygus constraint or assumption.*/
   void assertSygusConstraint(Node n, bool isAssume);
 
+  /** @return sygus constraints .*/
+  std::vector<Node> getSygusConstraints() const;
+
+  /** @return sygus assumptions .*/
+  std::vector<Node> getSygusAssumptions() const;
+
   /**
    * Add an invariant constraint.
    *
@@ -131,7 +137,7 @@ class SygusSolver : protected EnvObj
    * in which f1...fn are the functions-to-synthesize, v1...vm are the declared
    * universal variables and F is the set of declared constraints.
    */
-  SynthResult checkSynth(Assertions& as, bool isNext);
+  SynthResult checkSynth(bool isNext);
   /**
    * Get synth solution.
    *
@@ -160,6 +166,13 @@ class SygusSolver : protected EnvObj
    * synthesis conjecture.
    */
   bool getSubsolverSynthSolutions(std::map<Node, Node>& solMap);
+
+  /**
+   * Returns true if we can trust the results of synthesis solutions for
+   * solvers that use the given options. This is false e.g. if we are using an
+   * approximate checking algorithm for solution correctness.
+   */
+  static bool canTrustSynthesisResult(const Options& opts);
 
  private:
   /**

@@ -19,18 +19,19 @@
 #include <unistd.h>
 #endif
 
+#include <cvc5/cvc5.h>
+
 #include <chrono>
 #include <cstdlib>
 #include <optional>
 #include <thread>
 
-#include "api/cpp/cvc5.h"
 #include "base/check.h"
 #include "base/exception.h"
 #include "base/output.h"
 #include "main/command_executor.h"
-#include "parser/parser.h"
-#include "smt/command.h"
+
+using namespace cvc5::parser;
 
 namespace cvc5::main {
 
@@ -40,21 +41,21 @@ enum SolveStatus : int
   STATUS_UNSOLVED = 1,
 };
 
-bool ExecutionContext::solveContinuous(parser::Parser* parser,
+bool ExecutionContext::solveContinuous(parser::InputParser* parser,
                                        bool stopAtSetLogic)
 {
-  std::unique_ptr<cvc5::Command> cmd;
+  std::unique_ptr<Command> cmd;
   bool interrupted = false;
   bool status = true;
   while (status)
   {
     if (interrupted)
     {
-      solver().getDriverOptions().out() << cvc5::CommandInterrupted();
+      solver().getDriverOptions().out() << CommandInterrupted();
       d_executor->reset();
       break;
     }
-    cmd.reset(parser->nextCommand());
+    cmd = parser->nextCommand();
     if (cmd == nullptr) break;
 
     status = d_executor->doCommand(cmd);
@@ -64,13 +65,13 @@ bool ExecutionContext::solveContinuous(parser::Parser* parser,
       break;
     }
 
-    if (dynamic_cast<cvc5::QuitCommand*>(cmd.get()) != nullptr)
+    if (dynamic_cast<QuitCommand*>(cmd.get()) != nullptr)
     {
       break;
     }
     if (stopAtSetLogic)
     {
-      auto* slc = dynamic_cast<cvc5::SetBenchmarkLogicCommand*>(cmd.get());
+      auto* slc = dynamic_cast<SetBenchmarkLogicCommand*>(cmd.get());
       if (slc != nullptr)
       {
         d_logic = slc->getLogic();
@@ -81,16 +82,16 @@ bool ExecutionContext::solveContinuous(parser::Parser* parser,
   return status;
 }
 
-std::vector<std::unique_ptr<cvc5::Command>> ExecutionContext::parseCommands(
-    parser::Parser* parser)
+std::vector<std::unique_ptr<Command>> ExecutionContext::parseCommands(
+    parser::InputParser* parser)
 {
-  std::vector<std::unique_ptr<cvc5::Command>> res;
+  std::vector<std::unique_ptr<Command>> res;
   while (true)
   {
-    std::unique_ptr<cvc5::Command> cmd(parser->nextCommand());
+    std::unique_ptr<Command> cmd(parser->nextCommand());
     if (!cmd) break;
     res.emplace_back(std::move(cmd));
-    if (dynamic_cast<cvc5::QuitCommand*>(res.back().get()) != nullptr)
+    if (dynamic_cast<QuitCommand*>(res.back().get()) != nullptr)
     {
       break;
     }
@@ -99,7 +100,7 @@ std::vector<std::unique_ptr<cvc5::Command>> ExecutionContext::parseCommands(
 }
 
 bool ExecutionContext::solveCommands(
-    std::vector<std::unique_ptr<cvc5::Command>>& cmds)
+    std::vector<std::unique_ptr<Command>>& cmds)
 {
   bool interrupted = false;
   bool status = true;
@@ -107,7 +108,7 @@ bool ExecutionContext::solveCommands(
   {
     if (interrupted)
     {
-      solver().getDriverOptions().out() << cvc5::CommandInterrupted();
+      solver().getDriverOptions().out() << CommandInterrupted();
       d_executor->reset();
       break;
     }
@@ -121,7 +122,7 @@ bool ExecutionContext::solveCommands(
       break;
     }
 
-    if (dynamic_cast<cvc5::QuitCommand*>(cmd) != nullptr)
+    if (dynamic_cast<QuitCommand*>(cmd) != nullptr)
     {
       break;
     }
@@ -238,7 +239,7 @@ class PortfolioProcessPool
   };
 
  public:
-  PortfolioProcessPool(ExecutionContext& ctx, parser::Parser* parser)
+  PortfolioProcessPool(ExecutionContext& ctx, parser::InputParser* parser)
       : d_ctx(ctx),
         d_parser(parser),
         d_maxJobs(ctx.solver().getOptionInfo("portfolio-jobs").uintValue()),
@@ -396,8 +397,7 @@ class PortfolioProcessPool
   }
 
   ExecutionContext& d_ctx;
-  // std::vector<std::unique_ptr<cvc5::Command>> d_commands;
-  parser::Parser* d_parser;
+  parser::InputParser* d_parser;
   /** All jobs. */
   std::vector<Job> d_jobs;
   /** The id of the next job to be started within d_jobs */

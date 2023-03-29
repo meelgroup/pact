@@ -197,17 +197,17 @@ void CegSingleInv::finishInit(bool syntaxRestricted)
   }
 }
 
-bool CegSingleInv::solve()
+Result CegSingleInv::solve()
 {
   if (d_single_inv.isNull())
   {
     // not using single invocation techniques
-    return false;
+    return Result(Result::UNKNOWN);
   }
   if (d_isSolved)
   {
     // already solved, probably via a call to solveTrivial.
-    return true;
+    return Result(Result::UNSAT);
   }
   Trace("sygus-si") << "Solve using single invocation..." << std::endl;
   NodeManager* nm = NodeManager::currentNM();
@@ -215,9 +215,10 @@ bool CegSingleInv::solve()
   // Mark the quantified formula with the quantifier elimination attribute to
   // ensure its structure is preserved in the query below.
   Node siq = d_single_inv;
+  Node n_attr;
   if (siq.getKind() == FORALL)
   {
-    Node n_attr = sm->mkDummySkolem(
+    n_attr = sm->mkDummySkolem(
         "qe_si",
         nm->booleanType(),
         "Auxiliary variable for qe attr for single invocation.");
@@ -239,25 +240,38 @@ bool CegSingleInv::solve()
   Result::Status res = r.getStatus();
   if (res != Result::UNSAT)
   {
-    warning() << "Warning : the single invocation solver determined the SyGuS "
-                 "conjecture"
-              << (res == Result::SAT ? " is" : " may be") << " infeasible"
-              << std::endl;
+    if (res != Result::SAT)
+    {
+      warning()
+          << "Warning : the single invocation solver determined the SyGuS "
+             "conjecture may be infeasible"
+          << std::endl;
+    }
     // conjecture is infeasible or unknown
-    return false;
+    return res;
   }
   // now, get the instantiations
   std::vector<Node> qs;
   siSmt->getInstantiatedQuantifiedFormulas(qs);
-  Assert(qs.size() <= 1);
   // track the instantiations, as solution construction is based on this
   Trace("sygus-si") << "#instantiated quantified formulas=" << qs.size()
                     << std::endl;
   d_inst.clear();
   d_instConds.clear();
-  if (!qs.empty())
+  Node q;
+  // look for the quantified formula with the appropriate attribute that we
+  // marked above.
+  for (const Node& qss : qs)
   {
-    Node q = qs[0];
+    if (qss.getNumChildren() == 3 && qss[2] == n_attr)
+    {
+      q = qss;
+      break;
+    }
+  }
+  // if the quantified formula was instantiated in the query
+  if (!q.isNull())
+  {
     Assert(q.getKind() == FORALL);
     siSmt->getInstantiationTermVectors(q, d_inst);
     Trace("sygus-si") << "#instantiations of " << q << "=" << d_inst.size()
@@ -288,7 +302,7 @@ bool CegSingleInv::solve()
   }
   // set the solution
   setSolution();
-  return true;
+  return res;
 }
 
 //TODO: use term size?
@@ -492,7 +506,7 @@ Node CegSingleInv::reconstructToSyntax(Node s,
   return sol;
 }
 
-void CegSingleInv::preregisterConjecture(Node q) { d_orig_conjecture = q; }
+void CegSingleInv::ppNotifyConjecture(Node q) { d_orig_conjecture = q; }
 
 bool CegSingleInv::solveTrivial(Node q)
 {

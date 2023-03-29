@@ -28,6 +28,7 @@
 #include "theory/quantifiers/instantiate.h"
 #include "theory/quantifiers/quantifiers_attributes.h"
 #include "theory/quantifiers/sygus/enum_value_manager.h"
+#include "theory/quantifiers/sygus/print_sygus_to_builtin.h"
 #include "theory/quantifiers/sygus/sygus_grammar_cons.h"
 #include "theory/quantifiers/sygus/sygus_pbe.h"
 #include "theory/quantifiers/sygus/synth_engine.h"
@@ -75,8 +76,7 @@ SynthConjecture::SynthConjecture(Env& env,
       d_ceg_cegisUnif(new CegisUnif(env, qs, qim, d_tds, this)),
       d_sygus_ccore(new CegisCoreConnective(env, qs, qim, d_tds, this)),
       d_master(nullptr),
-      d_repair_index(0),
-      d_guarded_stream_exc(false)
+      d_repair_index(0)
 {
   if (options().datatypes.sygusSymBreakPbe
       || options().quantifiers.sygusUnifPbe)
@@ -125,12 +125,6 @@ void SynthConjecture::assign(Node q)
   NodeManager* nm = NodeManager::currentNM();
   SkolemManager* sm = nm->getSkolemManager();
 
-  // initialize the guard
-  d_feasible_guard = sm->mkDummySkolem("G", nm->booleanType());
-  d_feasible_guard = rewrite(d_feasible_guard);
-  d_feasible_guard = d_qstate.getValuation().ensureLiteral(d_feasible_guard);
-  AlwaysAssert(!d_feasible_guard.isNull());
-
   // pre-simplify the quantified formula based on the process utility
   d_simp_quant = d_ceg_proc->preSimplify(d_quant);
 
@@ -174,6 +168,40 @@ void SynthConjecture::assign(Node q)
   Node sc = qa.d_sygusSideCondition;
   if (!sc.isNull())
   {
+    Trace("cegqi-debug") << "Side condition is: " << sc << std::endl;
+    // Immediately check if unsat, use lambda returning true for functions
+    // to synthesize.
+    std::vector<Node> vars;
+    std::vector<Node> subs;
+    for (const Node& v : q[0])
+    {
+      vars.push_back(v);
+      TypeNode vtype = v.getType();
+      Assert(vtype.isBoolean()
+             || (vtype.isFunction() && vtype.getRangeType().isBoolean()));
+      Node s = nm->mkConst(true);
+      if (vtype.isFunction())
+      {
+        std::vector<TypeNode> atypes = vtype.getArgTypes();
+        std::vector<Node> lvars;
+        for (const TypeNode& tn : atypes)
+        {
+          lvars.push_back(nm->mkBoundVar(tn));
+        }
+        s = nm->mkNode(LAMBDA, nm->mkNode(BOUND_VAR_LIST, lvars), s);
+      }
+      subs.push_back(s);
+    }
+    Node ksc =
+        sc.substitute(vars.begin(), vars.end(), subs.begin(), subs.end());
+    Result r = d_verify.verify(ksc);
+    // if infeasible, we are done
+    if (r.getStatus() == Result::UNSAT)
+    {
+      d_qim.lemma(d_quant.negate(),
+                  InferenceId::QUANTIFIERS_SYGUS_SC_INFEASIBLE);
+      return;
+    }
     // convert to deep embedding
     d_embedSideCondition = d_ceg_gc->convertToEmbedding(sc);
     Trace("cegqi") << "SynthConjecture : side condition : "
@@ -249,7 +277,7 @@ void SynthConjecture::assign(Node q)
   if (d_exampleInfer!=nullptr && !d_exampleInfer->initialize(conjForExamples, d_candidates))
   {
     // there is a contradictory example pair, the conjecture is infeasible.
-    Node infLem = d_feasible_guard.negate();
+    Node infLem = d_quant.negate();
     d_qim.lemma(infLem, InferenceId::QUANTIFIERS_SYGUS_EXAMPLE_INFER_CONTRA);
     // we don't need to continue initialization in this case
     return;
@@ -273,21 +301,10 @@ void SynthConjecture::assign(Node q)
 
   Assert(d_qreg.getQuantAttributes().isSygus(q));
 
-  // register the strategy
-  d_feasible_strategy.reset(new DecisionStrategySingleton(
-      d_env, "sygus_feasible", d_feasible_guard, d_qstate.getValuation()));
-  d_qim.getDecisionManager()->registerStrategy(
-      DecisionManager::STRAT_QUANT_SYGUS_FEASIBLE, d_feasible_strategy.get());
-  // this must be called, both to ensure that the feasible guard is
-  // decided on with true polariy, but also to ensure that output channel
-  // has been used on this call to check.
-  d_qim.requirePhase(d_feasible_guard, true);
-
   Trace("cegqi") << "...finished, single invocation = " << isSingleInvocation()
                  << std::endl;
 }
 
-Node SynthConjecture::getGuard() const { return d_feasible_guard; }
 
 bool SynthConjecture::isSingleInvocation() const
 {
@@ -296,30 +313,6 @@ bool SynthConjecture::isSingleInvocation() const
 
 bool SynthConjecture::needsCheck()
 {
-  bool value;
-  Assert(!d_feasible_guard.isNull());
-  // non or fully single invocation : look at guard only
-  if (d_qstate.getValuation().hasSatValue(d_feasible_guard, value))
-  {
-    if (!value)
-    {
-      Trace("sygus-engine-debug") << "Conjecture is infeasible." << std::endl;
-      warning() << "Warning : the SyGuS conjecture may be infeasible"
-                << std::endl;
-      return false;
-    }
-    else
-    {
-      Trace("sygus-engine-debug") << "Feasible guard " << d_feasible_guard
-                                  << " assigned true." << std::endl;
-    }
-  }
-  else
-  {
-    Trace("cegqi-warn") << "WARNING: Guard " << d_feasible_guard
-                        << " is not assigned!" << std::endl;
-    Assert(false);
-  }
   return true;
 }
 
@@ -334,11 +327,18 @@ bool SynthConjecture::doCheck()
     // We now try to solve with the single invocation solver, which may or may
     // not succeed in solving the conjecture. In either case,  we are done and
     // return true.
-    if (d_ceg_si->solve())
+    Result res = d_ceg_si->solve();
+    if (res.getStatus() == Result::UNSAT)
     {
       d_hasSolution = true;
       // the conjecture has a solution, we set incomplete
-      d_qim.setIncomplete(IncompleteId::QUANTIFIERS_SYGUS_SOLVED);
+      d_qim.setModelUnsound(IncompleteId::QUANTIFIERS_SYGUS_SOLVED);
+    }
+    else if (res.getStatus() == Result::SAT)
+    {
+      // the conjecture is definitely infeasible
+      d_qim.lemma(d_quant.negate(),
+                  InferenceId::QUANTIFIERS_SYGUS_SI_INFEASIBLE);
     }
     return true;
   }
@@ -526,7 +526,7 @@ bool SynthConjecture::doCheck()
     // since we trust sampling in this mode, we assume there is a solution here
     // and set incomplete.
     d_hasSolution = true;
-    d_qim.setIncomplete(IncompleteId::QUANTIFIERS_SYGUS_SOLVED);
+    d_qim.setModelUnsound(IncompleteId::QUANTIFIERS_SYGUS_SOLVED);
     recordSolution(candidate_values);
     return true;
   }
@@ -571,10 +571,12 @@ bool SynthConjecture::doCheck()
     // solution, without adding a counterexample point. This should only
     // happen if the quantifier free logic is undecidable.
     excludeCurrentSolution(candidate_values);
-    // We should set incomplete, since a "sat" answer should not be
+    // We should set refutation unsound, since an "unsat" answer should not be
     // interpreted as "infeasible", which would make a difference in the rare
     // case where e.g. we had a finite grammar and exhausted the grammar.
-    d_qim.setIncomplete(IncompleteId::QUANTIFIERS_SYGUS_NO_VERIFY);
+    // In other words, we are unsound by excluding the current candidate
+    // which we could not verify whether or not it was a solution.
+    d_qim.setRefutationUnsound(IncompleteId::QUANTIFIERS_SYGUS_NO_VERIFY);
     return false;
   }
   // otherwise we are unsat, and we will process the solution below
@@ -596,31 +598,31 @@ bool SynthConjecture::doCheck()
     return false;
   }
   // We set incomplete and terminate with unknown.
-  d_qim.setIncomplete(IncompleteId::QUANTIFIERS_SYGUS_SOLVED);
+  d_qim.setModelUnsound(IncompleteId::QUANTIFIERS_SYGUS_SOLVED);
   return true;
 }
 
-bool SynthConjecture::checkSideCondition(const std::vector<Node>& cvals) const
+bool SynthConjecture::checkSideCondition(const std::vector<Node>& cvals)
 {
-  if (!d_embedSideCondition.isNull())
+  if (d_embedSideCondition.isNull())
   {
-    Node sc = d_embedSideCondition;
-    if (!cvals.empty())
-    {
-      sc = sc.substitute(
-        d_candidates.begin(), d_candidates.end(), cvals.begin(), cvals.end());
-    }
-    Trace("sygus-engine") << "Check side condition..." << std::endl;
-    Trace("cegqi-debug") << "Check side condition : " << sc << std::endl;
-    sc = rewrite(sc);
-    Result r = checkWithSubsolver(sc, d_env);
-    Trace("cegqi-debug") << "...got side condition : " << r << std::endl;
-    if (r == Result::UNSAT)
-    {
-      return false;
-    }
-    Trace("sygus-engine") << "...passed side condition" << std::endl;
+    return true;
   }
+  Node sc = d_embedSideCondition;
+  if (!cvals.empty())
+  {
+    sc = sc.substitute(
+        d_candidates.begin(), d_candidates.end(), cvals.begin(), cvals.end());
+  }
+  Trace("sygus-engine") << "Check side condition..." << std::endl;
+  Result r = d_verify.verify(sc);
+  Trace("sygus-engine") << "...result of check side condition : " << r
+                        << std::endl;
+  if (r == Result::UNSAT)
+  {
+    return false;
+  }
+  Trace("sygus-engine") << "...passed side condition" << std::endl;
   return true;
 }
 
@@ -667,9 +669,9 @@ bool SynthConjecture::processCounterexample(const std::vector<Node>& skModel)
   return addedLemma;
 }
 
-void SynthConjecture::preregisterConjecture(Node q)
+void SynthConjecture::ppNotifyConjecture(Node q)
 {
-  d_ceg_si->preregisterConjecture(q);
+  d_ceg_si->ppNotifyConjecture(q);
 }
 
 bool SynthConjecture::getEnumeratedValues(std::vector<Node>& n,
@@ -789,11 +791,6 @@ void SynthConjecture::excludeCurrentSolution(const std::vector<Node>& values)
   }
   if (!exp.empty())
   {
-    if (!d_guarded_stream_exc)
-    {
-      d_guarded_stream_exc = true;
-      exp.push_back(d_feasible_guard);
-    }
     Node exc_lem = exp.size() == 1
                        ? exp[0]
                        : NodeManager::currentNM()->mkNode(kind::AND, exp);
@@ -993,7 +990,7 @@ bool SynthConjecture::getSynthSolutionsInternal(std::vector<Node>& sols,
   {
     svals = d_solutionValues.back();
   }
-  for (unsigned i = 0, size = d_embed_quant[0].getNumChildren(); i < size; i++)
+  for (size_t i = 0, size = d_embed_quant[0].getNumChildren(); i < size; i++)
   {
     Node prog = d_embed_quant[0][i];
     Trace("cegqi-debug") << "  get solution for " << prog << std::endl;
@@ -1059,6 +1056,22 @@ bool SynthConjecture::getSynthSolutionsInternal(std::vector<Node>& sols,
     }
     d_sol.push_back(sol);
     d_solStatus.push_back(status);
+    // Note that this assumes that the name of the resulting datatype matches
+    // the original name from the user. This is usually the case, although
+    // if grammar normalization is used, it is not. If it is not, the names
+    // in the annotation will not match, but no failures will occur.
+    // Also note that we do not print annotations if the solution was not
+    // reconstructed to the grammar (status != 1), which is the case if the
+    // grammar is ignored by single invocation above. On the other hand,
+    // annotations will be printed correctly if the solution was successfully
+    // reconstructed by single invocation (status == 1).
+    if (isOutputOn(OutputTag::SYGUS_SOL_GTERM) && status == 1)
+    {
+      Node psol = getPrintableSygusToBuiltin(sol);
+      d_env.output(OutputTag::SYGUS_SOL_GTERM)
+          << "(sygus-sol-gterm (" << d_quant[0][i] << " " << psol << "))"
+          << std::endl;
+    }
   }
   sols.insert(sols.end(), d_sol.begin(), d_sol.end());
   statuses.insert(statuses.end(), d_solStatus.begin(), d_solStatus.end());

@@ -21,6 +21,7 @@
 #include "context/cdlist.h"
 #include "expr/node.h"
 #include "proof/proof_node.h"
+#include "smt/env_obj.h"
 #include "theory/quantifiers/instantiation_list.h"
 
 namespace cvc5::internal {
@@ -33,10 +34,10 @@ class Assertions;
  * This class is responsible for managing the proof output of SolverEngine, as
  * well as setting up the global proof checker and proof node manager.
  */
-class UnsatCoreManager
+class UnsatCoreManager : protected EnvObj
 {
  public:
-  UnsatCoreManager() {}
+  UnsatCoreManager(Env& env);
   ~UnsatCoreManager(){};
 
   /** Gets the unsat core.
@@ -47,12 +48,16 @@ class UnsatCoreManager
    * containing all assertions.
    *
    * The unsat core is stored in the core argument.
+   *
+   * @param isInternal Whether this call was made internally (not by the user).
+   * This impacts whether the unsat core is post-processed.
    */
   void getUnsatCore(std::shared_ptr<ProofNode> pfn,
-                    Assertions& as,
-                    std::vector<Node>& core);
+                    const Assertions& as,
+                    std::vector<Node>& core,
+                    bool isInternal);
 
-  /** Gets the relevant instaniations for the refutation.
+  /** Gets the relevant instaniations and skolemizations for the refutation.
    *
    * The relevant instantiations are all the conclusions of proof nodes of type
    * INSTANTIATE that occur in pfn.
@@ -61,11 +66,21 @@ class UnsatCoreManager
    * premises of INSTANTIATE proof nodes to its instantiations, which are a
    * matrix with each row corresponding to the terms with which the respective
    * quantified formula is instiated.
+   *
+   * Similiarly, for SKOLEMIZE, it populates the mapping sks will all
+   * skolemization steps in the proof.
    */
-  void getRelevantInstantiations(std::shared_ptr<ProofNode> pfn,
-                                 std::map<Node, InstantiationList>& insts,
-                                 bool getDebugInfo = false);
+  void getRelevantQuantTermVectors(std::shared_ptr<ProofNode> pfn,
+                                   std::map<Node, InstantiationList>& insts,
+                                   std::map<Node, std::vector<Node>>& sks,
+                                   bool getDebugInfo = false);
 
+ private:
+  /**
+   * Reduce an unsatisfiable core to make it minimal.
+   */
+  std::vector<Node> reduceUnsatCore(const Assertions& as,
+                                    const std::vector<Node>& core);
 }; /* class UnsatCoreManager */
 
 }  // namespace smt

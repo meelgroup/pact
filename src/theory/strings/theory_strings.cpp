@@ -22,6 +22,7 @@
 #include "options/smt_options.h"
 #include "options/strings_options.h"
 #include "options/theory_options.h"
+#include "printer/smt2/smt2_printer.h"
 #include "smt/logic_exception.h"
 #include "theory/decision_manager.h"
 #include "theory/ext_theory.h"
@@ -78,8 +79,15 @@ TheoryStrings::TheoryStrings(Env& env, OutputChannel& out, Valuation valuation)
                 d_csolver,
                 d_extTheory,
                 d_statistics),
-      d_asolver(
-          env, d_state, d_im, d_termReg, d_csolver, d_esolver, d_extTheory),
+      d_psolver(env, d_state, d_im, d_termReg, d_bsolver),
+      d_asolver(env,
+                d_state,
+                d_im,
+                d_termReg,
+                d_bsolver,
+                d_csolver,
+                d_esolver,
+                d_extTheory),
       d_rsolver(
           env, d_state, d_im, d_termReg, d_csolver, d_esolver, d_statistics),
       d_regexp_elim(
@@ -87,6 +95,7 @@ TheoryStrings::TheoryStrings(Env& env, OutputChannel& out, Valuation valuation)
           options().strings.regExpElim == options::RegExpElimMode::AGG,
           userContext()),
       d_stringsFmf(env, valuation, d_termReg),
+      d_mcd(env, d_state, d_csolver),
       d_strat(d_env),
       d_absModelCounter(0),
       d_strGapModelCounter(0),
@@ -176,6 +185,11 @@ std::string TheoryStrings::identify() const
 
 bool TheoryStrings::propagateLit(TNode literal)
 {
+  if (d_state.hasPendingConflict())
+  {
+    // pending conflict also implies we are done
+    return false;
+  }
   return d_im.propagateLit(literal);
 }
 
@@ -229,15 +243,22 @@ bool TheoryStrings::collectModelValues(TheoryModel* m,
   std::map<TypeNode, std::unordered_set<Node>> repSet;
   std::unordered_set<TypeNode> toProcess;
   // Generate model
+  ModelCons* mc = d_state.getModelConstructor();
+  Assert(mc != nullptr);
   // get the relevant string equivalence classes
-  for (const Node& s : termSet)
+  std::vector<Node> auxEq;
+  mc->getStringRepresentativesFrom(termSet, toProcess, repSet, auxEq);
+  // assert the auxiliary equalities
+  for (const Node& aeq : auxEq)
   {
-    TypeNode tn = s.getType();
-    if (tn.isStringLike())
+    Assert(aeq.getKind() == EQUAL);
+    Trace("strings-model") << "-> auxiliary equality " << aeq << std::endl;
+    if (!m->assertEquality(aeq[0], aeq[1], true))
     {
-      Node r = d_state.getRepresentative(s);
-      repSet[tn].insert(r);
-      toProcess.insert(tn);
+      Unreachable() << "TheoryStrings::collectModelValues: Inconsistent "
+                       "auxiliary equality"
+                    << std::endl;
+      return false;
     }
   }
 
@@ -292,14 +313,13 @@ bool TheoryStrings::collectModelInfoType(
   toProcess.erase(tn);
 
   SEnumLenSet sels;
+  ModelCons* mc = d_state.getModelConstructor();
   // get partition of strings of equal lengths for the representatives of the
   // current type
-  std::map<TypeNode, std::vector<std::vector<Node> > > colT;
-  std::map<TypeNode, std::vector<Node> > ltsT;
+  std::vector<std::vector<Node>> col;
+  std::vector<Node> lts;
   const std::vector<Node> repVec(repSet.at(tn).begin(), repSet.at(tn).end());
-  d_state.separateByLength(repVec, colT, ltsT);
-  const std::vector<std::vector<Node> >& col = colT[tn];
-  const std::vector<Node>& lts = ltsT[tn];
+  mc->separateByLength(repVec, col, lts);
   // indices in col that have lengths that are too big to represent
   std::unordered_set<size_t> oobIndices;
 
@@ -313,15 +333,7 @@ bool TheoryStrings::collectModelInfoType(
   {
     Trace("strings-model") << "Checking length for { " << col[i];
     Trace("strings-model") << " } (length is " << lts[i] << ")" << std::endl;
-    Node len_value;
-    if( lts[i].isConst() ) {
-      len_value = lts[i];
-    }
-    else if (!lts[i].isNull())
-    {
-      // get the model value for lts[i]
-      len_value = d_valuation.getModelValue(lts[i]);
-    }
+    Node len_value = lts[i];
     if (len_value.isNull())
     {
       lts_values.push_back(Node::null());
@@ -370,9 +382,9 @@ bool TheoryStrings::collectModelInfoType(
     bool wasOob = (oobIndices.find(i) != oobIndices.end());
     std::vector< Node > pure_eq;
     Node lenValue = lts_values[i];
-    Trace("strings-model") << "Considering (" << col[i].size()
-                           << ") equivalence classes for length " << lenValue
-                           << std::endl;
+    Trace("strings-model") << "Considering " << col[i].size()
+                           << " equivalence classes of type " << tn
+                           << " for length " << lenValue << std::endl;
     for (const Node& eqc : col[i])
     {
       Trace("strings-model") << "- eqc: " << eqc << std::endl;
@@ -409,10 +421,12 @@ bool TheoryStrings::collectModelInfoType(
         Trace("strings-model") << "-> constant" << std::endl;
         continue;
       }
-      NormalForm& nfe = d_csolver.getNormalForm(eqc);
-      if (nfe.d_nf.size() != 1)
+      std::vector<Node> nfe = mc->getNormalForm(eqc);
+      if (nfe.size() != 1)
       {
         // will be assigned via a concatenation of normal form eqc
+        Trace("strings-model")
+            << "  -> will be assigned by normal form " << nfe << std::endl;
         continue;
       }
       // check if the length is too big to represent
@@ -452,26 +466,26 @@ bool TheoryStrings::collectModelInfoType(
       }
       // is it an equivalence class with a seq.unit term?
       Node assignedValue;
-      if (nfe.d_nf[0].getKind() == STRING_UNIT)
+      if (nfe[0].getKind() == STRING_UNIT)
       {
         // str.unit is applied to integers, where we are guaranteed the model
         // exists. We preempitively get the model value here, so that we
         // avoid repeated model values for strings.
-        Node val = d_valuation.getModelValue(nfe.d_nf[0][0]);
+        Node val = d_valuation.getCandidateModelValue(nfe[0][0]);
         assignedValue = utils::mkUnit(eqc.getType(), val);
         assignedValue = rewrite(assignedValue);
         Trace("strings-model")
             << "-> assign via str.unit: " << assignedValue << std::endl;
       }
-      else if (nfe.d_nf[0].getKind() == SEQ_UNIT)
+      else if (nfe[0].getKind() == SEQ_UNIT)
       {
-        if (nfe.d_nf[0][0].getType().isStringLike())
+        if (nfe[0][0].getType().isStringLike())
         {
           // By this point, we should have assigned model values for the
           // elements of this sequence type because of the check in the
           // beginning of this method
-          Node argVal = m->getRepresentative(nfe.d_nf[0][0]);
-          Assert(nfe.d_nf[0].getKind() == SEQ_UNIT);
+          Node argVal = m->getRepresentative(nfe[0][0]);
+          Assert(nfe[0].getKind() == SEQ_UNIT);
           assignedValue = utils::mkUnit(eqc.getType(), argVal);
         }
         else
@@ -480,7 +494,7 @@ bool TheoryStrings::collectModelInfoType(
           // value of this term, since it might not be available yet, as
           // it may belong to a theory that has not built its model yet.
           // Hence, we assign a (non-constant) skeleton (seq.unit argVal).
-          assignedValue = nfe.d_nf[0];
+          assignedValue = nfe[0];
         }
         assignedValue = rewrite(assignedValue);
         Trace("strings-model")
@@ -495,7 +509,7 @@ bool TheoryStrings::collectModelInfoType(
         {
           // its value must be equal to its code
           Node ct = nm->mkNode(kind::STRING_TO_CODE, eip->d_codeTerm.get());
-          Node ctv = d_valuation.getModelValue(ct);
+          Node ctv = d_valuation.getCandidateModelValue(ct);
           unsigned cvalue =
               ctv.getConst<Rational>().getNumerator().toUnsignedInt();
           Trace("strings-model") << "(code: " << cvalue << ") ";
@@ -511,30 +525,32 @@ bool TheoryStrings::collectModelInfoType(
         TypeNode eqcType = eqc.getType();
         // determine skeleton based on the write model, if it exists
         const std::map<Node, Node>& writeModel = d_asolver.getWriteModel(eqc);
-        Trace("strings-model")
-            << "write model size " << writeModel.size() << std::endl;
         if (!writeModel.empty())
         {
-          Trace("strings-model")
-              << "Write model for " << tn << " is:" << std::endl;
+          Trace("strings-model") << "Write model for " << eqc << " (type " << tn
+                                 << ") is:" << std::endl;
           std::vector<std::pair<Node, Node>> writes;
           std::unordered_set<Node> usedWrites;
           for (const std::pair<const Node, Node>& w : writeModel)
           {
-            Trace("strings-model")
-                << "  " << w.first << " -> " << w.second << std::endl;
-            Node ivalue = d_valuation.getModelValue(w.first);
+            Trace("strings-model") << "  " << w.first << " -> " << w.second;
+            Node ivalue = d_valuation.getCandidateModelValue(w.first);
             Assert(ivalue.isConst() && ivalue.getType().isInteger());
             // ignore if out of bounds
             Rational irat = ivalue.getConst<Rational>();
             if (irat.sgn() == -1 || irat >= lenValue.getConst<Rational>())
             {
+              Trace("strings-model")
+                  << " (index " << irat << " out of bounds)" << std::endl;
               continue;
             }
             if (usedWrites.find(ivalue) != usedWrites.end())
             {
+              Trace("strings-model")
+                  << " (index " << irat << " already written)" << std::endl;
               continue;
             }
+            Trace("strings-model") << " (index " << irat << ")" << std::endl;
             usedWrites.insert(ivalue);
             Node wsunit = utils::mkUnit(eqcType, w.second);
             writes.emplace_back(ivalue, wsunit);
@@ -703,55 +719,57 @@ bool TheoryStrings::collectModelInfoType(
   //step 4 : assign constants to all other equivalence classes
   for (const Node& rn : repVec)
   {
-    if (processed.find(rn) == processed.end())
+    if (processed.find(rn) != processed.end())
     {
-      NormalForm& nf = d_csolver.getNormalForm(rn);
-      if (TraceIsOn("strings-model"))
+      continue;
+    }
+
+    std::vector<Node> nf = mc->getNormalForm(rn);
+    if (TraceIsOn("strings-model"))
+    {
+      Trace("strings-model")
+          << "Construct model for " << rn << " based on normal form ";
+      for (unsigned j = 0, size = nf.size(); j < size; j++)
       {
-        Trace("strings-model")
-            << "Construct model for " << rn << " based on normal form ";
-        for (unsigned j = 0, size = nf.d_nf.size(); j < size; j++)
+        Node n = nf[j];
+        if (j > 0)
         {
-          Node n = nf.d_nf[j];
-          if (j > 0)
-          {
-            Trace("strings-model") << " ++ ";
-          }
-          Trace("strings-model") << n;
-          Node r = d_state.getRepresentative(n);
-          if (!r.isConst() && processed.find(r) == processed.end())
-          {
-            Trace("strings-model") << "(UNPROCESSED)";
-          }
+          Trace("strings-model") << " ++ ";
+        }
+        Trace("strings-model") << n;
+        Node r = d_state.getRepresentative(n);
+        if (!r.isConst() && processed.find(r) == processed.end())
+        {
+          Trace("strings-model") << "(UNPROCESSED)";
         }
       }
-      Trace("strings-model") << std::endl;
-      std::vector< Node > nc;
-      for (const Node& n : nf.d_nf)
-      {
-        Node r = d_state.getRepresentative(n);
-        Assert(r.isConst() || processed.find(r) != processed.end());
-        nc.push_back(r.isConst() ? r : processed[r]);
-      }
-      Node cc = d_termReg.mkNConcat(nc, tn);
-      Trace("strings-model")
-          << "*** Determined constant " << cc << " for " << rn << std::endl;
-      processed[rn] = cc;
-      if (!m->assertEquality(rn, cc, true))
-      {
-        // this should never happen due to the model soundness argument
-        // for strings
-        Unreachable() << "TheoryStrings::collectModelInfoType: "
-                         "Inconsistent equality (unprocessed eqc)"
-                      << std::endl;
-        return false;
-      }
-      else if (!cc.isConst())
-      {
-        // the value may be specified by seq.unit components, ensure this
-        // is marked as the skeleton for constructing values in this class.
-        m->assertSkeleton(cc);
-      }
+    }
+    Trace("strings-model") << std::endl;
+    std::vector<Node> nc;
+    for (const Node& n : nf)
+    {
+      Node r = d_state.getRepresentative(n);
+      Assert(r.isConst() || processed.find(r) != processed.end());
+      nc.push_back(r.isConst() ? r : processed[r]);
+    }
+    Node cc = d_termReg.mkNConcat(nc, tn);
+    Trace("strings-model") << "*** Determined constant " << cc << " for " << rn
+                           << std::endl;
+    processed[rn] = cc;
+    if (!m->assertEquality(rn, cc, true))
+    {
+      // this should never happen due to the model soundness argument
+      // for strings
+      Unreachable() << "TheoryStrings::collectModelInfoType: "
+                       "Inconsistent equality (unprocessed eqc)"
+                    << std::endl;
+      return false;
+    }
+    else if (!cc.isConst())
+    {
+      // the value may be specified by seq.unit components, ensure this
+      // is marked as the skeleton for constructing values in this class.
+      m->assertSkeleton(cc);
     }
   }
   //Trace("strings-model") << "String Model : Assigned." << std::endl;
@@ -794,16 +812,15 @@ Node TheoryStrings::mkSkeletonFromBase(Node r,
   std::vector<Node> skChildren;
   if (tn.isSequence())
   {
-    std::vector<Node> cacheVals;
-    cacheVals.push_back(r);
+    std::vector<Node> cacheVals(2);
+    cacheVals[0] = r;
     TypeNode etn = tn.getSequenceElementType();
     for (size_t i = currIndex; i < nextIndex; i++)
     {
-      cacheVals.push_back(nm->mkConstInt(Rational(currIndex)));
+      cacheVals[1] = nm->mkConstInt(Rational(i));
       Node kv = sm->mkSkolemFunction(
           SkolemFunId::SEQ_MODEL_BASE_ELEMENT, etn, cacheVals);
       skChildren.push_back(utils::mkUnit(tn, kv));
-      cacheVals.pop_back();
     }
   }
   else
@@ -852,7 +869,7 @@ bool TheoryStrings::preNotifyFact(
       // effort in e.g. BaseSolver::init.
       for (const Node& t : atom)
       {
-        d_termReg.registerTerm(t, 0);
+        d_termReg.registerTerm(t);
       }
     }
     // store disequalities between strings that occur as literals
@@ -887,6 +904,11 @@ void TheoryStrings::notifyFact(TNode atom,
     d_im.processConflict(iiPendingConf);
     return;
   }
+  // if not doing eager registration, we now register all subterms of the atom
+  if (!options().strings.stringEagerReg)
+  {
+    d_termReg.registerSubterms(atom);
+  }
   Trace("strings-pending-debug") << "  Now collect terms" << std::endl;
   Trace("strings-pending-debug") << "  Finished collect terms" << std::endl;
 }
@@ -905,12 +927,18 @@ void TheoryStrings::postCheck(Effort e)
     {
       Trace("strings-eqc") << debugPrintStringsEqc() << std::endl;
     }
+    // Start the full effort check. This will compute the relevant term set,
+    // which is independent of the loop below, which adds internal facts.
+    d_termReg.notifyStartFullEffortCheck();
     ++(d_statistics.d_checkRuns);
     bool sentLemma = false;
     bool hadPending = false;
-    Trace("strings-check") << "Full effort check..." << std::endl;
+    Trace("strings-check") << "Check at effort " << e << "..." << std::endl;
     do{
       d_im.reset();
+      // assume the default model constructor in case we answer sat after this
+      // check
+      d_state.setModelConstructor(&d_mcd);
       ++(d_statistics.d_strategyRuns);
       Trace("strings-check") << "  * Run strategy..." << std::endl;
       runStrategy(e);
@@ -941,6 +969,8 @@ void TheoryStrings::postCheck(Effort e)
       // repeat if we did not add a lemma or conflict, and we had pending
       // facts or lemmas.
     } while (!d_state.isInConflict() && !sentLemma && hadPending);
+    // End the full effort check.
+    d_termReg.notifyEndFullEffortCheck();
   }
   Trace("strings-check") << "Theory of strings, done check : " << e << std::endl;
   Assert(!d_im.hasPendingFact());
@@ -975,8 +1005,6 @@ void TheoryStrings::eqNotifyNewClass(TNode t){
   if (k == STRING_LENGTH || k == STRING_TO_CODE)
   {
     Trace("strings-debug") << "New length eqc : " << t << std::endl;
-    //we care about the length of this string
-    d_termReg.registerTerm(t[0], 1);
 
     eq::EqualityEngine* ee = d_state.getEqualityEngine();
     Node r = ee->getRepresentative(t[0]);
@@ -1030,7 +1058,8 @@ void TheoryStrings::eqNotifyMerge(TNode t1, TNode t2)
   }
 }
 
-void TheoryStrings::computeCareGraph(){
+void TheoryStrings::computeCareGraph()
+{
   //computing the care graph here is probably still necessary, due to operators that take non-string arguments  TODO: verify
   Trace("strings-cg") << "TheoryStrings::computeCareGraph(): Build term indices..." << std::endl;
   // Term index for each (type, operator) pair. We require the operator here
@@ -1069,120 +1098,13 @@ void TheoryStrings::computeCareGraph(){
   }
 }
 
-void TheoryStrings::checkRegisterTermsPreNormalForm()
+void TheoryStrings::notifySharedTerm(TNode n)
 {
-  const std::vector<Node>& seqc = d_bsolver.getStringLikeEqc();
-  for (const Node& eqc : seqc)
+  // a new shared term causes new terms to be relevant, hence we register
+  // them if not doing eager registration.
+  if (!options().strings.stringEagerReg)
   {
-    eq::EqClassIterator eqc_i = eq::EqClassIterator(eqc, d_equalityEngine);
-    while (!eqc_i.isFinished())
-    {
-      Node n = (*eqc_i);
-      if (!d_bsolver.isCongruent(n))
-      {
-        d_termReg.registerTerm(n, 2);
-      }
-      ++eqc_i;
-    }
-  }
-}
-
-void TheoryStrings::checkCodes()
-{
-  // ensure that lemmas regarding str.code been added for each constant string
-  // of length one
-  if (d_termReg.hasStringCode())
-  {
-    NodeManager* nm = NodeManager::currentNM();
-    // str.code applied to the code term for each equivalence class that has a
-    // code term but is not a constant
-    std::vector<Node> nconst_codes;
-    // str.code applied to the proxy variables for each equivalence classes that
-    // are constants of size one
-    std::vector<Node> const_codes;
-    const std::vector<Node>& seqc = d_bsolver.getStringLikeEqc();
-    for (const Node& eqc : seqc)
-    {
-      if (!eqc.getType().isString())
-      {
-        continue;
-      }
-
-      NormalForm& nfe = d_csolver.getNormalForm(eqc);
-      if (nfe.d_nf.size() == 1 && nfe.d_nf[0].isConst())
-      {
-        Node c = nfe.d_nf[0];
-        Trace("strings-code-debug") << "Get proxy variable for " << c
-                                    << std::endl;
-        Node cc = nm->mkNode(kind::STRING_TO_CODE, c);
-        cc = rewrite(cc);
-        Assert(cc.isConst());
-        Node cp = d_termReg.ensureProxyVariableFor(c);
-        Node vc = nm->mkNode(STRING_TO_CODE, cp);
-        if (!d_state.areEqual(cc, vc))
-        {
-          std::vector<Node> emptyVec;
-          d_im.sendInference(emptyVec, cc.eqNode(vc), InferenceId::STRINGS_CODE_PROXY);
-        }
-        const_codes.push_back(vc);
-      }
-      else
-      {
-        EqcInfo* ei = d_state.getOrMakeEqcInfo(eqc, false);
-        if (ei && !ei->d_codeTerm.get().isNull())
-        {
-          Node vc = nm->mkNode(kind::STRING_TO_CODE, ei->d_codeTerm.get());
-          nconst_codes.push_back(vc);
-        }
-      }
-    }
-    if (d_im.hasProcessed())
-    {
-      return;
-    }
-    // now, ensure that str.code is injective
-    std::vector<Node> cmps;
-    cmps.insert(cmps.end(), const_codes.rbegin(), const_codes.rend());
-    cmps.insert(cmps.end(), nconst_codes.rbegin(), nconst_codes.rend());
-    for (unsigned i = 0, num_ncc = nconst_codes.size(); i < num_ncc; i++)
-    {
-      Node c1 = nconst_codes[i];
-      cmps.pop_back();
-      for (const Node& c2 : cmps)
-      {
-        Trace("strings-code-debug")
-            << "Compare codes : " << c1 << " " << c2 << std::endl;
-        if (!d_state.areDisequal(c1, c2) && !d_state.areEqual(c1, d_neg_one))
-        {
-          Node eq_no = c1.eqNode(d_neg_one);
-          Node deq = c1.eqNode(c2).negate();
-          Node eqn = c1[0].eqNode(c2[0]);
-          // str.code(x)==-1 V str.code(x)!=str.code(y) V x==y
-          Node inj_lem = nm->mkNode(kind::OR, eq_no, deq, eqn);
-          deq = rewrite(deq);
-          d_im.addPendingPhaseRequirement(deq, false);
-          std::vector<Node> emptyVec;
-          d_im.sendInference(emptyVec, inj_lem, InferenceId::STRINGS_CODE_INJ);
-        }
-      }
-    }
-  }
-}
-
-void TheoryStrings::checkRegisterTermsNormalForms()
-{
-  const std::vector<Node>& seqc = d_bsolver.getStringLikeEqc();
-  for (const Node& eqc : seqc)
-  {
-    NormalForm& nfi = d_csolver.getNormalForm(eqc);
-    // check if there is a length term for this equivalence class
-    EqcInfo* ei = d_state.getOrMakeEqcInfo(eqc, false);
-    Node lt = ei ? ei->d_lengthTerm : Node::null();
-    if (lt.isNull())
-    {
-      Node c = d_termReg.mkNConcat(nfi.d_nf, eqc.getType());
-      d_termReg.registerTerm(c, 3);
-    }
+    d_termReg.registerSubterms(n);
   }
 }
 
@@ -1192,6 +1114,12 @@ TrustNode TheoryStrings::ppRewrite(TNode atom, std::vector<SkolemLemma>& lems)
   Kind ak = atom.getKind();
   if (ak == EQUAL)
   {
+    if (atom[0].getType().isRegExp())
+    {
+      std::stringstream ss;
+      ss << "Equality between regular expressions is not supported";
+      throw LogicException(ss.str());
+    }
     // always apply aggressive equality rewrites here
     Node ret = d_rewriter.rewriteEqualityExt(atom);
     if (ret != atom)
@@ -1216,14 +1144,47 @@ TrustNode TheoryStrings::ppRewrite(TNode atom, std::vector<SkolemLemma>& lems)
     lems.push_back(SkolemLemma(tnk, k));
     return TrustNode::mkTrustRewrite(atom, k, nullptr);
   }
-  else if (ak == STRING_TO_CODE && options().strings.stringsCodeElim)
+  if (options().strings.stringsCodeElim)
   {
-    // str.to_code(t) ---> ite(str.len(t) = 1, str.nth(t,0), -1)
+    if (ak == STRING_TO_CODE)
+    {
+      // If we are eliminating code, convert it to nth.
+      // str.to_code(t) ---> ite(str.len(t) = 1, str.nth(t,0), -1)
+      NodeManager* nm = NodeManager::currentNM();
+      Node t = atom[0];
+      Node cond = nm->mkNode(EQUAL, nm->mkNode(STRING_LENGTH, t), d_one);
+      Node ret =
+          nm->mkNode(ITE, cond, nm->mkNode(SEQ_NTH, t, d_zero), d_neg_one);
+      return TrustNode::mkTrustRewrite(atom, ret, nullptr);
+    }
+  }
+  else if (ak == SEQ_NTH && atom[0].getType().isString())
+  {
+    // If we are not eliminating code, we are eliminating nth (over strings);
+    // convert it to code.
+    // (seq.nth x n) ---> (str.to_code (str.substr x n 1))
     NodeManager* nm = NodeManager::currentNM();
-    Node t = atom[0];
-    Node cond = nm->mkNode(EQUAL, nm->mkNode(STRING_LENGTH, t), d_one);
-    Node ret = nm->mkNode(ITE, cond, nm->mkNode(SEQ_NTH, t, d_zero), d_neg_one);
+    Node ret = nm->mkNode(
+        STRING_TO_CODE,
+        nm->mkNode(
+            STRING_SUBSTR, atom[0], atom[1], nm->mkConstInt(Rational(1))));
     return TrustNode::mkTrustRewrite(atom, ret, nullptr);
+  }
+  else if (ak == REGEXP_RANGE)
+  {
+    for (const Node& nc : atom)
+    {
+      if (!nc.isConst())
+      {
+        throw LogicException(
+            "expecting a constant string term in regexp range");
+      }
+      if (nc.getConst<String>().size() != 1)
+      {
+        throw LogicException(
+            "expecting a single constant string term in regexp range");
+      }
+    }
   }
 
   TrustNode ret;
@@ -1241,11 +1202,56 @@ TrustNode TheoryStrings::ppRewrite(TNode atom, std::vector<SkolemLemma>& lems)
       atomRet = ret.getNode();
     }
   }
+  if (options().strings.stringFMF)
+  {
+    // Our decision strategy will minimize the length of this term if it is a
+    // variable but not an internally generated Skolem, or a term that does
+    // not belong to this theory.
+    if (atom.isVar() ? !d_termReg.getSkolemCache()->isSkolem(atom)
+                     : kindToTheoryId(ak) != THEORY_STRINGS
+                           && atom.getType().isStringLike())
+    {
+      d_termReg.preRegisterInputVar(atom);
+      Trace("strings-preregister") << "input variable: " << atom << std::endl;
+    }
+  }
+
+  // all characters of constants should fall in the alphabet
+  if (atom.isConst() && atom.getType().isString())
+  {
+    uint32_t alphaCard = d_termReg.getAlphabetCardinality();
+    std::vector<unsigned> vec = atom.getConst<String>().getVec();
+    for (unsigned u : vec)
+    {
+      if (u >= alphaCard)
+      {
+        std::stringstream ss;
+        ss << "Characters in string \"" << atom
+           << "\" are outside of the given alphabet.";
+        throw LogicException(ss.str());
+      }
+    }
+  }
+  if (!options().strings.stringExp)
+  {
+    if (ak == STRING_INDEXOF || ak == STRING_INDEXOF_RE || ak == STRING_ITOS
+        || ak == STRING_STOI || ak == STRING_REPLACE || ak == STRING_SUBSTR
+        || ak == STRING_REPLACE_ALL || ak == SEQ_NTH || ak == STRING_REPLACE_RE
+        || ak == STRING_REPLACE_RE_ALL || ak == STRING_CONTAINS
+        || ak == STRING_LEQ || ak == STRING_TO_LOWER || ak == STRING_TO_UPPER
+        || ak == STRING_REV || ak == STRING_UPDATE)
+    {
+      std::stringstream ss;
+      ss << "Term of kind " << printer::smt2::Smt2Printer::smtKindStringOf(atom)
+         << " not supported in default mode, try --strings-exp";
+      throw LogicException(ss.str());
+    }
+  }
   return ret;
 }
 
 /** run the given inference step */
-void TheoryStrings::runInferStep(InferStep s, int effort)
+void TheoryStrings::runInferStep(InferStep s, Theory::Effort e, int effort)
 {
   Trace("strings-process") << "Run " << s;
   if (effort > 0)
@@ -1260,17 +1266,23 @@ void TheoryStrings::runInferStep(InferStep s, int effort)
     case CHECK_EXTF_EVAL: d_esolver.checkExtfEval(effort); break;
     case CHECK_CYCLES: d_csolver.checkCycles(); break;
     case CHECK_FLAT_FORMS: d_csolver.checkFlatForms(); break;
-    case CHECK_REGISTER_TERMS_PRE_NF: checkRegisterTermsPreNormalForm(); break;
+    case CHECK_NORMAL_FORMS_EQ_PROP: d_csolver.checkNormalFormsEqProp(); break;
     case CHECK_NORMAL_FORMS_EQ: d_csolver.checkNormalFormsEq(); break;
     case CHECK_NORMAL_FORMS_DEQ: d_csolver.checkNormalFormsDeq(); break;
-    case CHECK_CODES: checkCodes(); break;
+    case CHECK_CODES: d_psolver.checkCodes(); break;
     case CHECK_LENGTH_EQC: d_csolver.checkLengthsEqc(); break;
     case CHECK_SEQUENCES_ARRAY_CONCAT: d_asolver.checkArrayConcat(); break;
     case CHECK_SEQUENCES_ARRAY: d_asolver.checkArray(); break;
     case CHECK_SEQUENCES_ARRAY_EAGER: d_asolver.checkArrayEager(); break;
-    case CHECK_REGISTER_TERMS_NF: checkRegisterTermsNormalForms(); break;
-    case CHECK_EXTF_REDUCTION: d_esolver.checkExtfReductions(effort); break;
-    case CHECK_MEMBERSHIP: d_rsolver.checkMemberships(effort); break;
+    case CHECK_REGISTER_TERMS_NF:
+      d_csolver.checkRegisterTermsNormalForms();
+      break;
+    case CHECK_EXTF_REDUCTION_EAGER:
+      d_esolver.checkExtfReductionsEager();
+      break;
+    case CHECK_EXTF_REDUCTION: d_esolver.checkExtfReductions(e); break;
+    case CHECK_MEMBERSHIP_EAGER: d_rsolver.checkMembershipsEager(); break;
+    case CHECK_MEMBERSHIP: d_rsolver.checkMemberships(e); break;
     case CHECK_CARDINALITY: d_bsolver.checkCardinality(); break;
     default: Unreachable(); break;
   }
@@ -1291,8 +1303,10 @@ void TheoryStrings::runStrategy(Theory::Effort e)
   while (it != stepEnd)
   {
     InferStep curr = it->first;
+    int effort = it->second;
     if (curr == BREAK)
     {
+      // if we have a pending inference or lemma, we will process it
       if (d_im.hasProcessed())
       {
         break;
@@ -1300,7 +1314,7 @@ void TheoryStrings::runStrategy(Theory::Effort e)
     }
     else
     {
-      runInferStep(curr, it->second);
+      runInferStep(curr, e, effort);
       if (d_state.isInConflict())
       {
         break;
