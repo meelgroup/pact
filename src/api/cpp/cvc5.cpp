@@ -6279,15 +6279,13 @@ uint64_t Solver::boundedCount(uint64_t bound,
     res = d_slv->checkSat();
     if (res.isSat())
     {
-      std::cout << d_slv->getModel(Sort::sortVectorToTypeNodes(sorts),
-                                   Term::termVectorToNodes(vars)) << std::endl;
+//       std::cout << d_slv->getModel(Sort::sortVectorToTypeNodes(sorts),
+//                                    Term::termVectorToNodes(vars)) << std::endl;
 
-      d_slv->blockModel(cvc5::modes::BlockModelsMode::LITERALS);
-      std::cout << "c Blocking this model" << std::endl;
-
+      d_slv->blockModel(cvc5::modes::BlockModelsMode::VALUES);
       count++;
     }
-    if (count % 1 == 0)
+    if (count % 10 == 0)
       std::cout << "[BoundSMT] Count Now = " << count << std::endl;
   } while (res.isSat() && (count < bound || bound < 0));
   return count;
