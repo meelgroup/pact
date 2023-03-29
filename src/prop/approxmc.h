@@ -41,7 +41,6 @@ class ApproxMCounter : public SatSolver
   ClauseId addXorClause(SatClause& clause, bool rhs, bool removable) override;
 
   SatVariable newVar(bool isTheoryAtom = false,
-                     bool preRegister = false,
                      bool canErase = true) override;
 
   SatVariable trueVar() override;
