@@ -698,6 +698,43 @@ QuantifiersEngine* SolverEngine::getAvailableQuantifiersEngine(
   return qe;
 }
 
+Result SolverEngine::boundedSat(const std::vector<Node>& assumptions, uint64_t bound)
+{
+  std::cout << "Entering in boundedSat" << std::endl;
+  uint64_t count = 0;
+  Result res;
+  std::vector<Node> hashes_and_modelblocks;
+  for(auto &hash : assumptions)
+    hashes_and_modelblocks.push_back(hash);
+  do
+  {
+    res = checkSat(hashes_and_modelblocks);
+    if (res.getStatus() == Result::SAT)
+    {
+      finishInit();
+
+      TheoryModel* m = getAvailableModel("block model");
+
+      std::vector<Node> eassertsProc = getSubstitutedAssertions();
+      ModelBlocker mb(*d_env.get());
+      Node eblocker = mb.getModelBlocker(eassertsProc, m,
+                                         cvc5::modes::BlockModelsMode::VALUES);
+      Node n = d_absValues->substituteAbstractValues(eblocker);
+      hashes_and_modelblocks.push_back(n);
+      count++;
+    }
+    if (count % 10 == 0)
+      std::cout << "[BoundSMT] Count Now = " << count << std::endl;
+  } while (res.getStatus() == Result::SAT && count < bound );
+
+  if(count < bound)
+    return Result::UNSAT;
+
+  // TODO : remove all blocked models
+  return Result::SAT;
+}
+
+
 Result SolverEngine::checkSat()
 {
   Node nullNode;

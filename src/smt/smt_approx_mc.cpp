@@ -21,9 +21,13 @@
 
 #include <math.h>
 #include <cassert>
+#include "solver_engine.h"
+#include "expr/node.h"
+#include "expr/node_converter.h"
+
+using std::vector;
 
 namespace cvc5::internal {
-namespace smt {
 
 uint32_t SmtApproxMc::getPivot()
 {
@@ -37,6 +41,11 @@ uint32_t SmtApproxMc::getNumIter()
 {
   double delta = 2.5;
   return int(ceil(25*log(3/delta)));
+}
+
+SmtApproxMc::SmtApproxMc(SolverEngine* slv)
+{
+  this->d_slv = slv;
 }
 
 uint64_t SmtApproxMc::smtApproxMcMain()
@@ -56,7 +65,11 @@ uint64_t SmtApproxMc::smtApproxMcMain()
 
 uint64_t SmtApproxMc::smtApproxMcCore()
 {
-
+  std::cout << "Entering in SMTApproxMCCore" << std::endl;
+  vector<Node> hashes;
+  uint64_t bound = 10073;
+  d_slv->boundedSat(hashes, bound);
+  return bound;
 }
 
 template<class T>
@@ -72,7 +85,6 @@ inline T SmtApproxMc::findMedian(vector<T>& numList)
 }
 
 
-}  // namespace smt
 }  // namespace cvc5::internal
 
 

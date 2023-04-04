@@ -24,14 +24,15 @@
 using std::vector;
 
 namespace cvc5::internal {
-namespace smt {
 
 class SmtApproxMc;
 
 class SmtApproxMc
 {
+ private:
+   SolverEngine* d_slv;
  public:
-  SmtApproxMc();
+  SmtApproxMc(SolverEngine* slv);
   virtual ~SmtApproxMc(){}
 
   uint64_t smtApproxMcMain();
@@ -42,6 +43,5 @@ class SmtApproxMc
 
 };
 
-}  // namespace smt
 }  // namespace cvc5::internal
 #endif

@@ -66,6 +66,7 @@
 #include "proof/unsat_core.h"
 #include "smt/env.h"
 #include "smt/model.h"
+#include "smt/smt_approx_mc.h"
 #include "smt/smt_mode.h"
 #include "smt/solver_engine.h"
 #include "theory/datatypes/project_op.h"
@@ -6635,9 +6636,11 @@ Result Solver::modelCount(const std::vector<Sort>& sorts,
   }
   else
   {
-    std::cout << "c getting approximate count via SMTApproxMC [TODO]"
+    std::cout << "c getting approximate count via SMTApproxMC"
               << std::endl;
-    // TODO Start SMTApproxMC module with d_slv from here
+    internal::SmtApproxMc* smap;
+    smap = new internal::SmtApproxMc(d_slv.get());
+    count = smap->smtApproxMcMain();
   }
 
   std::cout << "s mc " << count << std::endl;
