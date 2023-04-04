@@ -48,6 +48,18 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
   this->d_slv = slv;
 }
 
+vector<Node> SmtApproxMc::generateNHashes(uint32_t numHashes)
+{
+  Node oneHash;
+  vector<Node> hashes;
+  for(uint32_t num = 0; num < numHashes; ++num)
+  {
+    hashes.push_back(oneHash);
+  }
+  return hashes;
+}
+
+
 uint64_t SmtApproxMc::smtApproxMcMain()
 {
  uint32_t numIters;
@@ -67,6 +79,7 @@ uint64_t SmtApproxMc::smtApproxMcCore()
 {
   std::cout << "Entering in SMTApproxMCCore" << std::endl;
   vector<Node> hashes;
+  hashes = generateNHashes(1);
   uint64_t bound = 10073;
   d_slv->boundedSat(hashes, bound);
   return bound;

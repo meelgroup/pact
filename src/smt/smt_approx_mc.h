@@ -35,6 +35,7 @@ class SmtApproxMc
   SmtApproxMc(SolverEngine* slv);
   virtual ~SmtApproxMc(){}
 
+  vector<Node> generateNHashes(uint32_t numHashes);
   uint64_t smtApproxMcMain();
   uint64_t smtApproxMcCore();
   uint32_t getPivot();
