@@ -31,10 +31,13 @@ class SmtApproxMc
 {
  private:
    SolverEngine* d_slv;
+   uint32_t width, num_bv;
+   vector<uint32_t> primes;
  public:
   SmtApproxMc(SolverEngine* slv);
   virtual ~SmtApproxMc(){}
 
+  void populatePrimes();
   vector<Node> generateNHashes(uint32_t numHashes);
   uint64_t smtApproxMcMain();
   uint64_t smtApproxMcCore();

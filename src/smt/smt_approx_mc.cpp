@@ -29,6 +29,14 @@ using std::vector;
 
 namespace cvc5::internal {
 
+void SmtApproxMc::populatePrimes()
+{
+  //TODO better way to do this
+  primes.push_back(5);
+  primes.push_back(7);
+  primes.push_back(13);
+}
+
 uint32_t SmtApproxMc::getPivot()
 {
   double epsilon = 0.8;
@@ -46,7 +54,20 @@ uint32_t SmtApproxMc::getNumIter()
 SmtApproxMc::SmtApproxMc(SolverEngine* slv)
 {
   this->d_slv = slv;
+  width = 5;
+  num_bv = 3;
+  // TODO set logic -- add FF to logic
+  // TODO get width, num_bv variables correctly
+  // TODO list all bitvectors in use
 }
+
+void getbitvectors()
+{
+  TheoryEngine* te = d_smtSolver->getTheoryEngine();
+  logicInfo();
+
+}
+
 
 vector<Node> SmtApproxMc::generateNHashes(uint32_t numHashes)
 {
@@ -54,7 +75,20 @@ vector<Node> SmtApproxMc::generateNHashes(uint32_t numHashes)
   vector<Node> hashes;
   for(uint32_t num = 0; num < numHashes; ++num)
   {
+    cvc5::Solver* solver = d_slv->getSolver();
+    Assert(primes.size() >= num);
+    std::string modulus = std::to_string(primes[num]);
+    Sort f5 = solver->mkFiniteFieldSort(modulus);
+    Term a = solver->mkConst(f5, "a");
+    Term b = solver->mkConst(f5, "b");
+    Term z = solver->mkFiniteFieldElem("0", f5);
     hashes.push_back(oneHash);
+    Term inv =
+    solver->mkTerm(EQUAL,
+                  {solver->mkTerm(FINITE_FIELD_ADD,
+                    {solver->mkTerm(FINITE_FIELD_MULT, {a, b}),
+                                 solver->mkFiniteFieldElem("-1", f5)}),
+                  z});
   }
   return hashes;
 }

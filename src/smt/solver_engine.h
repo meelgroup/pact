@@ -833,6 +833,11 @@ class CVC5_EXPORT SolverEngine
    * Get the enviornment from this solver engine.
    */
   Env& getEnv();
+  /**
+   * Get the solver engine. //TODO (arijit) might not be necessary
+   */
+  cvc5::Solver* getSolver() { return d_solver; }
+
   /* .......................................................................  */
  private:
   /* .......................................................................  */
