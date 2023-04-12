@@ -4198,6 +4198,7 @@ class CVC5_EXPORT Solver
    * @return The list of asserted formulas.
    */
   std::vector<Term> getAssertions() const;
+  std::vector<Term> getVars(std::vector<cvc5::internal::Node> vars);
 
   /**
    * Get info from the solver.

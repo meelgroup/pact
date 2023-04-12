@@ -6938,6 +6938,19 @@ std::vector<Term> Solver::getAssertions(void) const
   CVC5_API_TRY_CATCH_END;
 }
 
+std::vector<Term> Solver::getVars(std::vector<internal::Node> vars) const
+{
+  CVC5_API_TRY_CATCH_BEGIN;
+  //////// all checks before this line
+
+  /* Can not use
+   *   return std::vector<Term>(assertions.begin(), assertions.end());
+   * here since constructor is private */
+  return Term::nodeVectorToTerms(d_nm, vars);
+  ////////
+  CVC5_API_TRY_CATCH_END;
+}
+
 std::string Solver::getInfo(const std::string& flag) const
 {
   CVC5_API_TRY_CATCH_BEGIN;

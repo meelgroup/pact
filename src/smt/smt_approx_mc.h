@@ -21,6 +21,8 @@
 #ifndef CVC5__SMT__APXMC_H
 #define CVC5__SMT__APXMC_H
 
+#include "expr/node_algorithm.h"
+
 using std::vector;
 
 namespace cvc5::internal {
@@ -31,14 +33,18 @@ class SmtApproxMc
 {
  private:
    SolverEngine* d_slv;
-   uint32_t width, num_bv;
+   uint32_t width = 0, num_bv = 0;
    vector<uint32_t> primes;
+  std::unordered_set<Node> bvnodes_in_formula;
+  std::vector<Node> bvnode_in_formula_v;
+  std::vector<Term> bvs_in_formula;
+
  public:
   SmtApproxMc(SolverEngine* slv);
   virtual ~SmtApproxMc(){}
 
   void populatePrimes();
-  vector<Node> generateNHashes(uint32_t numHashes);
+  vector<Term> generateNHashes(uint32_t numHashes);
   uint64_t smtApproxMcMain();
   uint64_t smtApproxMcCore();
   uint32_t getPivot();

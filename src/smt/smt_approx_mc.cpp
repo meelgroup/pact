@@ -54,41 +54,49 @@ uint32_t SmtApproxMc::getNumIter()
 SmtApproxMc::SmtApproxMc(SolverEngine* slv)
 {
   this->d_slv = slv;
-  width = 5;
-  num_bv = 3;
+  std::vector<Node> tlAsserts = slv->getAssertions();
+  for (Node n : tlAsserts)
+  {
+    expr::getSymbols(n, bvnodes_in_formula);
+  }
+  num_bv = bvs_in_formula.size();
+  for (Node n : bvnodes_in_formula)
+  {
+    uint32_t bv_width = n.getType().getBitVectorSize();
+    if ( bv_width > width) width = bv_width;
+    bvnode_in_formula_v.push_back(n);
+  }
+  bvs_in_formula = slv->getSolver()->getVars(bvnode_in_formula_v);
+  std::cout  << "[SMTApproxMC] There are " <<  num_bv <<  " bitvectors, max width = " << width <<  std::endl;
+
   // TODO set logic -- add FF to logic
-  // TODO get width, num_bv variables correctly
-  // TODO list all bitvectors in use
-}
-
-void getbitvectors()
-{
-  TheoryEngine* te = d_smtSolver->getTheoryEngine();
-  logicInfo();
-
 }
 
 
-vector<Node> SmtApproxMc::generateNHashes(uint32_t numHashes)
+
+vector<Term> SmtApproxMc::generateNHashes(uint32_t numHashes)
 {
-  Node oneHash;
-  vector<Node> hashes;
+  vector<Term> hashes;
+  cvc5::Solver* solver = d_slv->getSolver();
+  Assert(primes.size() >= numHashes);
   for(uint32_t num = 0; num < numHashes; ++num)
   {
-    cvc5::Solver* solver = d_slv->getSolver();
-    Assert(primes.size() >= num);
     std::string modulus = std::to_string(primes[num]);
-    Sort f5 = solver->mkFiniteFieldSort(modulus);
-    Term a = solver->mkConst(f5, "a");
-    Term b = solver->mkConst(f5, "b");
-    Term z = solver->mkFiniteFieldElem("0", f5);
-    hashes.push_back(oneHash);
-    Term inv =
-    solver->mkTerm(EQUAL,
+    for(cvc5::Term x : bvs_in_formula){
+      Sort f5 = solver->mkFiniteFieldSort(modulus);
+      Term inv =
+        solver->mkTerm(EQUAL,
                   {solver->mkTerm(FINITE_FIELD_ADD,
-                    {solver->mkTerm(FINITE_FIELD_MULT, {a, b}),
+                    {solver->mkTerm(FINITE_FIELD_MULT, {x, x}),
                                  solver->mkFiniteFieldElem("-1", f5)}),
-                  z});
+                  x});
+        hashes.push_back(inv);
+    }
+
+/*    Term a = solver->mkConst(f5, "a");
+    Term b = solver->mkConst(f5, "b");
+    Term z = solver->mkFiniteFieldElem("0", f5);*/
+
   }
   return hashes;
 }
