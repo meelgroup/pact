@@ -7535,6 +7535,11 @@ void Solver::pop(uint32_t nscopes) const
   CVC5_API_TRY_CATCH_END;
 }
 
+std::vector<internal::Node> Solver::termVectorToNodes1(std::vector<Term> term)
+{
+  return Term::termVectorToNodes(term);
+}
+
 Term Solver::getInterpolant(const Term& conj) const
 {
   CVC5_API_TRY_CATCH_BEGIN;

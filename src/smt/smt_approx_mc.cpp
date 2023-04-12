@@ -23,6 +23,7 @@
 #include <cassert>
 #include "solver_engine.h"
 #include "expr/node.h"
+#include "util/random.h"
 #include "expr/node_converter.h"
 
 using std::vector;
@@ -59,7 +60,7 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
   {
     expr::getSymbols(n, bvnodes_in_formula);
   }
-  num_bv = bvs_in_formula.size();
+  num_bv = bvnodes_in_formula.size();
   for (Node n : bvnodes_in_formula)
   {
     uint32_t bv_width = n.getType().getBitVectorSize();
@@ -74,31 +75,34 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
 
 
 
-vector<Term> SmtApproxMc::generateNHashes(uint32_t numHashes)
+vector<Node> SmtApproxMc::generateNHashes(uint32_t numHashes)
 {
   vector<Term> hashes;
+  vector<Node> hashes_nodes;
   cvc5::Solver* solver = d_slv->getSolver();
-  Assert(primes.size() >= numHashes);
+  Assert(primes.size() >= numHashes) << "Prime size = " << primes.size() << " < numHashes = " << numHashes;
   for(uint32_t num = 0; num < numHashes; ++num)
   {
     std::string modulus = std::to_string(primes[num]);
     for(cvc5::Term x : bvs_in_formula){
+      std::string a = std::to_string(Random::getRandom().pick(1, primes[num] - 1));
+      std::string b = std::to_string(Random::getRandom().pick(1, primes[num] - 1));
+      std::string c = std::to_string(Random::getRandom().pick(1, primes[num] - 1));
+
       Sort f5 = solver->mkFiniteFieldSort(modulus);
+
       Term inv =
         solver->mkTerm(EQUAL,
                   {solver->mkTerm(FINITE_FIELD_ADD,
-                    {solver->mkTerm(FINITE_FIELD_MULT, {x, x}),
-                                 solver->mkFiniteFieldElem("-1", f5)}),
-                  x});
+                    {solver->mkTerm(FINITE_FIELD_MULT,
+                      {solver->mkFiniteFieldElem(a, f5), x}),
+                                 solver->mkFiniteFieldElem(b, f5)}),
+                  solver->mkFiniteFieldElem(c, f5)});
         hashes.push_back(inv);
     }
-
-/*    Term a = solver->mkConst(f5, "a");
-    Term b = solver->mkConst(f5, "b");
-    Term z = solver->mkFiniteFieldElem("0", f5);*/
-
+    hashes_nodes = solver->termVectorToNodes1(hashes);
   }
-  return hashes;
+  return hashes_nodes;
 }
 
 
@@ -107,7 +111,11 @@ uint64_t SmtApproxMc::smtApproxMcMain()
  uint32_t numIters;
  numIters = getNumIter();
  uint64_t countThisIter;
+
+
  vector<uint64_t> numList;
+ populatePrimes();
+
  for (uint32_t iter = 0 ; iter <= numIters; ++iter )
  {
    countThisIter = smtApproxMcCore();
@@ -121,7 +129,7 @@ uint64_t SmtApproxMc::smtApproxMcCore()
 {
   std::cout << "Entering in SMTApproxMCCore" << std::endl;
   vector<Node> hashes;
-  hashes = generateNHashes(1);
+  hashes = generateNHashes(2);
   uint64_t bound = 10073;
   d_slv->boundedSat(hashes, bound);
   return bound;

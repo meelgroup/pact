@@ -4198,7 +4198,7 @@ class CVC5_EXPORT Solver
    * @return The list of asserted formulas.
    */
   std::vector<Term> getAssertions() const;
-  std::vector<Term> getVars(std::vector<cvc5::internal::Node> vars);
+  std::vector<Term> getVars(std::vector<cvc5::internal::Node> vars) const;
 
   /**
    * Get info from the solver.
@@ -4607,6 +4607,8 @@ class CVC5_EXPORT Solver
    * @param nscopes The number of levels to pop.
    */
   void pop(uint32_t nscopes = 1) const;
+
+  std::vector<internal::Node> termVectorToNodes1(std::vector<Term> term);
 
   /**
    * Get an interpolant

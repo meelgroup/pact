@@ -730,7 +730,6 @@ Result SolverEngine::boundedSat(const std::vector<Node>& assumptions, uint64_t b
   if(count < bound)
     return Result::UNSAT;
 
-  // TODO : remove all blocked models
   return Result::SAT;
 }
 
