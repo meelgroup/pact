@@ -20,6 +20,7 @@
 #include <sstream>
 #include <string>
 
+#include <cvc5/cvc5.h>
 #include "base/check.h"
 #include "base/configuration.h"
 #include "expr/kind.h"
@@ -450,10 +451,11 @@ void LogicInfo::setLogicString(std::string logicString)
         enableTheory(THEORY_BV);
         p += 2;
       }
-      if (!strncmp(p, "FF", 2))
+      if (!strncmp(p, "FF", 2) || true ) //TODO (AS) change it to (getOption("smtapxmc") == "true")
       {
+        std::cout  << "[SMTApproxMC] Enabling theory of FF" <<  std::endl;
         enableTheory(THEORY_FF);
-        p += 2;
+        // p += 2; TODO (AS) also uncomment this
       }
       if(!strncmp(p, "FP", 2)) {
         enableTheory(THEORY_FP);

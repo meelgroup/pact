@@ -69,8 +69,6 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
   }
   bvs_in_formula = slv->getSolver()->getVars(bvnode_in_formula_v);
   std::cout  << "[SMTApproxMC] There are " <<  num_bv <<  " bitvectors, max width = " << width <<  std::endl;
-
-  // TODO set logic -- add FF to logic
 }
 
 
@@ -84,21 +82,31 @@ vector<Node> SmtApproxMc::generateNHashes(uint32_t numHashes)
   for(uint32_t num = 0; num < numHashes; ++num)
   {
     std::string modulus = std::to_string(primes[num]);
-    for(cvc5::Term x : bvs_in_formula){
-      std::string a = std::to_string(Random::getRandom().pick(1, primes[num] - 1));
-      std::string b = std::to_string(Random::getRandom().pick(1, primes[num] - 1));
-      std::string c = std::to_string(Random::getRandom().pick(1, primes[num] - 1));
+    for(cvc5::Term x : bvs_in_formula)
+    {
+      std::string a_s = std::to_string(Random::getRandom().pick(1, primes[num] - 1));
+      std::string b_s = std::to_string(Random::getRandom().pick(1, primes[num] - 1));
+      std::string c_s = std::to_string(Random::getRandom().pick(1, primes[num] - 1));
 
       Sort f5 = solver->mkFiniteFieldSort(modulus);
 
-      Term inv =
-        solver->mkTerm(EQUAL,
-                  {solver->mkTerm(FINITE_FIELD_ADD,
-                    {solver->mkTerm(FINITE_FIELD_MULT,
-                      {solver->mkFiniteFieldElem(a, f5), x}),
-                                 solver->mkFiniteFieldElem(b, f5)}),
-                  solver->mkFiniteFieldElem(c, f5)});
-        hashes.push_back(inv);
+      Term a = solver->mkFiniteFieldElem(a_s, f5);
+      Term b = solver->mkFiniteFieldElem(b_s, f5);
+      Term c = solver->mkFiniteFieldElem(c_s, f5);
+
+      std::cout  << "[SMTApproxMC] Terms a (" << a_s << ") b (" << b_s << ") c (" << c_s <<  ") generated" <<  std::endl;
+
+      Term ax = solver->mkTerm(FINITE_FIELD_MULT, {a, b});
+      std::cout  << "[SMTApproxMC] Terms ax generated" <<  std::endl;
+
+      Term axpb = solver->mkTerm(FINITE_FIELD_ADD, {ax, b});
+      std::cout  << "[SMTApproxMC] Terms axpb generated" <<  std::endl;
+
+      Term hash_const = solver->mkTerm(EQUAL, {axpb,c});
+
+      std::cout  << "[SMTApproxMC] Terms hashc generated" <<  std::endl;
+
+      hashes.push_back(hash_const);
     }
     hashes_nodes = solver->termVectorToNodes1(hashes);
   }
@@ -130,7 +138,7 @@ uint64_t SmtApproxMc::smtApproxMcCore()
   std::cout << "Entering in SMTApproxMCCore" << std::endl;
   vector<Node> hashes;
   hashes = generateNHashes(2);
-  uint64_t bound = 10073;
+  uint64_t bound = 73;
   d_slv->boundedSat(hashes, bound);
   return bound;
 }
