@@ -723,7 +723,7 @@ int32_t SolverEngine::boundedSat(const std::vector<Node>& assumptions, uint64_t 
       hashes_and_modelblocks.push_back(n);
       count++;
     }
-    if (count % 10 == 0)
+//     if (count % 10 == 0)
       std::cout << "[BoundSMT] Count Now = " << count << std::endl;
   } while (res.getStatus() == Result::SAT && count < bound );
 
