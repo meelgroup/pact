@@ -36,7 +36,7 @@ class SmtApproxMc
  private:
    SolverEngine* d_slv;
    uint32_t width = 0, num_bv = 0;
-   uint32_t slice_size = 4;
+   uint32_t slice_size = 32;
    vector<uint32_t> primes;
   std::unordered_set<Node> bvnodes_in_formula;
   std::vector<Node> bvnode_in_formula_v;

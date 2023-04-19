@@ -146,17 +146,20 @@ vector<Node> SmtApproxMc::generateNHashes_BV(uint32_t numHashes)
   cvc5::Solver* solver = d_slv->getSolver();
 
   Assert(primes.size() >= numHashes) << "Prime size = " << primes.size() << " < numHashes = " << numHashes;
+
+  uint32_t new_bv_width = slice_size + 1;
   for(uint32_t num = 0; num < numHashes; ++num)
   {
-    Sort f5 = solver->mkBitVectorSort(slice_size);
+    Sort f5 = solver->mkBitVectorSort(new_bv_width);
 
+    Term p = solver->mkBitVector(new_bv_width, primes[num]);
 
     uint32_t b_i = Random::getRandom().pick(1, primes[num] - 1);
     uint32_t c_i = Random::getRandom().pick(1, primes[num] - 1);
     uint32_t num_this_bv = 0;
 
-    Term axpb = solver->mkBitVector(slice_size, b_i);
-    Term c = solver->mkBitVector(slice_size, c_i);
+    Term axpb = solver->mkBitVector(new_bv_width, b_i);
+    Term c = solver->mkBitVector(new_bv_width, c_i);
 
     std::cout << "Adding a hash constraint (" ;
 
@@ -176,12 +179,14 @@ vector<Node> SmtApproxMc::generateNHashes_BV(uint32_t numHashes)
 
         Op x_bit_op = solver->mkOp(BITVECTOR_EXTRACT, {this_slice_end , this_slice_start});
         Term x_sliced = solver->mkTerm(x_bit_op, {x});
-        Term a = solver->mkBitVector(slice_size, a_i);
+        Op x_zero_ex_op = solver->mkOp(BITVECTOR_ZERO_EXTEND, {1});
+        x_sliced = solver->mkTerm(x_zero_ex_op, {x});
+        Term a = solver->mkBitVector(new_bv_width, a_i);
         Term ax = solver->mkTerm(BITVECTOR_MULT, {a, x_sliced});
+        ax = solver->mkTerm(BITVECTOR_UREM, {ax,p});
         axpb = solver->mkTerm(BITVECTOR_ADD, {ax, axpb});
         }
     }
-    Term p = solver->mkBitVector(slice_size, primes[num]);
 
     axpb = solver->mkTerm(BITVECTOR_UREM, {axpb,p});
 
@@ -219,7 +224,7 @@ uint64_t SmtApproxMc::smtApproxMcMain()
 uint64_t SmtApproxMc::smtApproxMcCore()
 {
   vector<Node> hashes;
-  int numHashes = 1;
+  int numHashes = 8;
   options::HashingMode hashtype = options::HashingMode::BV; //TODO (AS) : what's wrong with line below?
   //options::HashingMode hashtype = options().counting.hashsm;
   if(hashtype == options::HashingMode::BV)
@@ -233,7 +238,7 @@ uint64_t SmtApproxMc::smtApproxMcCore()
     hashes = generateNHashes(numHashes);
 
   }
-  int64_t bound = 40;
+  int64_t bound = 80;
   uint64_t count = 1;
   std::string ss = "";
   for (int i = 0; i < numHashes; ++i)
