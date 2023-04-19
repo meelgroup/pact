@@ -52,36 +52,6 @@ name   = "Driver"
   help       = "seed for random number generator"
 
 [[option]]
-  name       = "bitblastApproxMC"
-  category   = "common"
-  long       = "blast-apxmc"
-  short      = "b"
-  type       = "bool"
-  default    = "false"
-  alternate  = false
-  help       = "bitblast and count using ApproxMC"
-
-[[option]]
-  name       = "enumerateCount"
-  category   = "common"
-  long       = "countenum"
-  short      = "e"
-  type       = "bool"
-  default    = "false"
-  alternate  = false
-  help       = "count by enumeration"
-
-[[option]]
-  name       = "smtapproxMC"
-  category   = "common"
-  long       = "smtapxmc"
-  short      = "S"
-  type       = "bool"
-  default    = "false"
-  alternate  = false
-  help       = "approximate model count using SMTApproxMC"
-
-[[option]]
   name       = "showTraceTags"
   category   = "expert"
   long       = "show-trace-tags"

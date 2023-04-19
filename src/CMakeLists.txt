@@ -1268,6 +1268,7 @@ set(options_toml_files
   options/booleans_options.toml
   options/builtin_options.toml
   options/bv_options.toml
+  options/counting_options.toml
   options/datatypes_options.toml
   options/decision_options.toml
   options/expr_options.toml

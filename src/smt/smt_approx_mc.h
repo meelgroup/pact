@@ -34,7 +34,7 @@ class SmtApproxMc
  private:
    SolverEngine* d_slv;
    uint32_t width = 0, num_bv = 0;
-   uint32_t slice_size = 2;
+   uint32_t slice_size = 4;
    vector<uint32_t> primes;
   std::unordered_set<Node> bvnodes_in_formula;
   std::vector<Node> bvnode_in_formula_v;
@@ -47,6 +47,7 @@ class SmtApproxMc
 
   void populatePrimes();
   vector<Node> generateNHashes(uint32_t numHashes);
+  vector<Node> generateNHashes_BV(uint32_t numHashes);
   uint64_t smtApproxMcMain();
   uint64_t smtApproxMcCore();
   uint32_t getPivot();

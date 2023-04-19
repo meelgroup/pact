@@ -72,7 +72,6 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
 }
 
 
-
 vector<Node> SmtApproxMc::generateNHashes(uint32_t numHashes)
 {
   vector<Term> hashes;
@@ -139,6 +138,63 @@ vector<Node> SmtApproxMc::generateNHashes(uint32_t numHashes)
 }
 
 
+vector<Node> SmtApproxMc::generateNHashes_BV(uint32_t numHashes)
+{
+  vector<Term> hashes;
+  vector<Node> hashes_nodes;
+  cvc5::Solver* solver = d_slv->getSolver();
+  slice_size++;
+
+  Assert(primes.size() >= numHashes) << "Prime size = " << primes.size() << " < numHashes = " << numHashes;
+  for(uint32_t num = 0; num < numHashes; ++num)
+  {
+    Sort f5 = solver->mkBitVectorSort(slice_size);
+
+
+    uint32_t b_i = Random::getRandom().pick(1, primes[num] - 1);
+    uint32_t c_i = Random::getRandom().pick(1, primes[num] - 1);
+    uint32_t num_this_bv = 0;
+
+    Term axpb = solver->mkBitVector(slice_size, b_i);
+    Term c = solver->mkBitVector(slice_size, c_i);
+    std::cout << "Adding a hash constraint (" ;
+
+    for(cvc5::Term x : bvs_in_formula)
+    {
+      uint32_t this_bv_width = bvnode_in_formula_v[++num_this_bv].getType().getBitVectorSize();;
+      uint32_t num_slices = ceil(this_bv_width/slice_size); //TODO (AS) consider while bitwidth non div 4
+
+      for(uint32_t slice = 0; slice < num_slices; ++slice)
+      {
+        uint32_t this_slice_start = slice*slice_size;
+        uint32_t this_slice_end = (slice+1)*slice_size - 1;
+
+        uint32_t a_i = Random::getRandom().pick(1, primes[num] - 1);
+        std::cout << a_i << x.getSymbol() << "[" << this_slice_start
+                  << ":" << this_slice_end << "] + " ;
+
+        Op x_bit_op = solver->mkOp(BITVECTOR_EXTRACT, {this_slice_end , this_slice_start});
+        Term x_sliced = solver->mkTerm(x_bit_op, {x});
+        Term a = solver->mkBitVector(slice_size, a_i);
+        Term ax = solver->mkTerm(BITVECTOR_MULT, {a, x_sliced});
+        axpb = solver->mkTerm(BITVECTOR_ADD, {ax, axpb});
+        }
+    }
+    Term p = solver->mkBitVector(slice_size, primes[num]);
+
+    axpb = solver->mkTerm(BITVECTOR_UREM, {axpb,p});
+
+    std::cout << b_i << ") mod " << primes[num] << " = " << c_i  << std::endl ;
+
+    Term hash_const = solver->mkTerm(EQUAL, {axpb,c});
+    hashes.push_back(hash_const);
+    std::cout << hash_const <<std::endl;
+  }
+  hashes_nodes = solver->termVectorToNodes1(hashes);
+  return hashes_nodes;
+}
+
+
 uint64_t SmtApproxMc::smtApproxMcMain()
 {
  uint32_t numIters;
@@ -161,8 +217,8 @@ uint64_t SmtApproxMc::smtApproxMcMain()
 uint64_t SmtApproxMc::smtApproxMcCore()
 {
   vector<Node> hashes;
-  int numHashes = 3;
-  hashes = generateNHashes(numHashes);
+  int numHashes = 1;
+  hashes = generateNHashes_BV(numHashes);
   int64_t bound = 40;
   uint64_t count = 1;
   std::string ss = "";

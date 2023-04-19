@@ -1,0 +1,67 @@
+
+id     = "Counting"
+name   = "ModelCounting"
+
+[[option]]
+  name       = "bitblastApproxMC"
+  category   = "common"
+  long       = "blast-apxmc"
+  short      = "b"
+  type       = "bool"
+  default    = "false"
+  alternate  = false
+  help       = "bitblast and count using ApproxMC"
+
+[[option]]
+  name       = "enumerateCount"
+  category   = "common"
+  long       = "countenum"
+  short      = "e"
+  type       = "bool"
+  default    = "false"
+  alternate  = false
+  help       = "count by enumeration"
+
+[[option]]
+  name       = "smtapproxMC"
+  category   = "common"
+  long       = "smtapxmc"
+  short      = "S"
+  type       = "bool"
+  default    = "false"
+  alternate  = false
+  help       = "approximate model count using SMTApproxMC"
+
+
+[[option]]
+  name       = "projcount"
+  category   = "common"
+  long       = "projcount"
+  short      = "pc"
+  type       = "bool"
+  default    = "false"
+  alternate  = false
+  help       = "Project the count on "
+
+[[option]]
+  name       = "hashsm"
+  category   = "regular"
+  long       = "hashsm=MODE"
+  type       = "HashingMode"
+  default    = "BV"
+  predicates = ["checkBvSatSolver"]
+  help       = "choose which sat solver to use, see --bv-sat-solver=help"
+  help_mode  = "SAT solver for bit-blasting backend."
+[[option.mode.BV]]
+  name = "bv"
+[[option.mode.FF]]
+  name = "ff"
+
+[[option]]
+  name       = "slicesize"
+  category   = "common"
+  short      = "s"
+  long       = "slicesize=N"
+  type       = "uint64_t"
+  default    = "4"
+  help       = "slice size in "
