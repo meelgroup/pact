@@ -21,11 +21,13 @@
 #ifndef CVC5__SMT__APXMC_H
 #define CVC5__SMT__APXMC_H
 
+#include "smt/env_obj.h"
 #include "expr/node_algorithm.h"
 
 using std::vector;
 
 namespace cvc5::internal {
+namespace counting {
 
 class SmtApproxMc;
 
@@ -56,5 +58,6 @@ class SmtApproxMc
 
 };
 
+}  //namespace counting
 }  // namespace cvc5::internal
 #endif

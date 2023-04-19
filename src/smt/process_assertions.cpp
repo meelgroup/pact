@@ -22,6 +22,7 @@
 #include "options/bv_options.h"
 #include "options/quantifiers_options.h"
 #include "options/sep_options.h"
+#include "options/counting_options.h"
 #include "options/smt_options.h"
 #include "options/strings_options.h"
 #include "options/uf_options.h"
@@ -120,8 +121,9 @@ bool ProcessAssertions::apply(AssertionPipeline& ap)
     applyPass("synth-rr", ap);
   }
 
-  if (options().bv.bvGaussElim)
+  if (options().bv.bvGaussElim || options().counting.hashsm == options::HashingMode::BV)
   {
+    std::cout << "BV Gausss Pass enabled" << std::endl;
     applyPass("bv-gauss", ap);
   }
 

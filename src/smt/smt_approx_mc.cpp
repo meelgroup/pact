@@ -20,15 +20,16 @@
 #include "smt/smt_approx_mc.h"
 
 #include <math.h>
-#include <cassert>
 #include "solver_engine.h"
 #include "expr/node.h"
 #include "util/random.h"
 #include "expr/node_converter.h"
+#include "options/counting_options.h"
 
 using std::vector;
 
 namespace cvc5::internal {
+namespace counting{
 
 void SmtApproxMc::populatePrimes()
 {
@@ -143,7 +144,6 @@ vector<Node> SmtApproxMc::generateNHashes_BV(uint32_t numHashes)
   vector<Term> hashes;
   vector<Node> hashes_nodes;
   cvc5::Solver* solver = d_slv->getSolver();
-  slice_size++;
 
   Assert(primes.size() >= numHashes) << "Prime size = " << primes.size() << " < numHashes = " << numHashes;
   for(uint32_t num = 0; num < numHashes; ++num)
@@ -157,6 +157,7 @@ vector<Node> SmtApproxMc::generateNHashes_BV(uint32_t numHashes)
 
     Term axpb = solver->mkBitVector(slice_size, b_i);
     Term c = solver->mkBitVector(slice_size, c_i);
+
     std::cout << "Adding a hash constraint (" ;
 
     for(cvc5::Term x : bvs_in_formula)
@@ -191,6 +192,7 @@ vector<Node> SmtApproxMc::generateNHashes_BV(uint32_t numHashes)
     std::cout << hash_const <<std::endl;
   }
   hashes_nodes = solver->termVectorToNodes1(hashes);
+
   return hashes_nodes;
 }
 
@@ -218,7 +220,19 @@ uint64_t SmtApproxMc::smtApproxMcCore()
 {
   vector<Node> hashes;
   int numHashes = 1;
-  hashes = generateNHashes_BV(numHashes);
+  options::HashingMode hashtype = options::HashingMode::BV; //TODO (AS) : what's wrong with line below?
+  //options::HashingMode hashtype = options().counting.hashsm;
+  if(hashtype == options::HashingMode::BV)
+  {
+    hashes = generateNHashes_BV(numHashes);
+  }
+  else
+  {
+    Assert(hashtype == options::HashingMode::FF)
+      << "Hashing method should be one of BV or FF. Given : " << hashtype << std::endl;
+    hashes = generateNHashes(numHashes);
+
+  }
   int64_t bound = 40;
   uint64_t count = 1;
   std::string ss = "";
@@ -236,7 +250,7 @@ uint64_t SmtApproxMc::smtApproxMcCore()
 template<class T>
 inline T SmtApproxMc::findMedian(vector<T>& numList)
 {
-  assert(!numList.empty());
+  Assert(!numList.empty());
   std::sort(numList.begin(), numList.end());
   size_t medIndex = numList.size() / 2;
   if (medIndex >= numList.size()) {
@@ -246,6 +260,7 @@ inline T SmtApproxMc::findMedian(vector<T>& numList)
 }
 
 
+}  // namespace counting
 }  // namespace cvc5::internal
 
 
