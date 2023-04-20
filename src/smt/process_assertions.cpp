@@ -123,7 +123,6 @@ bool ProcessAssertions::apply(AssertionPipeline& ap)
 
   if (options().bv.bvGaussElim) //TODO (AS) || options().counting.hashsm == options::HashingMode::BV
   {
-    std::cout << "BV Gausss Pass enabled" << std::endl;
     applyPass("bv-gauss", ap);
   }
 

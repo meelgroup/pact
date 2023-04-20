@@ -451,11 +451,9 @@ void LogicInfo::setLogicString(std::string logicString)
         enableTheory(THEORY_BV);
         p += 2;
       }
-      if (!strncmp(p, "FF", 2) || true ) //TODO (AS) change it to (getOption("smtapxmc") == "true")
-      {
-        std::cout  << "[SMTApproxMC] Enabling theory of FF" <<  std::endl;
+      if (!strncmp(p, "FF", 2)) { //TODO (AS) change it to (getOption("smtapxmc") == "true")
         enableTheory(THEORY_FF);
-        // p += 2; TODO (AS) also uncomment this
+        p += 2;
       }
       if(!strncmp(p, "FP", 2)) {
         enableTheory(THEORY_FP);

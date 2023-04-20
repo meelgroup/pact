@@ -700,7 +700,6 @@ QuantifiersEngine* SolverEngine::getAvailableQuantifiersEngine(
 
 int32_t SolverEngine::boundedSat(const std::vector<Node>& assumptions, uint64_t bound)
 {
-  std::cout << "Entering in boundedSat" << std::endl;
   uint64_t count = 0;
   Result res;
   std::vector<Node> hashes_and_modelblocks;
@@ -723,7 +722,7 @@ int32_t SolverEngine::boundedSat(const std::vector<Node>& assumptions, uint64_t 
       hashes_and_modelblocks.push_back(n);
       count++;
     }
-//     if (count % 10 == 0)
+ if (false)
       std::cout << "[BoundSMT] Count Now = " << count << std::endl;
   } while (res.getStatus() == Result::SAT && count < bound );
 
