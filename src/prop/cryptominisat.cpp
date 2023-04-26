@@ -201,7 +201,7 @@ SatValue CryptoMinisatSolver::solve(long unsigned int& resource) {
 
 SatValue CryptoMinisatSolver::solve(const std::vector<SatLiteral>& assumptions)
 {
-  std::cout << "CMS solve called with assumptions" << std::endl;
+  // std::cout << "CMS solve called with assumptions" << std::endl;
   TimerStat::CodeTimer codeTimer(d_statistics.d_solveTime);
   std::vector<CMSat::Lit> assumpts;
   for (const SatLiteral& lit : assumptions)

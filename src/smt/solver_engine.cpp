@@ -703,6 +703,7 @@ int32_t SolverEngine::boundedSat(const std::vector<Node>& assumptions, uint64_t 
   uint64_t count = 0;
   Result res;
   std::vector<Node> hashes_and_modelblocks;
+  push();
   for(auto &hash : assumptions)
     hashes_and_modelblocks.push_back(hash);
   do
@@ -719,12 +720,14 @@ int32_t SolverEngine::boundedSat(const std::vector<Node>& assumptions, uint64_t 
       Node eblocker = mb.getModelBlocker(eassertsProc, m,
                                          cvc5::modes::BlockModelsMode::VALUES);
       Node n = d_absValues->substituteAbstractValues(eblocker);
-      hashes_and_modelblocks.push_back(n);
+      //hashes_and_modelblocks.push_back(n);
+      blockModel(cvc5::modes::BlockModelsMode::VALUES);
       count++;
     }
  if (false)
       std::cout << "[BoundSMT] Count Now = " << count << std::endl;
   } while (res.getStatus() == Result::SAT && count < bound );
+  pop();
 
   return count;
 }

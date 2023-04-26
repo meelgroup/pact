@@ -31,6 +31,13 @@ name   = "ModelCounting"
   alternate  = false
   help       = "approximate model count using SMTApproxMC"
 
+[[option]]
+  name       = "countingverb"
+  category   = "regular"
+  long       = "cv"
+  type       = "bool"
+  default    = "false"
+  help       = "verbosity while counting"
 
 [[option]]
   name       = "projcount"
