@@ -136,7 +136,6 @@ ClauseId ApproxMCounter::addClause(SatClause& clause, bool removable)
 bool ApproxMCounter::ok() const { return d_okay; }
 
 SatVariable ApproxMCounter::newVar(bool isTheoryAtom,
-                                   bool preRegister,
                                    bool canErase)
 {
   d_counter->new_var();
@@ -156,11 +155,12 @@ void ApproxMCounter::interrupt()
 
 SatValue ApproxMCounter::solve()
 {
-  std::cout << "ApproxMC called" << std::endl;
   TimerStat::CodeTimer codeTimer(d_statistics.d_solveTime);
   ++d_statistics.d_statCallsToSolve;
-  d_counter->set_verbosity(0);
+  std::cout << "Calling ApproxMC..." << std::endl;
+  d_counter->set_verbosity(1);
   ApproxMC::SolCount solcount = d_counter->count();
+  std::cout << "ApproxMC called" << std::endl;
   // d_counter->print_stats(0);  //TODO may be turned on, along with
   // set_verbosity
   std::cout << "[ApproxMC] Count = " << solcount.cellSolCount << "*2**"

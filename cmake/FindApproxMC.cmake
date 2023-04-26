@@ -39,7 +39,7 @@ set(ApproxMC_FOUND_SYSTEM FALSE)
 #endif()
 
 if(NOT ApproxMC_FOUND_SYSTEM)
-  set(ApproxMC_VERSION "4.1.4")
+  set(ApproxMC_VERSION "4.1.11")
 
   check_ep_downloaded("ApproxMC-EP")
   if(NOT ApproxMC-EP_DOWNLOADED)
@@ -59,7 +59,7 @@ if(NOT ApproxMC_FOUND_SYSTEM)
     ${COMMON_EP_CONFIG}
     BUILD_IN_SOURCE ON
     URL https://github.com/meelgroup/approxmc/archive/refs/tags/${ApproxMC_VERSION}.tar.gz
-    URL_HASH SHA1=8fb064e31ce937c987aed612bcd1e1a3ff5dd692
+    URL_HASH SHA1=e4e7a8587ba0c07b60d180a6584968828194ff82
     CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release
                # make sure not to register with cmake
                -DCMAKE_EXPORT_NO_PACKAGE_REGISTRY=ON
