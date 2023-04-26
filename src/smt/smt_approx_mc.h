@@ -35,12 +35,12 @@ class SmtApproxMc
 {
  private:
   SolverEngine* d_slv;
-  uint32_t width = 0, num_bv = 0;
+  uint32_t width = 0, num_bv = 0, num_bool;
   uint32_t slice_size = 2;
   vector<uint64_t> primes;
   std::unordered_set<Node> bvnodes_in_formula;
   std::vector<Node> bvnode_in_formula_v;
-  std::vector<Term> bvs_in_formula;
+  std::vector<Term> bvs_in_formula, bvs_in_formula_aux;
   Term ff[100];
   int verb = 0;
 

@@ -92,86 +92,31 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
   {
     expr::getSymbols(n, bvnodes_in_formula);
   }
-  num_bv = bvnodes_in_formula.size();
   for (Node n : bvnodes_in_formula)
   {
     uint32_t bv_width = n.getType().getBitVectorSize();
     if ( bv_width > width) width = bv_width;
     bvnode_in_formula_v.push_back(n);
   }
-  bvs_in_formula = slv->getSolver()->getVars(bvnode_in_formula_v);
+  bvs_in_formula_aux = slv->getSolver()->getVars(bvnode_in_formula_v);
+  for (Term n : bvs_in_formula_aux)
+  {
+    std::cout << n.getSort() << " " << n.getSymbol();
+    if(! n.getSort().isBitVector()) {
+      if(n.getSort().isBoolean()) num_bool++;
+      std::cout << " Skipping" << std::endl;
+      continue;
+    }
+    bvs_in_formula.push_back(n);
+    std::cout << " Adding" << std::endl;
+  }
+  num_bv = bvs_in_formula.size();
+
   slice_size = slv->getOptions().counting.slicesize;
   std::cout  << "[SMTApproxMC] There are " <<  num_bv <<  " bitvectors, max width = " << width
+             << " and " << num_bool << " Booleans."
              << " Slice size = " << slice_size << std::endl;
   verb = slv->getOptions().counting.countingverb;
-}
-
-
-vector<Node> SmtApproxMc::generateNHashes(uint32_t numHashes)
-{
-  vector<Term> hashes;
-  vector<Node> hashes_nodes;
-  cvc5::Solver* solver = d_slv->getSolver();
-  Term bv_one = solver->mkBitVector(1u, 1u);
-
-  Assert(primes.size() >= numHashes) << "Prime size = " << primes.size() << " < numHashes = " << numHashes;
-  for(uint32_t num = 0; num < numHashes; ++num)
-  {
-    std::string modulus = std::to_string(primes[num]);
-    Sort f5 = solver->mkFiniteFieldSort(modulus);
-
-    for(uint32_t bitwidth = 0; bitwidth < width; ++bitwidth)
-    {
-      std::string value_here = std::to_string(int(pow(2,bitwidth)));
-      ff[bitwidth] = solver->mkFiniteFieldElem(value_here, f5);
-    }
-    std::string b_s = std::to_string(Random::getRandom().pick(1, primes[num] - 1));
-    std::string c_s = std::to_string(Random::getRandom().pick(1, primes[num] - 1));
-    Term axpb = solver->mkFiniteFieldElem(b_s, f5);
-    Term c = solver->mkFiniteFieldElem(c_s, f5);
-     if (verb > 0) std::cout << "Adding a hash constraint (" ;
-    for(cvc5::Term x : bvs_in_formula)
-    {
-      uint32_t num_slices = ceil(width/slice_size);
-
-      for(uint32_t slice = 0; slice < num_slices; ++slice)
-      {
-        Term x_ff = solver->mkFiniteFieldElem("0", f5);
-
-        uint32_t this_slice_start = slice*slice_size;
-
-        std::string a_s = std::to_string(Random::getRandom().pick(1, primes[num] - 1));
-        if (verb > 0)
-          std::cout << a_s << x.getSymbol() << "[" << this_slice_start
-                  << ":" << this_slice_start + slice_size - 1 << "] + " ;
-
-
-        for(uint bit = this_slice_start; bit < this_slice_start + slice_size; ++bit)
-        {
-          Op x_bit_op = solver->mkOp(BITVECTOR_EXTRACT, {bit , bit});
-          Term x_bit_bv = solver->mkTerm(x_bit_op, {x});
-          Term eq_test = solver->mkTerm(EQUAL, {x_bit_bv, bv_one});
-          Term ite_t = solver->mkTerm(ITE, {eq_test, ff[bit], ff[0]});
-
-          x_ff = solver->mkTerm(FINITE_FIELD_ADD, { x_ff, ite_t });
-        }
-
-
-        Term a = solver->mkFiniteFieldElem(a_s, f5);
-        Term ax = solver->mkTerm(FINITE_FIELD_MULT, {a, x_ff});
-        axpb = solver->mkTerm(FINITE_FIELD_ADD, {ax, axpb});
-
-
-      }
-    }
-     if (verb > 0)
-      std::cout << b_s << ") mod " << primes[num] << " = " << c_s  << std::endl ;
-
-    Term hash_const = solver->mkTerm(EQUAL, {axpb,c});
-    hashes.push_back(hash_const);
-  }
-  hashes_nodes = solver->termVectorToNodes1(hashes);
-  return hashes_nodes;
 }
 
 
@@ -185,8 +130,8 @@ Term SmtApproxMc::generate_hash()
 
   Term p = solver->mkBitVector(new_bv_width, primes[slice_size]);
 
-  uint32_t b_i = Random::getRandom().pick(1, primes[slice_size] - 1);
-  uint32_t c_i = Random::getRandom().pick(1, primes[slice_size] - 1);
+  uint32_t b_i = Random::getRandom().pick(0, primes[slice_size] - 1);
+  uint32_t c_i = Random::getRandom().pick(0, primes[slice_size] - 1);
   uint32_t num_this_bv = 0;
 
   Term axpb = solver->mkBitVector(new_bv_width, b_i);
@@ -196,7 +141,7 @@ Term SmtApproxMc::generate_hash()
 
   for(cvc5::Term x : bvs_in_formula)
   {
-    uint32_t this_bv_width = bvnode_in_formula_v[num_this_bv++].getType().getBitVectorSize();;
+    uint32_t this_bv_width = x.getSort().getBitVectorSize();
     uint32_t num_slices = ceil(this_bv_width/slice_size);
 
     for(uint32_t slice = 0; slice < num_slices; ++slice)
@@ -206,7 +151,7 @@ Term SmtApproxMc::generate_hash()
       if (this_slice_end >= this_bv_width)
         this_slice_end = this_bv_width - 1;
 
-      uint32_t a_i = Random::getRandom().pick(1, primes[slice_size] - 1);
+      uint32_t a_i = Random::getRandom().pick(0, primes[slice_size] - 1);
       if (verb > 0)
         std::cout << a_i << x.getSymbol() << "[" << this_slice_start
                 << ":" << this_slice_end << "] + " ;
@@ -222,11 +167,11 @@ Term SmtApproxMc::generate_hash()
       }
   }
 
-    axpb = solver->mkTerm(BITVECTOR_UREM, {axpb,p});
-    if (verb > 0)
-      std::cout << b_i << ") mod " << primes[slice_size] << " = " << c_i  << std::endl ;
+  axpb = solver->mkTerm(BITVECTOR_UREM, {axpb,p});
+  if (verb > 0)
+    std::cout << b_i << ") mod " << primes[slice_size] << " = " << c_i  << std::endl ;
 
-    Term hash_const = solver->mkTerm(EQUAL, {axpb,c});
+  Term hash_const = solver->mkTerm(EQUAL, {axpb,c});
 
   return hash_const;
 }
@@ -242,12 +187,12 @@ uint64_t SmtApproxMc::smtApproxMcMain()
  vector<uint64_t> numList;
  populatePrimes();
 
- for (uint32_t iter = 0 ; iter <= numIters; ++iter )
+ for (uint32_t iter = 1 ; iter <= numIters; ++iter )
  {
    countThisIter = smtApproxMcCore();
    if (countThisIter == 0){
-     iter--;
      std::cout << "[Round " << iter << "] failing count " << std::endl;
+     iter--;
    } else {
    std::cout << "[Round " << iter << "] returning count " << countThisIter << std::endl;
      numList.push_back(countThisIter);
@@ -351,6 +296,73 @@ inline T SmtApproxMc::findMedian(vector<T>& numList)
     return numList[numList.size() - 1];
   }
   return numList[medIndex];
+}
+
+vector<Node> SmtApproxMc::generateNHashes(uint32_t numHashes)
+{
+  vector<Term> hashes;
+  vector<Node> hashes_nodes;
+  cvc5::Solver* solver = d_slv->getSolver();
+  Term bv_one = solver->mkBitVector(1u, 1u);
+
+  Assert(primes.size() >= numHashes) << "Prime size = " << primes.size() << " < numHashes = " << numHashes;
+  for(uint32_t num = 0; num < numHashes; ++num)
+  {
+    std::string modulus = std::to_string(primes[num]);
+    Sort f5 = solver->mkFiniteFieldSort(modulus);
+
+    for(uint32_t bitwidth = 0; bitwidth < width; ++bitwidth)
+    {
+      std::string value_here = std::to_string(int(pow(2,bitwidth)));
+      ff[bitwidth] = solver->mkFiniteFieldElem(value_here, f5);
+    }
+    std::string b_s = std::to_string(Random::getRandom().pick(1, primes[num] - 1));
+    std::string c_s = std::to_string(Random::getRandom().pick(1, primes[num] - 1));
+    Term axpb = solver->mkFiniteFieldElem(b_s, f5);
+    Term c = solver->mkFiniteFieldElem(c_s, f5);
+     if (verb > 0) std::cout << "Adding a hash constraint (" ;
+    for(cvc5::Term x : bvs_in_formula)
+    {
+      uint32_t num_slices = ceil(width/slice_size);
+
+      for(uint32_t slice = 0; slice < num_slices; ++slice)
+      {
+        Term x_ff = solver->mkFiniteFieldElem("0", f5);
+
+        uint32_t this_slice_start = slice*slice_size;
+
+        std::string a_s = std::to_string(Random::getRandom().pick(1, primes[num] - 1));
+        if (verb > 0)
+          std::cout << a_s << x.getSymbol() << "[" << this_slice_start
+                  << ":" << this_slice_start + slice_size - 1 << "] + " ;
+
+
+        for(uint bit = this_slice_start; bit < this_slice_start + slice_size; ++bit)
+        {
+          Op x_bit_op = solver->mkOp(BITVECTOR_EXTRACT, {bit , bit});
+          Term x_bit_bv = solver->mkTerm(x_bit_op, {x});
+          Term eq_test = solver->mkTerm(EQUAL, {x_bit_bv, bv_one});
+          Term ite_t = solver->mkTerm(ITE, {eq_test, ff[bit], ff[0]});
+
+          x_ff = solver->mkTerm(FINITE_FIELD_ADD, { x_ff, ite_t });
+        }
+
+
+        Term a = solver->mkFiniteFieldElem(a_s, f5);
+        Term ax = solver->mkTerm(FINITE_FIELD_MULT, {a, x_ff});
+        axpb = solver->mkTerm(FINITE_FIELD_ADD, {ax, axpb});
+
+
+      }
+    }
+     if (verb > 0)
+      std::cout << b_s << ") mod " << primes[num] << " = " << c_s  << std::endl ;
+
+    Term hash_const = solver->mkTerm(EQUAL, {axpb,c});
+    hashes.push_back(hash_const);
+  }
+  hashes_nodes = solver->termVectorToNodes1(hashes);
+  return hashes_nodes;
 }
 
 
