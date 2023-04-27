@@ -15,7 +15,7 @@
 
 #include "prop/sat_solver_factory.h"
 
-#include "prop/approxmc.h"  //TODO this is causing errors
+#include "prop/approxmc.h"
 #include "prop/cadical.h"
 #include "prop/cryptominisat.h"
 #include "prop/kissat.h"

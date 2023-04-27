@@ -68,6 +68,40 @@ void SmtApproxMc::populatePrimes()
   primes.push_back(2147483659);//31
   primes.push_back(4294967311);//32
   primes.push_back(8589934609);//33
+  //   primes.push_back(17179869209);//34
+  //   primes.push_back(34359738421);//35
+  //   primes.push_back(68719476767);//36
+  //   primes.push_back(137438953481);//37
+  //   primes.push_back(274877906951);//38
+  //   primes.push_back(549755813911);//39
+  //   primes.push_back(1099511627791);//40
+  //   primes.push_back(2199023255579);//41
+  //   primes.push_back(4398046511119);//42
+  //   primes.push_back(8796093022237);//43
+  //   primes.push_back(17592186044423);//44
+  //   primes.push_back(35184372088891);//45
+  //   primes.push_back(70368744177679);//46
+  //   primes.push_back(140737488355333);//47
+  //   primes.push_back(281474976710677);//48
+  //   primes.push_back(562949953421381);//49
+  //   primes.push_back(1125899906842679);//50
+  //   primes.push_back(2251799813685269);//51
+  //   primes.push_back(4503599627370517);//52
+  //   primes.push_back(9007199254740997);//53
+  //   primes.push_back(18014398509482143);//54
+  //   primes.push_back(36028797018963971);//55
+  //   primes.push_back(72057594037928017);//56
+  //   primes.push_back(144115188075855881);//57
+  //   primes.push_back(288230376151711813);//58
+  //   primes.push_back(576460752303423619);//59
+  //   primes.push_back(1152921504606847009);//60
+  //   primes.push_back(2305843009213693967);//61
+  //   primes.push_back(4611686018427388039);//62
+  //   primes.push_back(9223372036854775837);//63
+  //   primes.push_back(18446744073709551629);//64
+  //   primes.push_back(36893488147419103363);//65
+  //   primes.push_back(73786976294838206473);//66
+
 }
 
 uint32_t SmtApproxMc::getPivot()
@@ -132,9 +166,8 @@ Term SmtApproxMc::generate_hash()
 
   uint32_t b_i = Random::getRandom().pick(0, primes[slice_size] - 1);
   uint32_t c_i = Random::getRandom().pick(0, primes[slice_size] - 1);
-  uint32_t num_this_bv = 0;
 
-  Term axpb = solver->mkBitVector(new_bv_width, b_i);
+  Term axpb = solver->mkBitVector(new_bv_width, 0);
   Term c = solver->mkBitVector(new_bv_width, c_i);
 
   if (verb > 0) std::cout << "Adding a hash constraint (" ;
@@ -206,10 +239,10 @@ uint64_t SmtApproxMc::smtApproxMcCore()
 {
   vector<Node> hashes;
   Term hash;
-  int numHashes = 1, oldhashes = 0;
   int growingphase = 1;
   int lowbound = 1, highbound = 2, bsatcall = 0;
   int nochange = 0;
+  oldhashes = 0;
 
   int64_t bound = getPivot();
   uint64_t count = bound;
