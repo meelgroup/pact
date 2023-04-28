@@ -127,7 +127,6 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
   projection_prefix = slv->getOptions().counting.projprefix;
   get_projected_count = slv->getOptions().counting.projcount;
 
-  std::cout << "Projection Prefix : " << projection_prefix << std::endl;
   for (Node n : tlAsserts)
   {
     expr::getSymbols(n, bvnodes_in_formula);
@@ -189,10 +188,10 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
   if (slice_size > max_bitwidth) slice_size = max_bitwidth;
   verb = slv->getOptions().counting.countingverb;
 
-  std::cout  << "[SMTApproxMC] There are " << num_bool << " Booleans and "
-             << num_bv <<  " bitvectors, max width = " << max_bitwidth  << std::endl
-             << "In Proj. set, there are " << num_bool_projset << " Booleans and " << num_bv_projset
-             << " bitvectors. Slice size = " << slice_size << std::endl;
+  std::cout  << "c [smtappmc] formula spec: Booleans: " << num_bool
+             <<  " bitvectors: " << num_bv << " max width = " << max_bitwidth << std::endl
+             << "c [smtappmc] Sampling set: Booleans: " << num_bool_projset
+             << " bitvectors: " << num_bv_projset << std::endl;
 }
 
 Term SmtApproxMc::generate_boolean_hash()
@@ -207,7 +206,6 @@ Term SmtApproxMc::generate_boolean_hash()
       xorcons = solver->mkTerm(XOR,{xorcons,x});
     }
   }
-  std::cout << "Adding Boolean XOR as hash function" << std::endl;
   return xorcons;
 }
 
@@ -280,10 +278,10 @@ uint64_t SmtApproxMc::smtApproxMcMain()
  {
    countThisIter = smtApproxMcCore();
    if (countThisIter == 0 && numHashes > 0){
-     std::cout << "[Round " << iter << "] failing count " << std::endl;
+     std::cout << "c [smtappmc] completed round: " << iter << "] failing count " << std::endl;
      iter--;
    } else {
-   std::cout << "[Round " << iter << "] returning count " << countThisIter << std::endl;
+   std::cout << "c [smtappmc] completed round: " << iter << " count: " << countThisIter << std::endl;
      numList.push_back(countThisIter);
   }
   if (numHashes == 0) break;
@@ -324,11 +322,15 @@ uint64_t SmtApproxMc::smtApproxMcCore()
     } else {
       if (verb > 0) std::cout << "Strange! No change in num hashes!" << std::endl;
     }
+
+    std::cout << "c [smtappmc] bounded_sol_count looking for " << bound
+              << " solutions -- hashes active: " << numHashes << std::endl;
+
     count = d_slv->boundedSat(bound, projection_vars);
 
-    std::cout << "[BoundedSat] call " << ++bsatcall << " numHashes = "
-            << numHashes << " count = " << count
-            << " ( bound = " << bound << ")" << std::endl;
+
+     std::cout << "c [smtappmc] got solutions: " << count
+              << " out of " << bound << std::endl;
 
     if (count == 0) {
       growingphase = 0;
@@ -374,7 +376,10 @@ uint64_t SmtApproxMc::smtApproxMcCore()
 
   for (int i = 0; i < numHashes; ++i)
   {
-    count *= primes[slice_size];
+    if(project_on_booleans)
+      count *= 2;
+    else
+      count *= primes[slice_size];
   }
   return count;
 }

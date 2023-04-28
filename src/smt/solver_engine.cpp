@@ -1181,6 +1181,8 @@ void SolverEngine::blockModelValues(const std::vector<Node>& exprs)
   ModelBlocker mb(*d_env.get());
   Node eblocker = mb.getModelBlocker(
       eassertsProc, m, modes::BlockModelsMode::VALUES, exprs);
+  if(d_env->getOptions().counting.countingverb)
+    std::cout << "Block formula: size(" << exprs.size() <<") " << eblocker << std::endl;
   assertFormulaInternal(eblocker);
 }
 
