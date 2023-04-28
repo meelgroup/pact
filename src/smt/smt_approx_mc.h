@@ -41,9 +41,11 @@ class SmtApproxMc
   vector<uint64_t> primes;
   std::unordered_set<Node> bvnodes_in_formula;
   std::vector<Node> bvnode_in_formula_v;
+  std::vector<Node> projection_vars;
   std::vector<Term> bvs_in_formula, bvs_in_formula_aux;
   Term ff[100];
   int verb = 0;
+  std::string projection_prefix;
 
  public:
   SmtApproxMc(SolverEngine* slv);

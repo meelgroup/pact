@@ -25,6 +25,7 @@
 #include "expr/node_algorithm.h"
 #include "expr/subtype_elim_node_converter.h"
 #include "options/base_options.h"
+#include "options/counting_options.h"
 #include "options/expr_options.h"
 #include "options/language.h"
 #include "options/main_options.h"
@@ -698,34 +699,28 @@ QuantifiersEngine* SolverEngine::getAvailableQuantifiersEngine(
   return qe;
 }
 
-int32_t SolverEngine::boundedSat(const std::vector<Node>& assumptions, uint64_t bound)
+int32_t SolverEngine::boundedSat(uint64_t bound, const std::vector<Node>& terms_to_block )
 {
   uint64_t count = 0;
   Result res;
-  std::vector<Node> hashes_and_modelblocks;
+  const Options& opts = d_env->getOptions();
   push();
-  for(auto &hash : assumptions)
-    hashes_and_modelblocks.push_back(hash);
   do
   {
-    res = checkSat(hashes_and_modelblocks);
+    res = checkSat();
     if (res.getStatus() == Result::SAT)
     {
       finishInit();
-
-      TheoryModel* m = getAvailableModel("block model");
-
-      std::vector<Node> eassertsProc = getSubstitutedAssertions();
-      ModelBlocker mb(*d_env.get());
-      Node eblocker = mb.getModelBlocker(eassertsProc, m,
-                                         cvc5::modes::BlockModelsMode::VALUES);
-      Node n = d_absValues->substituteAbstractValues(eblocker);
-      //hashes_and_modelblocks.push_back(n);
-      blockModel(cvc5::modes::BlockModelsMode::VALUES);
+      if (opts.counting.projcount)
+      {
+        blockModelValues(terms_to_block);
+      }
+      else
+      {
+        blockModel(cvc5::modes::BlockModelsMode::VALUES);
+      }
       count++;
     }
- if (false)
-      std::cout << "[BoundSMT] Count Now = " << count << std::endl;
   } while (res.getStatus() == Result::SAT && count < bound );
   pop();
 

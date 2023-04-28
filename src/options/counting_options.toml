@@ -49,6 +49,14 @@ name   = "ModelCounting"
   help       = "Project the count on reachability variables"
 
 [[option]]
+  name       = "projprefix"
+  category   = "regular"
+  long       = "projprefix=PREFIX"
+  type       = "std::string"
+  default    = '""'
+  help       = "prefix of projection variables"
+
+[[option]]
   name       = "hashsm"
   category   = "regular"
   long       = "hashsm=MODE"

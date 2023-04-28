@@ -122,6 +122,11 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
 {
   this->d_slv = slv;
   std::vector<Node> tlAsserts = slv->getAssertions();
+  std::vector<Term> projection_var_terms;
+
+  projection_prefix = slv->getOptions().counting.projprefix;
+
+  std::cout << "Projection Prefix : " << projection_prefix << std::endl;
   for (Node n : tlAsserts)
   {
     expr::getSymbols(n, bvnodes_in_formula);
@@ -143,14 +148,26 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
     }
     bvs_in_formula.push_back(n);
     std::cout << " Adding" << std::endl;
+    if(n.getSymbol().compare(0, projection_prefix.size(), projection_prefix) == 0)
+    {
+      std::cout << "Using " << n.getSymbol() << " as projection variable" << std::endl;
+      projection_var_terms.push_back(n);
+    }
+    else
+    {
+      std::cout << " : NO" << std::endl;
+    }
   }
+  slice_size = slv->getOptions().counting.slicesize;
+
+  verb = slv->getOptions().counting.countingverb;
+  projection_vars = slv->getSolver()->termVectorToNodes1(projection_var_terms);
+  if (slv->getOptions().counting.projcount) bvs_in_formula = projection_var_terms;
   num_bv = bvs_in_formula.size();
 
-  slice_size = slv->getOptions().counting.slicesize;
   std::cout  << "[SMTApproxMC] There are " <<  num_bv <<  " bitvectors, max width = " << width
              << " and " << num_bool << " Booleans."
              << " Slice size = " << slice_size << std::endl;
-  verb = slv->getOptions().counting.countingverb;
 }
 
 
@@ -164,7 +181,6 @@ Term SmtApproxMc::generate_hash()
 
   Term p = solver->mkBitVector(new_bv_width, primes[slice_size]);
 
-  uint32_t b_i = Random::getRandom().pick(0, primes[slice_size] - 1);
   uint32_t c_i = Random::getRandom().pick(0, primes[slice_size] - 1);
 
   Term axpb = solver->mkBitVector(new_bv_width, 0);
@@ -176,7 +192,7 @@ Term SmtApproxMc::generate_hash()
   {
     uint32_t this_bv_width = x.getSort().getBitVectorSize();
     uint32_t num_slices = ceil(this_bv_width/slice_size);
-
+    if(slice_size > this_bv_width) num_slices = 1;
     for(uint32_t slice = 0; slice < num_slices; ++slice)
     {
       uint32_t this_slice_start = slice*slice_size;
@@ -202,7 +218,7 @@ Term SmtApproxMc::generate_hash()
 
   axpb = solver->mkTerm(BITVECTOR_UREM, {axpb,p});
   if (verb > 0)
-    std::cout << b_i << ") mod " << primes[slice_size] << " = " << c_i  << std::endl ;
+    std::cout << " 0) mod " << primes[slice_size] << " = " << c_i  << std::endl ;
 
   Term hash_const = solver->mkTerm(EQUAL, {axpb,c});
 
@@ -237,7 +253,6 @@ uint64_t SmtApproxMc::smtApproxMcMain()
 
 uint64_t SmtApproxMc::smtApproxMcCore()
 {
-  vector<Node> hashes;
   Term hash;
   int growingphase = 1;
   int lowbound = 1, highbound = 2, bsatcall = 0;
@@ -245,7 +260,7 @@ uint64_t SmtApproxMc::smtApproxMcCore()
   oldhashes = 0;
 
   int64_t bound = getPivot();
-  uint64_t count = bound;
+  int64_t count = bound;
   std::string ss = "";
 
   while(true){
@@ -264,12 +279,11 @@ uint64_t SmtApproxMc::smtApproxMcCore()
     } else {
       if (verb > 0) std::cout << "Strange! No change in num hashes!" << std::endl;
     }
-    count = d_slv->boundedSat(hashes, bound);
+    count = d_slv->boundedSat(bound, projection_vars);
 
     std::cout << "[BoundedSat] call " << ++bsatcall << " numHashes = "
             << numHashes << " count = " << count
             << " ( bound = " << bound << ")" << std::endl;
-
 
     if (count == 0) {
       growingphase = 0;
@@ -282,6 +296,7 @@ uint64_t SmtApproxMc::smtApproxMcCore()
 
     if (growingphase){
       numHashes *= 2;
+      if(numHashes == 0) numHashes = 1;
     } else {
       nochange = 0;
       if (highbound < lowbound){
@@ -331,15 +346,15 @@ inline T SmtApproxMc::findMedian(vector<T>& numList)
   return numList[medIndex];
 }
 
-vector<Node> SmtApproxMc::generateNHashes(uint32_t numHashes)
+vector<Node> SmtApproxMc::generateNHashes(uint32_t numhashes)
 {
   vector<Term> hashes;
   vector<Node> hashes_nodes;
   cvc5::Solver* solver = d_slv->getSolver();
   Term bv_one = solver->mkBitVector(1u, 1u);
 
-  Assert(primes.size() >= numHashes) << "Prime size = " << primes.size() << " < numHashes = " << numHashes;
-  for(uint32_t num = 0; num < numHashes; ++num)
+  Assert(primes.size() >= numHashes) << "Prime size = " << primes.size() << " < numHashes = " << numhashes;
+  for(uint32_t num = 0; num < numhashes; ++num)
   {
     std::string modulus = std::to_string(primes[num]);
     Sort f5 = solver->mkFiniteFieldSort(modulus);

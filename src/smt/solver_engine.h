@@ -323,7 +323,7 @@ class CVC5_EXPORT SolverEngine
    * @throw Exception
    */
   Result checkSat();
-  int32_t boundedSat(const std::vector<Node>& assumptions, uint64_t bound);
+  int32_t boundedSat(uint64_t bound, const std::vector<Node>& terms_to_block);
   Result modelCount();
   Result checkSat(const Node& assumption);
   Result checkSat(const std::vector<Node>& assumptions);
