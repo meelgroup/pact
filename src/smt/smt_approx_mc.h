@@ -23,6 +23,7 @@
 
 #include "smt/env_obj.h"
 #include "expr/node_algorithm.h"
+#include "util/statistics_stats.h"
 
 using std::vector;
 
@@ -63,6 +64,7 @@ class SmtApproxMc
   uint32_t getPivot();
   uint32_t getNumIter();
   template<class T> T findMedian(vector<T>& numList);
+  double getTime();
 
 };
 

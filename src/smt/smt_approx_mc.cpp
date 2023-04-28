@@ -278,24 +278,37 @@ uint64_t SmtApproxMc::smtApproxMcMain()
  {
    countThisIter = smtApproxMcCore();
    if (countThisIter == 0 && numHashes > 0){
-     std::cout << "c [smtappmc] completed round: " << iter << "] failing count " << std::endl;
+     std::cout << "c [smtappmc] [ " << getTime() << "] completed round: " << iter << "] failing count " << std::endl;
      iter--;
    } else {
-   std::cout << "c [smtappmc] completed round: " << iter << " count: " << countThisIter << std::endl;
+   std::cout << "c [smtappmc] [ " << getTime() << "] completed round: " << iter << " count: " << countThisIter << std::endl;
      numList.push_back(countThisIter);
   }
   if (numHashes == 0) break;
 
  }
  countThisIter = findMedian(numList);
+ std::cout << "c Total time : " << getTime() << std::endl;
  return countThisIter;
+}
+
+double SmtApproxMc::getTime()
+{
+  std::stringstream s;
+  std::string time_str1;
+  s << d_slv->getSolver()->getStatistics().get("global::totalTime");
+  s >> time_str1;
+  time_str1.resize(time_str1.size() - 2);
+  const std::string time_str = time_str1;
+  double time_int = std::stod(time_str)/1000.0;
+  return time_int;
 }
 
 uint64_t SmtApproxMc::smtApproxMcCore()
 {
   Term hash;
   int growingphase = 1;
-  int lowbound = 1, highbound = 2, bsatcall = 0;
+  int lowbound = 1, highbound = 2;
   int nochange = 0;
   oldhashes = 0;
 
@@ -323,13 +336,14 @@ uint64_t SmtApproxMc::smtApproxMcCore()
       if (verb > 0) std::cout << "Strange! No change in num hashes!" << std::endl;
     }
 
-    std::cout << "c [smtappmc] bounded_sol_count looking for " << bound
+
+    std::cout << "c [smtappmc] [ " << getTime() << "] bounded_sol_count looking for " << bound
               << " solutions -- hashes active: " << numHashes << std::endl;
 
     count = d_slv->boundedSat(bound, projection_vars);
 
 
-     std::cout << "c [smtappmc] got solutions: " << count
+     std::cout << "c [smtappmc] [ " << getTime() << "] got solutions: " << count
               << " out of " << bound << std::endl;
 
     if (count == 0) {
