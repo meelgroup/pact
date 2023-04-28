@@ -125,51 +125,91 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
   std::vector<Term> projection_var_terms;
 
   projection_prefix = slv->getOptions().counting.projprefix;
+  get_projected_count = slv->getOptions().counting.projcount;
 
   std::cout << "Projection Prefix : " << projection_prefix << std::endl;
   for (Node n : tlAsserts)
   {
     expr::getSymbols(n, bvnodes_in_formula);
+    for (Node nx : bvnodes_in_formula)
+    {
+      bvnode_in_formula_v.push_back(nx);
+    }
   }
-  for (Node n : bvnodes_in_formula)
+  vars_in_formula = slv->getSolver()->getVars(bvnode_in_formula_v);
+
+  vector<std::string> var_list;
+
+  for (Term n : vars_in_formula)
   {
-    uint32_t bv_width = n.getType().getBitVectorSize();
-    if ( bv_width > width) width = bv_width;
-    bvnode_in_formula_v.push_back(n);
-  }
-  bvs_in_formula_aux = slv->getSolver()->getVars(bvnode_in_formula_v);
-  for (Term n : bvs_in_formula_aux)
-  {
-    std::cout << n.getSort() << " " << n.getSymbol();
-    if(! n.getSort().isBitVector()) {
-      if(n.getSort().isBoolean()) num_bool++;
-      std::cout << " Skipping" << std::endl;
+    bool in_projset = (n.getSymbol().compare(0, projection_prefix.size(), projection_prefix) == 0);
+
+    if ( std::find(var_list.begin(), var_list.end(),  n.getSymbol() ) != var_list.end() )
       continue;
-    }
-    bvs_in_formula.push_back(n);
-    std::cout << " Adding" << std::endl;
-    if(n.getSymbol().compare(0, projection_prefix.size(), projection_prefix) == 0)
-    {
-      std::cout << "Using " << n.getSymbol() << " as projection variable" << std::endl;
-      projection_var_terms.push_back(n);
-    }
     else
+      var_list.push_back( n.getSymbol());
+
+    if(n.getSort().isBitVector())
     {
-      std::cout << " : NO" << std::endl;
+      num_bv++;
+      bvs_in_formula.push_back(n);
+      if(n.getSort().getBitVectorSize() > max_bitwidth)
+        max_bitwidth = n.getSort().getBitVectorSize();
+      if (in_projset || !get_projected_count)
+      {
+        num_bv_projset++;
+        bvs_in_projset.push_back(n);
+      }
+    }
+    else if (n.getSort().isBoolean())
+    {
+      num_bool++;
+      booleans_in_formula.push_back(n);
+      if (in_projset || !get_projected_count)
+      {
+        num_bool_projset++;
+        booleans_in_projset.push_back(n);
+      }
     }
   }
-  slice_size = slv->getOptions().counting.slicesize;
 
-  verb = slv->getOptions().counting.countingverb;
+  if (num_bv_projset == 0 && num_bool_projset > 0)
+    project_on_booleans = true;
+  else
+    project_on_booleans = false;
+
+  projection_var_terms =  bvs_in_projset;
+  projection_var_terms.insert(projection_var_terms.end(),
+                              booleans_in_projset.begin(),booleans_in_projset.end());
+
   projection_vars = slv->getSolver()->termVectorToNodes1(projection_var_terms);
-  if (slv->getOptions().counting.projcount) bvs_in_formula = projection_var_terms;
-  num_bv = bvs_in_formula.size();
 
-  std::cout  << "[SMTApproxMC] There are " <<  num_bv <<  " bitvectors, max width = " << width
-             << " and " << num_bool << " Booleans."
-             << " Slice size = " << slice_size << std::endl;
+  slice_size = slv->getOptions().counting.slicesize;
+  if (slice_size > 32) slice_size = 32;
+  if (slice_size > max_bitwidth) slice_size = max_bitwidth;
+  verb = slv->getOptions().counting.countingverb;
+
+  std::cout  << "[SMTApproxMC] There are " << num_bool << " Booleans and "
+             << num_bv <<  " bitvectors, max width = " << max_bitwidth  << std::endl
+             << "In Proj. set, there are " << num_bool_projset << " Booleans and " << num_bv_projset
+             << " bitvectors. Slice size = " << slice_size << std::endl;
 }
 
+Term SmtApproxMc::generate_boolean_hash()
+{
+  cvc5::Solver* solver = d_slv->getSolver();
+  Term xorcons = solver->mkBoolean(Random::getRandom().pick(0, 1));
+  for (cvc5::Term x : booleans_in_projset)
+  {
+    Assert(x.getSort().isBoolean());
+    if(Random::getRandom().pick(0, 1) == 1)
+    {
+      xorcons = solver->mkTerm(XOR,{xorcons,x});
+    }
+  }
+  std::cout << "Adding Boolean XOR as hash function" << std::endl;
+  return xorcons;
+}
 
 Term SmtApproxMc::generate_hash()
 {
@@ -186,9 +226,9 @@ Term SmtApproxMc::generate_hash()
   Term axpb = solver->mkBitVector(new_bv_width, 0);
   Term c = solver->mkBitVector(new_bv_width, c_i);
 
-  if (verb > 0) std::cout << "Adding a hash constraint (" ;
+  if (verb > 0) std::cout << "Adding a hash constraint (size "<< bvs_in_formula.size() <<") : (" ;
 
-  for(cvc5::Term x : bvs_in_formula)
+  for(cvc5::Term x : bvs_in_projset)
   {
     uint32_t this_bv_width = x.getSort().getBitVectorSize();
     uint32_t num_slices = ceil(this_bv_width/slice_size);
@@ -239,13 +279,15 @@ uint64_t SmtApproxMc::smtApproxMcMain()
  for (uint32_t iter = 1 ; iter <= numIters; ++iter )
  {
    countThisIter = smtApproxMcCore();
-   if (countThisIter == 0){
+   if (countThisIter == 0 && numHashes > 0){
      std::cout << "[Round " << iter << "] failing count " << std::endl;
      iter--;
    } else {
    std::cout << "[Round " << iter << "] returning count " << countThisIter << std::endl;
      numList.push_back(countThisIter);
   }
+  if (numHashes == 0) break;
+
  }
  countThisIter = findMedian(numList);
  return countThisIter;
@@ -268,7 +310,10 @@ uint64_t SmtApproxMc::smtApproxMcCore()
       if (verb > 0) std::cout << "Pushing Hashes : " << numHashes - oldhashes << std::endl;
       for(int i = oldhashes; i < numHashes;  ++i){
         d_slv->getSolver()->push();
-        hash = generate_hash();
+        if (project_on_booleans && get_projected_count)
+          hash = generate_boolean_hash();
+        else
+          hash = generate_hash();
         d_slv->getSolver()->assertFormula(hash);
       }
       oldhashes = numHashes;
@@ -359,7 +404,7 @@ vector<Node> SmtApproxMc::generateNHashes(uint32_t numhashes)
     std::string modulus = std::to_string(primes[num]);
     Sort f5 = solver->mkFiniteFieldSort(modulus);
 
-    for(uint32_t bitwidth = 0; bitwidth < width; ++bitwidth)
+    for(uint32_t bitwidth = 0; bitwidth < max_bitwidth; ++bitwidth)
     {
       std::string value_here = std::to_string(int(pow(2,bitwidth)));
       ff[bitwidth] = solver->mkFiniteFieldElem(value_here, f5);
@@ -371,7 +416,7 @@ vector<Node> SmtApproxMc::generateNHashes(uint32_t numhashes)
      if (verb > 0) std::cout << "Adding a hash constraint (" ;
     for(cvc5::Term x : bvs_in_formula)
     {
-      uint32_t num_slices = ceil(width/slice_size);
+      uint32_t num_slices = ceil(max_bitwidth/slice_size);
 
       for(uint32_t slice = 0; slice < num_slices; ++slice)
       {

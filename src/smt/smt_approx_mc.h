@@ -35,17 +35,20 @@ class SmtApproxMc
 {
  private:
   SolverEngine* d_slv;
-  uint32_t width = 0, num_bv = 0, num_bool;
+  uint32_t max_bitwidth = 0, num_bv = 0, num_bool = 0;
+  uint32_t num_bv_projset = 0, num_bool_projset = 0;
   uint32_t slice_size = 2;
-  int numHashes = 1, oldhashes = 0;
+  int numHashes = 0, oldhashes = 0;
   vector<uint64_t> primes;
   std::unordered_set<Node> bvnodes_in_formula;
-  std::vector<Node> bvnode_in_formula_v;
-  std::vector<Node> projection_vars;
-  std::vector<Term> bvs_in_formula, bvs_in_formula_aux;
+  std::vector<Node> bvnode_in_formula_v, projection_vars;
+  std::vector<Term> bvs_in_projset, booleans_in_projset;
+  std::vector<Term> bvs_in_formula, vars_in_formula, booleans_in_formula;
   Term ff[100];
   int verb = 0;
   std::string projection_prefix;
+  bool project_on_booleans = true;
+  bool get_projected_count = false;
 
  public:
   SmtApproxMc(SolverEngine* slv);
@@ -53,6 +56,7 @@ class SmtApproxMc
 
   void populatePrimes();
   vector<Node> generateNHashes(uint32_t numHashes);
+  Term generate_boolean_hash();
   Term generate_hash();
   uint64_t smtApproxMcMain();
   uint64_t smtApproxMcCore();
