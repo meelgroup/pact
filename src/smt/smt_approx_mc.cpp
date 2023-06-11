@@ -224,7 +224,7 @@ Term SmtApproxMc::generate_hash()
   Term axpb = solver->mkBitVector(new_bv_width, 0);
   Term c = solver->mkBitVector(new_bv_width, c_i);
 
-  if (verb > 0) std::cout << "Adding a hash constraint (size "<< bvs_in_formula.size() <<") : (" ;
+  Trace("smap-hash") << "Adding a hash constraint (size "<< bvs_in_formula.size() <<") : (" ;
 
   for(cvc5::Term x : bvs_in_projset)
   {
@@ -235,30 +235,32 @@ Term SmtApproxMc::generate_hash()
     {
       uint32_t this_slice_start = slice*slice_size;
       uint32_t this_slice_end = (slice+1)*slice_size - 1;
+      uint extend_x_by_bits = 1;
       if (this_slice_end >= this_bv_width)
+      {
+        extend_x_by_bits = this_slice_end - this_bv_width + 2;
         this_slice_end = this_bv_width - 1;
-
+      }
       uint32_t a_i = Random::getRandom().pick(0, primes[slice_size] - 1);
-      if (verb > 0)
-        std::cout << a_i << x.getSymbol() << "[" << this_slice_start
+      Trace("smap-hash") << a_i << x.getSymbol() << "[" << this_slice_start
                 << ":" << this_slice_end << "] + " ;
 
       Op x_bit_op = solver->mkOp(BITVECTOR_EXTRACT, {this_slice_end , this_slice_start});
       Term x_sliced = solver->mkTerm(x_bit_op, {x});
-      Op x_zero_ex_op = solver->mkOp(BITVECTOR_ZERO_EXTEND, {1});
+      Op x_zero_ex_op = solver->mkOp(BITVECTOR_ZERO_EXTEND, {extend_x_by_bits});
       x_sliced = solver->mkTerm(x_zero_ex_op, {x_sliced});
       Term a = solver->mkBitVector(new_bv_width, a_i);
       Term ax = solver->mkTerm(BITVECTOR_MULT, {a, x_sliced});
-      ax = solver->mkTerm(BITVECTOR_UREM, {ax,p});
+      //ax = solver->mkTerm(BITVECTOR_UREM, {ax,p});
       axpb = solver->mkTerm(BITVECTOR_ADD, {ax, axpb});
       }
   }
 
   axpb = solver->mkTerm(BITVECTOR_UREM, {axpb,p});
-  if (verb > 0)
-    std::cout << " 0) mod " << primes[slice_size] << " = " << c_i  << std::endl ;
+  Trace("smap-hash") << " 0) mod " << primes[slice_size] << " = " << c_i  << "\n" ;
 
   Term hash_const = solver->mkTerm(EQUAL, {axpb,c});
+  Trace("smap-print-hash") << "\n" << "(assert " << hash_const << ")" << "\n";
 
   return hash_const;
 }
