@@ -209,9 +209,14 @@ Term SmtApproxMc::generate_boolean_hash()
   return xorcons;
 }
 
-Term SmtApproxMc::generate_integer_hash()
+Term SmtApproxMc::generate_integer_hash(uint32_t hash_num)
 {
   std::cout << "TODO: Generate integer hash" << std::endl;
+  cvc5::Solver* solver = d_slv->getSolver();
+  uint32_t new_bv_width = slice_size + 1;
+  Sort bvsort = solver->mkBitVectorSort(new_bv_width);
+  std::string var_name = "hash"+std::to_string(hash_num);
+  Term x = solver->mkConst(bvsort, var_name);
 }
 
 
@@ -335,7 +340,7 @@ uint64_t SmtApproxMc::smtApproxMcCore()
           hash = generate_hash();
         else {
           Assert(d_slv->getOptions().counting.hashsm == options::HashingMode::INT);
-          hash = generate_integer_hash();
+          hash = generate_integer_hash(i);
         }
         d_slv->getSolver()->assertFormula(hash);
       }
