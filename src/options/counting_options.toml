@@ -62,12 +62,14 @@ name   = "ModelCounting"
   long       = "hashsm=MODE"
   type       = "HashingMode"
   default    = "BV"
-  help       = "choose which hashing method to use BV or FF"
-  help_mode  = "SAT solver for bit-blasting backend."
+  help       = "choose which hashing method to use BV, INT or FF"
+  help_mode  = "choose which hashing method to use"
 [[option.mode.BV]]
   name = "bv"
 [[option.mode.FF]]
   name = "ff"
+[[option.mode.INT]]
+  name = "int"
 
 [[option]]
   name       = "slicesize"

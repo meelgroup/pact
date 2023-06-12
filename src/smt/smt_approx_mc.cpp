@@ -209,6 +209,12 @@ Term SmtApproxMc::generate_boolean_hash()
   return xorcons;
 }
 
+Term SmtApproxMc::generate_integer_hash()
+{
+  std::cout << "TODO: Generate integer hash" << std::endl;
+}
+
+
 Term SmtApproxMc::generate_hash()
 {
   cvc5::Solver* solver = d_slv->getSolver();
@@ -325,8 +331,12 @@ uint64_t SmtApproxMc::smtApproxMcCore()
         d_slv->getSolver()->push();
         if (project_on_booleans && get_projected_count)
           hash = generate_boolean_hash();
-        else
+        else if (d_slv->getOptions().counting.hashsm == options::HashingMode::BV)
           hash = generate_hash();
+        else {
+          Assert(d_slv->getOptions().counting.hashsm == options::HashingMode::INT);
+          hash = generate_integer_hash();
+        }
         d_slv->getSolver()->assertFormula(hash);
       }
       oldhashes = numHashes;

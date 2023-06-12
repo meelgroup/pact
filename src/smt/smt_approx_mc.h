@@ -59,6 +59,7 @@ class SmtApproxMc
   vector<Node> generateNHashes(uint32_t numHashes);
   Term generate_boolean_hash();
   Term generate_hash();
+  Term generate_integer_hash();
   uint64_t smtApproxMcMain();
   uint64_t smtApproxMcCore();
   uint32_t getPivot();
