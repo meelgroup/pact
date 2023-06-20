@@ -50,6 +50,7 @@ class SmtApproxMc
   std::string projection_prefix;
   bool project_on_booleans = true;
   bool get_projected_count = false;
+  std::vector<Term> projection_var_terms;
 
  public:
   SmtApproxMc(SolverEngine* slv);

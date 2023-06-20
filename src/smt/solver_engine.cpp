@@ -711,7 +711,7 @@ int32_t SolverEngine::boundedSat(uint64_t bound, const std::vector<Node>& terms_
     if (res.getStatus() == Result::SAT)
     {
       finishInit();
-      if (opts.counting.projcount)
+      if (opts.counting.projcount || opts.counting.hashsm==options::HashingMode::INT)
       {
         blockModelValues(terms_to_block);
       }
@@ -1158,7 +1158,7 @@ void SolverEngine::blockModel(modes::BlockModelsMode mode)
   std::vector<Node> eassertsProc = getSubstitutedAssertions();
   ModelBlocker mb(*d_env.get());
   Node eblocker = mb.getModelBlocker(eassertsProc, m, mode);
-  Trace("smt") << "Block formula: " << eblocker << std::endl;
+  Trace("smap-deep") << "Block model: " << eblocker << std::endl;
   assertFormulaInternal(eblocker);
 }
 
@@ -1181,8 +1181,7 @@ void SolverEngine::blockModelValues(const std::vector<Node>& exprs)
   ModelBlocker mb(*d_env.get());
   Node eblocker = mb.getModelBlocker(
       eassertsProc, m, modes::BlockModelsMode::VALUES, exprs);
-  if(d_env->getOptions().counting.countingverb)
-    std::cout << "Block formula: size(" << exprs.size() <<") " << eblocker << std::endl;
+  Trace("smap-deep") << "Block model: " << eblocker << std::endl;
   assertFormulaInternal(eblocker);
 }
 

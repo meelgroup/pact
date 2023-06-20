@@ -68,40 +68,6 @@ void SmtApproxMc::populatePrimes()
   primes.push_back(2147483659);//31
   primes.push_back(4294967311);//32
   primes.push_back(8589934609);//33
-  //   primes.push_back(17179869209);//34
-  //   primes.push_back(34359738421);//35
-  //   primes.push_back(68719476767);//36
-  //   primes.push_back(137438953481);//37
-  //   primes.push_back(274877906951);//38
-  //   primes.push_back(549755813911);//39
-  //   primes.push_back(1099511627791);//40
-  //   primes.push_back(2199023255579);//41
-  //   primes.push_back(4398046511119);//42
-  //   primes.push_back(8796093022237);//43
-  //   primes.push_back(17592186044423);//44
-  //   primes.push_back(35184372088891);//45
-  //   primes.push_back(70368744177679);//46
-  //   primes.push_back(140737488355333);//47
-  //   primes.push_back(281474976710677);//48
-  //   primes.push_back(562949953421381);//49
-  //   primes.push_back(1125899906842679);//50
-  //   primes.push_back(2251799813685269);//51
-  //   primes.push_back(4503599627370517);//52
-  //   primes.push_back(9007199254740997);//53
-  //   primes.push_back(18014398509482143);//54
-  //   primes.push_back(36028797018963971);//55
-  //   primes.push_back(72057594037928017);//56
-  //   primes.push_back(144115188075855881);//57
-  //   primes.push_back(288230376151711813);//58
-  //   primes.push_back(576460752303423619);//59
-  //   primes.push_back(1152921504606847009);//60
-  //   primes.push_back(2305843009213693967);//61
-  //   primes.push_back(4611686018427388039);//62
-  //   primes.push_back(9223372036854775837);//63
-  //   primes.push_back(18446744073709551629);//64
-  //   primes.push_back(36893488147419103363);//65
-  //   primes.push_back(73786976294838206473);//66
-
 }
 
 uint32_t SmtApproxMc::getPivot()
@@ -122,7 +88,6 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
 {
   this->d_slv = slv;
   std::vector<Node> tlAsserts = slv->getAssertions();
-  std::vector<Term> projection_var_terms;
 
   projection_prefix = slv->getOptions().counting.projprefix;
   get_projected_count = slv->getOptions().counting.projcount;
@@ -138,7 +103,6 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
   vars_in_formula = slv->getSolver()->getVars(bvnode_in_formula_v);
 
   vector<std::string> var_list;
-
   for (Term n : vars_in_formula)
   {
     bool in_projset = (n.getSymbol().compare(0, projection_prefix.size(), projection_prefix) == 0);
@@ -184,7 +148,7 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
   projection_vars = slv->getSolver()->termVectorToNodes1(projection_var_terms);
 
   slice_size = slv->getOptions().counting.slicesize;
-  if (slice_size > 32) slice_size = 32;
+  if (slice_size > 32) slice_size = 16;
   if (slice_size > max_bitwidth) slice_size = max_bitwidth;
   verb = slv->getOptions().counting.countingverb;
 
@@ -211,12 +175,74 @@ Term SmtApproxMc::generate_boolean_hash()
 
 Term SmtApproxMc::generate_integer_hash(uint32_t hash_num)
 {
-  std::cout << "TODO: Generate integer hash" << std::endl;
   cvc5::Solver* solver = d_slv->getSolver();
-  uint32_t new_bv_width = slice_size + 1;
+  uint32_t new_bv_width = 2*(slice_size + 1);
+
+
+  Term p = solver->mkBitVector(new_bv_width, primes[slice_size]);
+
+  uint32_t c_i = Random::getRandom().pick(0, primes[slice_size] - 1);
+
+  Term axpb = solver->mkBitVector(new_bv_width, 0);
+  Term one = solver->mkBitVector(new_bv_width, 1);
+  Term maxx = solver->mkBitVector(new_bv_width, pow(2,slice_size+1));
+  Term c = solver->mkBitVector(new_bv_width, c_i);
+
   Sort bvsort = solver->mkBitVectorSort(new_bv_width);
   std::string var_name = "hash"+std::to_string(hash_num);
-  Term x = solver->mkConst(bvsort, var_name);
+  Term new_var = solver->mkConst(bvsort, var_name);
+  projection_var_terms.push_back(new_var);
+  projection_vars = d_slv->getSolver()->termVectorToNodes1(projection_var_terms);
+  Term new_var_mult_p = solver->mkTerm(BITVECTOR_MULT, {new_var, p});
+  Term new_var_plusone = solver->mkTerm(BITVECTOR_ADD, {new_var, one});
+  Term new_var_plusone_mult_p = solver->mkTerm(BITVECTOR_MULT, {new_var_plusone, p});
+  Term hash_const_less =
+    solver->mkTerm(BITVECTOR_ULT, {new_var,maxx});
+  c = solver->mkTerm(BITVECTOR_ADD, {c, new_var_mult_p});
+
+  Trace("smap-hash") << pow(2,slice_size) << "Adding Hash: (" ;
+
+  for(cvc5::Term x : bvs_in_projset)
+  {
+    uint32_t this_bv_width = x.getSort().getBitVectorSize();
+    uint32_t num_slices = ceil(this_bv_width/slice_size);
+    if(slice_size > this_bv_width) num_slices = 1;
+    for(uint32_t slice = 0; slice < num_slices; ++slice)
+    {
+      uint32_t this_slice_start = slice*slice_size;
+      uint32_t this_slice_end = (slice+1)*slice_size - 1;
+      uint extend_x_by_bits = 2 + slice_size;
+      if (this_slice_end >= this_bv_width)
+      {
+        extend_x_by_bits = this_slice_end - this_bv_width + 3 + slice_size;
+        this_slice_end = this_bv_width - 1;
+      }
+      uint32_t a_i = Random::getRandom().pick(0, primes[slice_size] - 1);
+      Trace("smap-hash") << a_i << x.getSymbol() << "[" << this_slice_start
+      << ":" << this_slice_end << "] + " ;
+
+      Op x_bit_op = solver->mkOp(BITVECTOR_EXTRACT, {this_slice_end , this_slice_start});
+      Term x_sliced = solver->mkTerm(x_bit_op, {x});
+      Op x_zero_ex_op = solver->mkOp(BITVECTOR_ZERO_EXTEND, {extend_x_by_bits});
+      x_sliced = solver->mkTerm(x_zero_ex_op, {x_sliced});
+      Term a = solver->mkBitVector(new_bv_width, a_i);
+      Term ax = solver->mkTerm(BITVECTOR_MULT, {a, x_sliced});
+      axpb = solver->mkTerm(BITVECTOR_ADD, {ax, axpb});
+    }
+  }
+
+
+  Trace("smap-hash") << " 0) = " << primes[slice_size] << "h" << hash_num << " + " << c_i  << "\n" ;
+
+  Term hash_const = solver->mkTerm(EQUAL, {axpb,c});
+//   hash_const_less =
+//     solver->mkTerm(BITVECTOR_ULE, {c,maxx});
+  Trace("smap-print-hash") << "\n" << "(xassert " << hash_const << ")" << "\n";
+  hash_const = solver->mkTerm(AND, {hash_const,hash_const_less});
+  Trace("smap-print-hash") << "\n" << "(xassert " << hash_const_less << ")" << "\n";
+  Trace("smap-print-hash") << "\n" << "(assert " << hash_const << ")" << "\n";
+
+  return hash_const;
 }
 
 
@@ -224,9 +250,7 @@ Term SmtApproxMc::generate_hash()
 {
   cvc5::Solver* solver = d_slv->getSolver();
 
-  uint32_t new_bv_width = slice_size + 1;
-
-  Sort f5 = solver->mkBitVectorSort(new_bv_width);
+  uint32_t new_bv_width = 2*(slice_size + 1);
 
   Term p = solver->mkBitVector(new_bv_width, primes[slice_size]);
 
@@ -241,17 +265,24 @@ Term SmtApproxMc::generate_hash()
   {
     uint32_t this_bv_width = x.getSort().getBitVectorSize();
     uint32_t num_slices = ceil(this_bv_width/slice_size);
-    if(slice_size > this_bv_width) num_slices = 1;
+    if(slice_size > this_bv_width)
+    {
+      num_slices = 1;
+    }
     for(uint32_t slice = 0; slice < num_slices; ++slice)
     {
       uint32_t this_slice_start = slice*slice_size;
       uint32_t this_slice_end = (slice+1)*slice_size - 1;
-      uint extend_x_by_bits = 1;
+      uint32_t extend_x_by_bits = 2 + slice_size;
+
+      // If slicesize does not divide bv width, and this is last
+      // slice, then extend this slice more than others
       if (this_slice_end >= this_bv_width)
       {
-        extend_x_by_bits = this_slice_end - this_bv_width + 2;
+        extend_x_by_bits = this_slice_end - this_bv_width + 3 + slice_size;
         this_slice_end = this_bv_width - 1;
       }
+
       uint32_t a_i = Random::getRandom().pick(0, primes[slice_size] - 1);
       Trace("smap-hash") << a_i << x.getSymbol() << "[" << this_slice_start
                 << ":" << this_slice_end << "] + " ;
@@ -331,7 +362,7 @@ uint64_t SmtApproxMc::smtApproxMcCore()
 
   while(true){
     if (numHashes > oldhashes){
-      if (verb > 0) std::cout << "Pushing Hashes : " << numHashes - oldhashes << std::endl;
+      Trace("smap") << "Pushing Hashes : " << numHashes - oldhashes << "\n";
       for(int i = oldhashes; i < numHashes;  ++i){
         d_slv->getSolver()->push();
         if (project_on_booleans && get_projected_count)
@@ -346,11 +377,18 @@ uint64_t SmtApproxMc::smtApproxMcCore()
       }
       oldhashes = numHashes;
     } else if (numHashes < oldhashes) {
-      if (verb > 0) std::cout << "Poping Hashes : " <<  oldhashes - numHashes << std::endl;
+      Trace("smap") << "Poping Hashes : " <<  oldhashes - numHashes << "\n";
       d_slv->getSolver()->pop(oldhashes - numHashes);
+      if(d_slv->getOptions().counting.hashsm==options::HashingMode::INT){
+        for (int i =0; i < oldhashes - numHashes;i++){
+          projection_var_terms.pop_back();
+        }
+        projection_vars = d_slv->getSolver()->termVectorToNodes1(projection_var_terms);
+      }
+
       oldhashes = numHashes;
     } else {
-      if (verb > 0) std::cout << "Strange! No change in num hashes!" << std::endl;
+      Trace("smap") << "Strange! No change in num hashes!" << "\n";
     }
 
 
@@ -369,6 +407,12 @@ uint64_t SmtApproxMc::smtApproxMcCore()
     } else if (count < bound){
       if (verb > 0) std::cout << "Poping Hashes : " <<  oldhashes << std::endl;
       d_slv->getSolver()->pop(oldhashes);
+      if(d_slv->getOptions().counting.hashsm==options::HashingMode::INT){
+        for (int i =0; i < oldhashes;i++){
+          projection_var_terms.pop_back();
+        }
+        projection_vars = d_slv->getSolver()->termVectorToNodes1(projection_var_terms);
+      }
       break;
     }
 
@@ -378,7 +422,7 @@ uint64_t SmtApproxMc::smtApproxMcCore()
     } else {
       nochange = 0;
       if (highbound < lowbound){
-        if (verb > 0) std::cout << "Poping Hashes : " <<  oldhashes << std::endl;
+        Trace("smap") << "Poping Hashes : " <<  oldhashes << "\n";
         d_slv->getSolver()->pop(oldhashes);
         break;
       }
@@ -391,12 +435,12 @@ uint64_t SmtApproxMc::smtApproxMcCore()
         highbound = numHashes;
       }
       else{
-        if (verb > 0) std::cout << "Poping Hashes : " <<  oldhashes << std::endl;
+        Trace("smap") << "Poping Hashes : " <<  oldhashes << "\n";
         d_slv->getSolver()->pop(oldhashes);
         break;
       }
       if(nochange){
-        if (verb > 0) std::cout << "Poping Hashes : " <<  oldhashes << std::endl;
+        Trace("smap") << "Poping Hashes : " <<  oldhashes << "\n";
         d_slv->getSolver()->pop(oldhashes);
         return 0;
       }
