@@ -233,7 +233,6 @@ void SolverEngine::shutdown()
 
 SolverEngine::~SolverEngine()
 {
-
   try
   {
     shutdown();
@@ -266,7 +265,8 @@ SolverEngine::~SolverEngine()
   }
   catch (Exception& e)
   {
-    d_env->warning() << "cvc5 threw an exception during cleanup." << std::endl << e << std::endl;
+    d_env->warning() << "cvc5 threw an exception during cleanup." << std::endl
+                     << e << std::endl;
   }
 }
 
@@ -335,9 +335,10 @@ void SolverEngine::setInfo(const std::string& key, const std::string& value)
   {
     if (value != "2" && value != "2.6")
     {
-      d_env->warning() << "SMT-LIB version " << value
-                << " unsupported, defaulting to language (and semantics of) "
-                   "SMT-LIB 2.6\n";
+      d_env->warning()
+          << "SMT-LIB version " << value
+          << " unsupported, defaulting to language (and semantics of) "
+             "SMT-LIB 2.6\n";
     }
     getOptions().writeBase().inputLanguage = Language::LANG_SMTLIB_V2_6;
     // also update the output language
@@ -699,7 +700,9 @@ QuantifiersEngine* SolverEngine::getAvailableQuantifiersEngine(
   return qe;
 }
 
-int32_t SolverEngine::boundedSat(uint64_t bound, const std::vector<Node>& terms_to_block )
+int32_t SolverEngine::boundedSat(uint64_t bound,
+                                 int num_hashes,
+                                 const std::vector<Node>& terms_to_block)
 {
   uint64_t count = 0;
   Result res;
@@ -707,11 +710,22 @@ int32_t SolverEngine::boundedSat(uint64_t bound, const std::vector<Node>& terms_
   push();
   do
   {
+    auto time_before = std::chrono::high_resolution_clock::now();
+    // getSolver()->getStatistics().get("global::totalTime");
     res = checkSat();
+    auto time_after = std::chrono::high_resolution_clock::now();
+    auto time_elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+                            time_after - time_before)
+                            .count();
+    double elapsed_time_in_ms = time_elapsed / 1E3;
+
+    Trace("satcall-time") << "c it " << num_hashes << "," << count + 1 << ","
+                          << elapsed_time_in_ms << std::endl;
     if (res.getStatus() == Result::SAT)
     {
       finishInit();
-      if (opts.counting.projcount || opts.counting.hashsm==options::HashingMode::INT)
+      if (opts.counting.projcount
+          || opts.counting.hashsm == options::HashingMode::INT)
       {
         blockModelValues(terms_to_block);
       }
@@ -721,12 +735,11 @@ int32_t SolverEngine::boundedSat(uint64_t bound, const std::vector<Node>& terms_
       }
       count++;
     }
-  } while (res.getStatus() == Result::SAT && count < bound );
+  } while (res.getStatus() == Result::SAT && count < bound);
   pop();
 
   return count;
 }
-
 
 Result SolverEngine::checkSat()
 {
@@ -1059,8 +1072,8 @@ Node SolverEngine::getValue(const Node& t) const
   // holds for models that do not have approximate values.
   if (!m->isValue(resultNode))
   {
-    d_env->warning() << "Could not evaluate " << resultNode
-                     << " in getValue." << std::endl;
+    d_env->warning() << "Could not evaluate " << resultNode << " in getValue."
+                     << std::endl;
   }
 
   if (d_env->getOptions().smt.abstractValues && resultNode.getType().isArray())
@@ -1417,9 +1430,10 @@ void SolverEngine::checkUnsatCore()
                     << std::endl;
   if (r.isUnknown())
   {
-    d_env->warning() << "SolverEngine::checkUnsatCore(): could not check core result "
-                 "unknown."
-              << std::endl;
+    d_env->warning()
+        << "SolverEngine::checkUnsatCore(): could not check core result "
+           "unknown."
+        << std::endl;
   }
   else if (r.getStatus() == Result::SAT)
   {

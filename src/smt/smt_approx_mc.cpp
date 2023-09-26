@@ -84,6 +84,16 @@ uint32_t SmtApproxMc::getNumIter()
   return int(ceil(25*log(3/delta)));
 }
 
+/**
+ * Minimum Bitwidth needed for the hashing constraint
+ * to avoid overflow.
+ */
+uint32_t getMinBW()
+{
+  uint32_t min_bw=0;
+  return min_bw;
+}
+
 SmtApproxMc::SmtApproxMc(SolverEngine* slv)
 {
   this->d_slv = slv;
@@ -148,8 +158,9 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
   projection_vars = slv->getSolver()->termVectorToNodes1(projection_var_terms);
 
   slice_size = slv->getOptions().counting.slicesize;
-  if (slice_size > 32) slice_size = 16;
+  if (slice_size == 0) slice_size = max_bitwidth/2;
   if (slice_size > max_bitwidth) slice_size = max_bitwidth;
+  if (slice_size > 32) slice_size = 16;
   verb = slv->getOptions().counting.countingverb;
 
   std::cout  << "c [smtappmc] formula spec: Booleans: " << num_bool
@@ -237,9 +248,9 @@ Term SmtApproxMc::generate_integer_hash(uint32_t hash_num)
   Term hash_const = solver->mkTerm(EQUAL, {axpb,c});
 //   hash_const_less =
 //     solver->mkTerm(BITVECTOR_ULE, {c,maxx});
-  Trace("smap-print-hash") << "\n" << "(xassert " << hash_const << ")" << "\n";
+  Trace("smap-print-hash") << "\n" << "(assert " << hash_const << ")" << "\n";
   hash_const = solver->mkTerm(AND, {hash_const,hash_const_less});
-  Trace("smap-print-hash") << "\n" << "(xassert " << hash_const_less << ")" << "\n";
+  Trace("smap-print-hash") << "\n" << "(assert " << hash_const_less << ")" << "\n";
   Trace("smap-print-hash") << "\n" << "(assert " << hash_const << ")" << "\n";
 
   return hash_const;
@@ -395,7 +406,7 @@ uint64_t SmtApproxMc::smtApproxMcCore()
     std::cout << "c [smtappmc] [ " << getTime() << "] bounded_sol_count looking for " << bound
               << " solutions -- hashes active: " << numHashes << std::endl;
 
-    count = d_slv->boundedSat(bound, projection_vars);
+    count = d_slv->boundedSat(bound, numHashes, projection_vars);
 
 
      std::cout << "c [smtappmc] [ " << getTime() << "] got solutions: " << count
@@ -541,6 +552,8 @@ vector<Node> SmtApproxMc::generateNHashes(uint32_t numhashes)
 
 }  // namespace counting
 }  // namespace cvc5::internal
+
+
 
 
 

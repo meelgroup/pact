@@ -700,6 +700,7 @@ PreprocessingPassResult BVGauss::applyInternal(
     Node a = assertions.back();
     assertions.pop_back();
     cvc5::internal::Kind k = a.getKind();
+     Trace("bv-gauss-elim") << "c assertion to process: " << a << "\n";
 
     if (k == kind::AND)
     {
@@ -727,7 +728,9 @@ PreprocessingPassResult BVGauss::applyInternal(
 
       if (urem[0].getKind() == kind::BITVECTOR_ADD && is_bv_const(urem[1]))
       {
+        Trace("bv-gauss-elim") << "c BVGauss adding equation mod " << urem[1] << " current size: " << equations[urem[1]].size() << "\n"   ;
         equations[urem[1]].push_back(a);
+
       }
     }
   }
@@ -735,10 +738,24 @@ PreprocessingPassResult BVGauss::applyInternal(
   std::unordered_map<Node, Node> subst;
 
   NodeManager* nm = NodeManager::currentNM();
+  Trace("bv-gauss-elim") << "c BVGauss num moduluses " << equations.size() << "\n";
+
   for (const auto& eq : equations)
   {
-    if (eq.second.size() <= 1) { continue; }
+    Trace("bv-gauss-elim") << "c BVGauss checking equation: " << eq.second.size() << eq.first << "\n";
 
+
+    // NOTE (AS): eq.second.size() <= 1 checks whether there are more
+    // than one equtation with same modulus. needed for GE
+    // Problem 1: The earlier constraints are removed as they are
+    // already been preprocessed in previous sat calls
+    // TODO: do not remove those constraints
+    // Problem 2: Even in the rounds where we are adding more than
+    // one constraint, that is not reflected here. very strange
+    // TODO: Debug
+
+    if (eq.second.size() < 1) { continue; }
+    Trace("bv-gauss-elim") << "c not continuing\n";
     std::unordered_map<Node, Node> res;
     BVGauss::Result ret = gaussElimRewriteForUrem(eq.second, res);
     Trace("bv-gauss-elim") << "result: "

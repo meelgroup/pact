@@ -32,6 +32,15 @@ name   = "ModelCounting"
   help       = "approximate model count using SMTApproxMC"
 
 [[option]]
+  name       = "printHashedConstraints"
+  category   = "regular"
+  long       = "printhash"
+  type       = "bool"
+  default    = "false"
+  alternate  = false
+  help       = "Print Hashing constraints added (as .smt files)"
+
+[[option]]
   name       = "countingverb"
   category   = "regular"
   long       = "cv"
@@ -76,5 +85,5 @@ name   = "ModelCounting"
   category   = "regular"
   long       = "slicesize=N"
   type       = "uint64_t"
-  default    = "4"
+  default    = "0"
   help       = "slice size in SMTApproxMC"
