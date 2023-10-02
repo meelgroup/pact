@@ -88,11 +88,6 @@ uint32_t SmtApproxMc::getNumIter()
  * Minimum Bitwidth needed for the hashing constraint
  * to avoid overflow.
  */
-uint32_t getMinBW()
-{
-  uint32_t min_bw = 0;
-  return min_bw;
-}
 
 SmtApproxMc::SmtApproxMc(SolverEngine* slv)
 {
@@ -189,10 +184,30 @@ Term SmtApproxMc::generate_boolean_hash()
   return xorcons;
 }
 
+uint64_t SmtApproxMc::getMinBW()
+{
+  uint32_t min_bw = 2*slice_size + 1;
+  uint32_t num_sliced_var = 0;
+  for (cvc5::Term x : bvs_in_projset)
+  {
+    uint32_t this_bv_width = x.getSort().getBitVectorSize();
+    uint32_t num_slices = (this_bv_width + slice_size - 1) / slice_size;
+    num_sliced_var += num_slices;
+  }
+  uint32_t extension_for_sum =
+    static_cast<uint32_t>(std::ceil(std::log(num_sliced_var) / std::log(2)));
+
+  min_bw += extension_for_sum;
+  // std::cout << "extending " << slice_size << " bits to " << slice_size + min_bw << std::endl;
+
+  return min_bw;
+}
+
+
 Term SmtApproxMc::generate_integer_hash(uint32_t hash_num)
 {
   cvc5::Solver* solver = d_slv->getSolver();
-  uint32_t new_bv_width = 2 * (slice_size + 1);
+  uint32_t new_bv_width = getMinBW();
 
   Term p = solver->mkBitVector(new_bv_width, primes[slice_size]);
 
@@ -272,7 +287,7 @@ Term SmtApproxMc::generate_hash()
 {
   cvc5::Solver* solver = d_slv->getSolver();
 
-  uint32_t new_bv_width = 2 * (slice_size + 1);
+  uint32_t new_bv_width = getMinBW();
 
   Term p = solver->mkBitVector(new_bv_width, primes[slice_size]);
 
@@ -296,13 +311,13 @@ Term SmtApproxMc::generate_hash()
     {
       uint32_t this_slice_start = slice * slice_size;
       uint32_t this_slice_end = (slice + 1) * slice_size - 1;
-      uint32_t extend_x_by_bits = 2 + slice_size;
+      uint32_t extend_x_by_bits = new_bv_width - slice_size;
 
       // If slicesize does not divide bv width, and this is last
       // slice, then extend this slice more than others
       if (this_slice_end >= this_bv_width)
       {
-        extend_x_by_bits = this_slice_end - this_bv_width + 3 + slice_size;
+        extend_x_by_bits = this_slice_end - this_bv_width + 1 + new_bv_width - slice_size;
         this_slice_end = this_bv_width - 1;
       }
 
@@ -327,7 +342,7 @@ Term SmtApproxMc::generate_hash()
                      << "\n";
 
   Term hash_const = solver->mkTerm(EQUAL, {axpb, c});
-  Trace("smap-print-hash") << "\n"
+  Trace("smap-print-hash") << "chash "
                            << "(assert " << hash_const << ")"
                            << "\n";
 

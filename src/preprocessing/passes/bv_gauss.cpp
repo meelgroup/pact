@@ -700,7 +700,7 @@ PreprocessingPassResult BVGauss::applyInternal(
     Node a = assertions.back();
     assertions.pop_back();
     cvc5::internal::Kind k = a.getKind();
-     Trace("bv-gauss-elim") << "c assertion to process: " << a << "\n";
+     Trace("bv-gauss-elim-all") << "c assertion to process: " << a << "\n";
 
     if (k == kind::AND)
     {
@@ -738,11 +738,11 @@ PreprocessingPassResult BVGauss::applyInternal(
   std::unordered_map<Node, Node> subst;
 
   NodeManager* nm = NodeManager::currentNM();
-  Trace("bv-gauss-elim") << "c BVGauss num moduluses " << equations.size() << "\n";
+  Trace("bv-gauss-elim-all") << "c BVGauss num moduluses " << equations.size() << "\n";
 
   for (const auto& eq : equations)
   {
-    Trace("bv-gauss-elim") << "c BVGauss checking equation: " << eq.second.size() << eq.first << "\n";
+    Trace("bv-gauss-elim-all") << "c BVGauss checking equation: " << eq.second.size() << eq.first << "\n";
 
 
     // NOTE (AS): eq.second.size() <= 1 checks whether there are more
@@ -786,7 +786,7 @@ PreprocessingPassResult BVGauss::applyInternal(
         for (const auto& p : res)
         {
           Node a = nm->mkNode(kind::EQUAL, p.first, p.second);
-          Trace("bv-gauss-elim") << "added assertion: " << a << std::endl;
+          Trace("bv-gauss-elim-all") << "added assertion: " << a << std::endl;
           // add new assertion
           assertionsToPreprocess->push_back(a);
         }
