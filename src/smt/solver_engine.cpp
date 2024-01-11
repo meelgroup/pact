@@ -700,6 +700,8 @@ QuantifiersEngine* SolverEngine::getAvailableQuantifiersEngine(
   return qe;
 }
 
+// bound = 0 is no bound
+
 int32_t SolverEngine::boundedSat(uint64_t bound,
                                  int num_hashes,
                                  const std::vector<Node>& terms_to_block)
@@ -735,7 +737,7 @@ int32_t SolverEngine::boundedSat(uint64_t bound,
       }
       count++;
     }
-  } while (res.getStatus() == Result::SAT && count < bound);
+  } while (res.getStatus() == Result::SAT && (count < bound || bound == 0) );
   pop();
 
   return count;

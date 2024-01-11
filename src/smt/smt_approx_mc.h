@@ -65,6 +65,7 @@ class SmtApproxMc
   uint64_t getMinBW();
   uint64_t smtApproxMcCore();
   uint32_t getPivot();
+  vector<Node>& get_projection_nodes();
   uint32_t getNumIter();
   template<class T> T findMedian(vector<T>& numList);
   double getTime();

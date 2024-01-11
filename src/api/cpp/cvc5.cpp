@@ -6629,17 +6629,19 @@ Result Solver::modelCount(const std::vector<Sort>& sorts,
   bool exactcount = false;
   if (getOption("countenum") == "true" && !(getOption("smtapxmc") == "true"))
     exactcount = true;
+
+  internal::counting::SmtApproxMc* smap;
+  smap = new internal::counting::SmtApproxMc(d_slv.get());
+
   if (exactcount)
   {
     std::cout << "c getting count by enumeration" << std::endl;
-    count = boundedCount(-1,sorts,vars);
+    count = d_slv->boundedSat(0,0,smap->get_projection_nodes());
   }
   else
   {
     std::cout << "c getting approximate count via SMTApproxMC"
               << std::endl;
-    internal::counting::SmtApproxMc* smap;
-    smap = new internal::counting::SmtApproxMc(d_slv.get());
     count = smap->smtApproxMcMain();
   }
 

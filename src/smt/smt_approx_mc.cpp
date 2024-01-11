@@ -283,6 +283,7 @@ Term SmtApproxMc::generate_integer_hash(uint32_t hash_num)
   return hash_const;
 }
 
+
 Term SmtApproxMc::generate_hash()
 {
   cvc5::Solver* solver = d_slv->getSolver();
@@ -394,6 +395,11 @@ double SmtApproxMc::getTime()
   return time_int;
 }
 
+vector<Node>& SmtApproxMc::get_projection_nodes()
+{
+  return projection_vars;
+}
+
 uint64_t SmtApproxMc::smtApproxMcCore()
 {
   Term hash;
@@ -437,7 +443,7 @@ uint64_t SmtApproxMc::smtApproxMcCore()
       {
         for (int i = 0; i < oldhashes - numHashes; i++)
         {
-          projection_var_terms.pop_back();
+          projection_var_terms.pop_back(); // TODO (AS) making no sense now
         }
         projection_vars =
             d_slv->getSolver()->termVectorToNodes1(projection_var_terms);
