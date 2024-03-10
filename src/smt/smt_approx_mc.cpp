@@ -15,8 +15,6 @@
  * Implementation Hash function generator needed for counting with SMTApproxMC.
  */
 
-#include "smt/smt_approx_mc.h"
-
 #include <cvc5/cvc5.h>
 #include <cvc5/cvc5_export.h>
 #include <math.h>
@@ -24,6 +22,7 @@
 #include "expr/node.h"
 #include "expr/node_converter.h"
 #include "options/counting_options.h"
+#include "smt/smt_approx_mc.h"
 #include "solver_engine.h"
 #include "util/random.h"
 
