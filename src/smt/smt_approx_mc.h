@@ -15,14 +15,15 @@
  * Implementation Hash function generator needed for counting with SMTApproxMC.
  */
 
-#include "cvc5_private.h"
 #include <vector>
+
+#include "cvc5_private.h"
 
 #ifndef CVC5__SMT__APXMC_H
 #define CVC5__SMT__APXMC_H
 
-#include "smt/env_obj.h"
 #include "expr/node_algorithm.h"
+#include "smt/env_obj.h"
 #include "util/statistics_stats.h"
 
 using std::vector;
@@ -37,6 +38,7 @@ class SmtApproxMc
  private:
   SolverEngine* d_slv;
   uint32_t max_bitwidth = 0, num_bv = 0, num_bool = 0;
+  uint32_t num_floats = 0, num_real = 0, num_integer = 0;
   uint32_t num_bv_projset = 0, num_bool_projset = 0;
   uint32_t slice_size = 2;
   int numHashes = 0, oldhashes = 0;
@@ -54,7 +56,7 @@ class SmtApproxMc
 
  public:
   SmtApproxMc(SolverEngine* slv);
-  virtual ~SmtApproxMc(){}
+  virtual ~SmtApproxMc() {}
 
   void populatePrimes();
   vector<Node> generateNHashes(uint32_t numHashes);
@@ -67,11 +69,11 @@ class SmtApproxMc
   uint32_t getPivot();
   vector<Node>& get_projection_nodes();
   uint32_t getNumIter();
-  template<class T> T findMedian(vector<T>& numList);
+  template <class T>
+  T findMedian(vector<T>& numList);
   double getTime();
-
 };
 
-}  //namespace counting
+}  // namespace counting
 }  // namespace cvc5::internal
 #endif

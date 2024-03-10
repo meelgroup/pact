@@ -15,16 +15,17 @@
  * Implementation Hash function generator needed for counting with SMTApproxMC.
  */
 
-#include <cvc5/cvc5.h>
-#include <cvc5/cvc5_export.h>
 #include "smt/smt_approx_mc.h"
 
+#include <cvc5/cvc5.h>
+#include <cvc5/cvc5_export.h>
 #include <math.h>
-#include "solver_engine.h"
+
 #include "expr/node.h"
-#include "util/random.h"
 #include "expr/node_converter.h"
 #include "options/counting_options.h"
+#include "solver_engine.h"
+#include "util/random.h"
 
 using std::vector;
 
@@ -142,6 +143,18 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
         booleans_in_projset.push_back(n);
       }
     }
+    else if (n.getSort().isFloatingPoint())
+    {
+      num_floats++;
+    }
+    else if (n.getSort().isReal())
+    {
+      num_real++;
+    }
+    else if (n.getSort().isInteger())
+    {
+      num_integer++;
+    }
   }
 
   if (num_bv_projset == 0 && num_bool_projset > 0)
@@ -165,6 +178,8 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
   std::cout << "c [smtappmc] formula spec: Booleans: " << num_bool
             << " bitvectors: " << num_bv << " max width = " << max_bitwidth
             << std::endl
+            << "c [smtappmc] Reals: " << num_real << " FPs: " << num_floats
+            << " Integers: " << num_integer << std::endl
             << "c [smtappmc] Sampling set: Booleans: " << num_bool_projset
             << " bitvectors: " << num_bv_projset << std::endl;
 }
@@ -186,7 +201,7 @@ Term SmtApproxMc::generate_boolean_hash()
 
 uint64_t SmtApproxMc::getMinBW()
 {
-  uint32_t min_bw = 2*slice_size + 1;
+  uint32_t min_bw = 2 * slice_size + 1;
   uint32_t num_sliced_var = 0;
   for (cvc5::Term x : bvs_in_projset)
   {
@@ -195,14 +210,14 @@ uint64_t SmtApproxMc::getMinBW()
     num_sliced_var += num_slices;
   }
   uint32_t extension_for_sum =
-    static_cast<uint32_t>(std::ceil(std::log(num_sliced_var) / std::log(2)));
+      static_cast<uint32_t>(std::ceil(std::log(num_sliced_var) / std::log(2)));
 
   min_bw += extension_for_sum;
-  // std::cout << "extending " << slice_size << " bits to " << slice_size + min_bw << std::endl;
+  // std::cout << "extending " << slice_size << " bits to " << slice_size +
+  // min_bw << std::endl;
 
   return min_bw;
 }
-
 
 Term SmtApproxMc::generate_integer_hash(uint32_t hash_num)
 {
@@ -283,7 +298,6 @@ Term SmtApproxMc::generate_integer_hash(uint32_t hash_num)
   return hash_const;
 }
 
-
 Term SmtApproxMc::generate_hash()
 {
   cvc5::Solver* solver = d_slv->getSolver();
@@ -318,7 +332,8 @@ Term SmtApproxMc::generate_hash()
       // slice, then extend this slice more than others
       if (this_slice_end >= this_bv_width)
       {
-        extend_x_by_bits = this_slice_end - this_bv_width + 1 + new_bv_width - slice_size;
+        extend_x_by_bits =
+            this_slice_end - this_bv_width + 1 + new_bv_width - slice_size;
         this_slice_end = this_bv_width - 1;
       }
 
@@ -395,10 +410,7 @@ double SmtApproxMc::getTime()
   return time_int;
 }
 
-vector<Node>& SmtApproxMc::get_projection_nodes()
-{
-  return projection_vars;
-}
+vector<Node>& SmtApproxMc::get_projection_nodes() { return projection_vars; }
 
 uint64_t SmtApproxMc::smtApproxMcCore()
 {
@@ -443,7 +455,7 @@ uint64_t SmtApproxMc::smtApproxMcCore()
       {
         for (int i = 0; i < oldhashes - numHashes; i++)
         {
-          projection_var_terms.pop_back(); // TODO (AS) making no sense now
+          projection_var_terms.pop_back();  // TODO (AS) making no sense now
         }
         projection_vars =
             d_slv->getSolver()->termVectorToNodes1(projection_var_terms);
