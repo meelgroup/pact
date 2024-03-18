@@ -1,100 +1,49 @@
 [![License: BSD](
     https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](
         https://opensource.org/licenses/BSD-3-Clause)
-![CI](https://github.com/cvc5/cvc5/workflows/CI/badge.svg)
-[![Coverage](
-  https://img.shields.io/endpoint?url=https://cvc5.stanford.edu/downloads/builds/coverage/nightly-coverage.json)](
-    https://cvc5.stanford.edu/downloads/builds/coverage)
 
-cvc5
+pact: Partition And Count on Theories
 ===============================================================================
 
-cvc5 is a tool for determining the satisfiability of a first order formula
-modulo a first order theory (or a combination of such theories).  It is the
-fifth in the Cooperating Validity Checker family of tools (CVC, CVC Lite,
-CVC3, CVC4) but does not directly incorporate code from any previous version
-prior to CVC4.
+pact is a hashing based approximate model counter based on cvc5.
 
-If you are using cvc5 in your work, or incorporating it into software of your
-own, we invite you to send us a description and link to your
-project/software, so that we can link it on our [Third Party
-Applications](https://cvc5.github.io/third-party-applications.html) page.
-
-cvc5 is intended to be an open and extensible SMT engine.  It can be used as a
-stand-alone tool or as a library.  It has been designed to increase the
-performance and reduce the memory overhead of its predecessors.  It is written
-entirely in C++ and is released under an open-source software license (see file
-[COPYING](https://github.com/cvc5/cvc5/blob/main/COPYING)).
+This version of the pact is designed to serve as a supplementary tool for a paper currently undergoing peer review. Please refer to [cvc5's readme](README-cvc5.md) for more details about cvc5.
 
 ## Build for Counting
 
-`./configure.sh --auto-download --approxmc`
+```
+./configure.sh --auto-download
+cd build
+make
+```
 
 ## Use for Counting
-
-Bitblast and count using ApproxMC.
-
-`./cvc5 -b <filenum>`
 
 Count by enumeration.
 
 `./cvc5 -e <filename>`
 
-Count as SMTApproxMC.
+Count as pact.
 
 `./cvc5 -S <filename>`
 
-Website
--------------------------------------------------------------------------------
-cvc5's website  is available at:
-https://cvc5.github.io/
+Count with varying epsilon and delta
 
-Documentation
--------------------------------------------------------------------------------
-Documentation for users of cvc5 is available at:
-https://cvc5.github.io/docs/
+`./cvc5 -S --delta <value> --epsilon <value> <filename>`
 
-Documentation for developers is available at:
-https://github.com/cvc5/cvc5/wiki/Developer-Guide
+Count with varying starting slicesize
 
-Download
--------------------------------------------------------------------------------
+`./cvc5 -S --slicesize <value> <filename>`
 
-The latest version of cvc5 is available on GitHub:
-https://github.com/cvc5/cvc5
-
-Source tar balls and binaries for releases of the
-[main branch](https://github.com/cvc5/cvc5) can be
-found [here](https://github.com/cvc5/cvc5/releases).
-Nightly builds are available [here](https://cvc5.github.io/downloads).
-
+Issue `./cvc5 -h` and look for `Model Counting Module` for more options.
 
 Build and Dependencies
 -------------------------------------------------------------------------------
 
-cvc5 can be built on Linux and macOS.  For Windows, cvc5 can be cross-compiled
-using Mingw-w64.
+pact can be built on Linux and macOS.  For Windows, pact can be cross-compiled using Mingw-w64.
 
-For detailed build and installation instructions on these platforms,
-see file [INSTALL.rst](https://github.com/cvc5/cvc5/blob/main/INSTALL.rst).
-
-
-Bug Reports
--------------------------------------------------------------------------------
-
-If you need to report a bug with cvc5, or make a feature request, please visit
-our bugtracker at our [GitHub issues](https://github.com/cvc5/cvc5/issues)
-page. We are very grateful for bug reports,  as they help us improve cvc5.
-
-
-Contributing
--------------------------------------------------------------------------------
-
-Please refer to our [contributing guidelines](CONTRIBUTING.md).
-
+For detailed build and installation instructions on these platforms, see file [INSTALL.rst](https://github.com/cvc5/cvc5/blob/main/INSTALL.rst).
 
 Authors
 -------------------------------------------------------------------------------
-
-For a full list of authors, please refer to the
-[AUTHORS](https://github.com/cvc5/cvc5/blob/main/AUTHORS) file.
+The counting part of pact is written by [Arijit Shaw](arijitsh.github.io) and [Kuldeep S. Meel](cs.toronto/edu/~meel). pact depends on mammoth work done by cvc5. For a full list of cvc5's authors, please refer to the [AUTHORS](https://github.com/cvc5/cvc5/blob/main/AUTHORS) file.
