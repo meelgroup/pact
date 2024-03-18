@@ -5,7 +5,7 @@
 pact: Partition And Count on Theories
 ===============================================================================
 
-pact is a hashing based approximate model counter based on cvc5.
+pact is a hashing based projected approximate model counter for SMT theories, based on cvc5.
 
 This version of the pact is designed to serve as a supplementary tool for a paper currently undergoing peer review. Please refer to [cvc5's readme](README-cvc5.md) for more details about cvc5.
 
