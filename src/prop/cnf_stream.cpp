@@ -300,6 +300,7 @@ SatLiteral CnfStream::getLiteral(TNode node) {
   SatLiteral literal = d_nodeToLiteralMap[node];
   Trace("cnf") << "CnfStream::getLiteral(" << node << ") => " << literal
                << "\n";
+  std::cout << "c " << literal << ":" << node << std::endl;
   return literal;
 }
 
