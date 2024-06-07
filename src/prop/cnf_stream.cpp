@@ -810,6 +810,7 @@ void CnfStream::dumpDimacs(std::ostream& out,
       {
         bool negated = l.getKind() == Kind::NOT;
         const Node& atom = negated ? l[0] : l;
+        ensureLiteral(atom);
         SatLiteral lit = getLiteral(atom);
         SatVariable v = lit.getSatVariable();
         maxVar = v > maxVar ? v : maxVar;
