@@ -171,7 +171,6 @@ void PropEngine::assertInputFormulas(
     Trace("prop") << "assertFormula(" << node << ")" << std::endl;
     assertInternal(theory::InferenceId::INPUT, node, false, false, true);
   }
-  d_cnfStream->dumpDimacs(std::cout, assertions);
   int64_t natomsPost = d_cnfStream->d_stats.d_numAtoms.get();
   Assert(natomsPost >= natomsPre);
   d_stats.d_numInputAtoms += (natomsPost - natomsPre);
@@ -443,8 +442,11 @@ Result PropEngine::checkSat() {
     return Result(Result::UNKNOWN, UnknownExplanation::REQUIRES_FULL_CHECK);
   }
 
-  // Note this currently ignores conflicts (a dangerous practice).
-  d_theoryProxy->presolve();
+  // Presolve the theory if not using newt
+  if(!options().base.newt){
+    // Note this currently ignores conflicts (a dangerous practice).
+    d_theoryProxy->presolve();
+  }
 
   // Reset the interrupted flag
   d_interrupted = false;

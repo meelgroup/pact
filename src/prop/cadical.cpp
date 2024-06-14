@@ -20,6 +20,7 @@
 #include <deque>
 
 #include "base/check.h"
+#include "options/base_options.h"
 #include "options/main_options.h"
 #include "options/proof_options.h"
 #include "prop/theory_proxy.h"
@@ -1024,6 +1025,14 @@ void CadicalSolver::setResourceLimit(ResourceManager* resmgr)
 
 SatValue CadicalSolver::_solve(const std::vector<SatLiteral>& assumptions)
 {
+  if (options().base.newt)
+  {
+    std::string cnffilename = options().driver.filename.substr(
+        options().driver.filename.find_last_of("/\\") + 1);
+    cnffilename = cnffilename.substr(0, cnffilename.find_last_of(".")) + ".cnf";
+    std::cout << "Writing CNF to " << cnffilename << std::endl;
+    d_solver->write_dimacs(cnffilename.c_str());
+  }
   if (d_propagator)
   {
     Trace("cadical::propagator") << "solve start" << std::endl;

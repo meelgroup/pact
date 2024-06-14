@@ -21,6 +21,7 @@
 #include "base/output.h"
 #include "expr/node.h"
 #include "options/bv_options.h"
+#include "options/base_options.h"
 #include "printer/printer.h"
 #include "proof/clause_id.h"
 #include "prop/minisat/minisat.h"
@@ -300,7 +301,21 @@ SatLiteral CnfStream::getLiteral(TNode node) {
   SatLiteral literal = d_nodeToLiteralMap[node];
   Trace("cnf") << "CnfStream::getLiteral(" << node << ") => " << literal
                << "\n";
-  std::cout << "c " << literal << ":" << node << std::endl;
+  if (options().base.newt){
+    auto printnode = node;
+    auto printliteral = literal;
+    if (node.getKind() == Kind::NOT){
+      printnode = node.negate();
+      printliteral = ~literal;
+    }
+    if (printnode.getKind() == Kind::EQUAL || printnode.getKind() == Kind::GEQ){
+      std::cout << "c " << printliteral << ":" << printnode << std::endl;
+    }
+    else {
+      std::cout << "c " << printliteral << ": skipit\n";
+
+    }
+  }
   return literal;
 }
 
@@ -810,7 +825,6 @@ void CnfStream::dumpDimacs(std::ostream& out,
       {
         bool negated = l.getKind() == Kind::NOT;
         const Node& atom = negated ? l[0] : l;
-        ensureLiteral(atom);
         SatLiteral lit = getLiteral(atom);
         SatVariable v = lit.getSatVariable();
         maxVar = v > maxVar ? v : maxVar;
