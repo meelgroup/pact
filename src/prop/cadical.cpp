@@ -1032,6 +1032,7 @@ SatValue CadicalSolver::_solve(const std::vector<SatLiteral>& assumptions)
     cnffilename = cnffilename.substr(0, cnffilename.find_last_of(".")) + ".cnf";
     std::cout << "Writing CNF to " << cnffilename << std::endl;
     d_solver->write_dimacs(cnffilename.c_str());
+    return SAT_VALUE_TRUE;
   }
   if (d_propagator)
   {
