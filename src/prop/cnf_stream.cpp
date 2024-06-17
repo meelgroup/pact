@@ -333,8 +333,8 @@ uint64_t CnfStream::getAIGliteral(SatLiteral lit)
 
 void CnfStream::printAIGline(std::vector<uint64_t> aigliterals)
 {
-  if (options().base.printaig){
-    std::cout << aigstring << std::endl;
+  if (!options().base.printaig){
+    return;
   }
 
   std::string aigstring = "aigline";
@@ -418,7 +418,10 @@ void CnfStream::handleAnd(TNode andNode)
 
   // Get the literal for this node
   SatLiteral andLit = newLiteral(andNode);
-  std::string aigstring = getAIGliteralName(andLit);
+
+  std::vector<uint64_t> aigliterals;
+  aigliterals.push_back(getAIGliteral(~andLit));
+
 
   // Transform all the children first (remembering the negation)
   SatClause clause(numChildren + 1);
@@ -430,12 +433,10 @@ void CnfStream::handleAnd(TNode andNode)
     // ~lit | (a_1 & a_2 & a_3 & ... & a_n)
     // (~lit | a_1) & (~lit | a_2) & ... & (~lit | a_n)
     assertClause(andNode.negate(), ~andLit, ~clause[i]);
-    aigstring += " " + getAIGliteralName(clause[i]);
+    aigliterals.push_back(getAIGliteral(clause[i]));
   }
 
-  if (options().base.printaig){
-    std::cout << aigstring << std::endl;
-  }
+  printAIGline(aigliterals);
 
   // lit <- (a_1 & a_2 & a_3 & ... a_n)
   // lit | ~(a_1 & a_2 & a_3 & ... & a_n)
