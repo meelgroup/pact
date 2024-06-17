@@ -81,6 +81,14 @@ name   = "Base"
   help       = "enable incremental solving"
 
 [[option]]
+  name       = "printaig"
+  category   = "common"
+  long       = "printaig"
+  type       = "bool"
+  default    = "false"
+  help       = "print AIG of Boolean abstraction"
+
+[[option]]
   name       = "boolabs"
   category   = "common"
   long       = "boolabs"

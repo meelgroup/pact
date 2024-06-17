@@ -319,6 +319,33 @@ SatLiteral CnfStream::getLiteral(TNode node) {
   return literal;
 }
 
+uint64_t CnfStream::getAIGliteral(SatLiteral lit)
+{
+  if (lit.isNegated()){
+    return lit.getSatVariable()*2 + 1;
+  }
+  else
+  {
+    return lit.getSatVariable()*2;
+  }
+
+}
+
+void CnfStream::printAIGline(std::vector<uint64_t> aigliterals)
+{
+  if (options().base.printaig){
+    std::cout << aigstring << std::endl;
+  }
+
+  std::string aigstring = "aigline";
+  for (auto aiglit : aigliterals){
+    aigstring += " " + std::to_string(aiglit);
+  }
+  std::cout << aigstring << std::endl;
+}
+
+
+
 void CnfStream::handleXor(TNode xorNode)
 {
   Assert(!hasLiteral(xorNode)) << "Atom already mapped!";
@@ -351,6 +378,8 @@ void CnfStream::handleOr(TNode orNode)
 
   // Get the literal for this node
   SatLiteral orLit = newLiteral(orNode);
+  std::vector<uint64_t> aigliterals;
+  aigliterals.push_back(getAIGliteral(~orLit));
 
   // Transform all the children first
   SatClause clause(numChildren + 1);
@@ -362,6 +391,7 @@ void CnfStream::handleOr(TNode orNode)
     // lit | ~(a_1 | a_2 | a_3 | ... | a_n)
     // (lit | ~a_1) & (lit | ~a_2) & (lit & ~a_3) & ... & (lit & ~a_n)
     assertClause(orNode, orLit, ~clause[i]);
+    aigliterals.push_back(getAIGliteral(~clause[i]));
   }
 
   // lit -> (a_1 | a_2 | a_3 | ... | a_n)
@@ -369,6 +399,10 @@ void CnfStream::handleOr(TNode orNode)
   clause[numChildren] = ~orLit;
   // This needs to go last, as the clause might get modified by the SAT solver
   assertClause(orNode.negate(), clause);
+  printAIGline(aigliterals);
+
+
+
 }
 
 void CnfStream::handleAnd(TNode andNode)
@@ -384,6 +418,7 @@ void CnfStream::handleAnd(TNode andNode)
 
   // Get the literal for this node
   SatLiteral andLit = newLiteral(andNode);
+  std::string aigstring = getAIGliteralName(andLit);
 
   // Transform all the children first (remembering the negation)
   SatClause clause(numChildren + 1);
@@ -395,6 +430,11 @@ void CnfStream::handleAnd(TNode andNode)
     // ~lit | (a_1 & a_2 & a_3 & ... & a_n)
     // (~lit | a_1) & (~lit | a_2) & ... & (~lit | a_n)
     assertClause(andNode.negate(), ~andLit, ~clause[i]);
+    aigstring += " " + getAIGliteralName(clause[i]);
+  }
+
+  if (options().base.printaig){
+    std::cout << aigstring << std::endl;
   }
 
   // lit <- (a_1 & a_2 & a_3 & ... a_n)

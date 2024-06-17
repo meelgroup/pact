@@ -245,6 +245,12 @@ class CnfStream : protected EnvObj
   void handleAnd(TNode node);
   void handleOr(TNode node);
 
+  /**
+   * Returns the literal for AIG
+   */
+  void printAIGline(std::vector<uint64_t> aigliterals);
+  uint64_t getAIGliteral(SatLiteral lit);
+
   /** Stores the literal of the given node in d_literalToNodeMap.
    *
    * Note that n must already have a literal associated to it in
