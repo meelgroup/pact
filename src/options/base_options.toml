@@ -81,13 +81,12 @@ name   = "Base"
   help       = "enable incremental solving"
 
 [[option]]
-  name       = "newt"
+  name       = "boolabs"
   category   = "common"
-  short      = "nt"
-  long       = "newt"
+  long       = "boolabs"
   type       = "bool"
   default    = "false"
-  help       = "generate boolean abstraction and related atoms, for newt model counter"
+  help       = "generate boolean abstraction and related atoms"
 
 [[option]]
   name       = "statistics"

@@ -301,7 +301,7 @@ SatLiteral CnfStream::getLiteral(TNode node) {
   SatLiteral literal = d_nodeToLiteralMap[node];
   Trace("cnf") << "CnfStream::getLiteral(" << node << ") => " << literal
                << "\n";
-  if (options().base.newt){
+  if (options().base.boolabs){
     auto printnode = node;
     auto printliteral = literal;
     if (node.getKind() == Kind::NOT){

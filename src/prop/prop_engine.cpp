@@ -442,8 +442,8 @@ Result PropEngine::checkSat() {
     return Result(Result::UNKNOWN, UnknownExplanation::REQUIRES_FULL_CHECK);
   }
 
-  // Presolve the theory if not using newt
-  if(!options().base.newt){
+  // Do not presolve if boolean abstraction is enabled
+  if(!options().base.boolabs){
     // Note this currently ignores conflicts (a dangerous practice).
     d_theoryProxy->presolve();
   }

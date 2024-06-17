@@ -1025,7 +1025,7 @@ void CadicalSolver::setResourceLimit(ResourceManager* resmgr)
 
 SatValue CadicalSolver::_solve(const std::vector<SatLiteral>& assumptions)
 {
-  if (options().base.newt)
+  if (options().base.boolabs)
   {
     std::string cnffilename = options().driver.filename.substr(
         options().driver.filename.find_last_of("/\\") + 1);
