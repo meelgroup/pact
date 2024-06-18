@@ -22,6 +22,7 @@
 #include "expr/node.h"
 #include "options/bv_options.h"
 #include "options/base_options.h"
+#include "options/main_options.h"
 #include "printer/printer.h"
 #include "proof/clause_id.h"
 #include "prop/minisat/minisat.h"
@@ -347,6 +348,16 @@ uint64_t CnfStream::getAIGliteral(SatLiteral lit, Node node)
 
 void CnfStream::dumpAIG()
 {
+  std::string smtfilename = options().driver.filename;
+ std::string aigfilename = smtfilename.substr(smtfilename.find_last_of("/\\") + 1);
+    aigfilename = aigfilename.substr(0, aigfilename.find_last_of(".")) + ".aig";
+    std::cout << "Writing AIG to " << aigfilename << std::endl;
+std::ofstream outFile(aigfilename);
+if (!outFile) {
+        std::cerr << "Error creating file: " << aigfilename << std::endl;
+        return;
+    }
+
   std::cout << "c AIG output\n";
   // Let 1 be the output variable
   std::vector<uint64_t> outputLitLine = {2};
@@ -359,15 +370,15 @@ void CnfStream::dumpAIG()
   aigGateLines.push_back(outputLitLine);
 
   // set and print the header
-  std::cout << "aag " << maxAIGVar << " " << aigInputLits.size() << " 0 1 " << aigGateLines.size() << std::endl;
+  outFile << "aag " << maxAIGVar << " " << aigInputLits.size() << " 0 1 " << aigGateLines.size() << std::endl;
 
   // print the input literals
   for (auto aigInputLit : aigInputLits){
-    std::cout << aigInputLit << std::endl;
+    outFile << aigInputLit << std::endl;
   }
 
   // print the output literals
-  std::cout << "2" << std::endl;
+  outFile << "2" << std::endl;
 
   for (auto aigline : aigGateLines){
     std::string aigstring;
@@ -375,7 +386,7 @@ void CnfStream::dumpAIG()
       aigstring += " " + std::to_string(aiglit);
     }
     aigstring = aigstring.substr(1);
-    std::cout << aigstring << std::endl;
+    outFile << aigstring << std::endl;
   }
   std::cout << "c end AIG output\n";
 }
