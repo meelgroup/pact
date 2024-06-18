@@ -344,6 +344,23 @@ uint64_t CnfStream::getAIGliteral(SatLiteral lit, Node node)
 
 }
 
+vector<vector<uint64_t>> CnfStream::decomposeAndGate(vector<uint64_t> andGate)
+{
+    vector<vector<uint64_t>> decomposedGates;
+  if (andGate.size() <= 2) {
+            decomposedGates.push_back(andGate);
+          return decomposedGates;
+        }
+
+        uint64_t currentLiteral = andGate[0];
+        for (size_t i = 1; i < andGate.size(); ++i) {
+            uint64_t nextLiteral = (i == andGate.size() - 1) ? andGate[i] : (maxAIGVar += 1)*2;
+            decomposedGates.push_back({currentLiteral, andGate[i], nextLiteral});
+            currentLiteral = nextLiteral;
+        }
+        return decomposedGates;
+
+}
 
 
 void CnfStream::dumpAIG()
@@ -381,12 +398,15 @@ if (!outFile) {
   outFile << "2" << std::endl;
 
   for (auto aigline : aigGateLines){
-    std::string aigstring;
-    for (auto aiglit : aigline){
-      aigstring += " " + std::to_string(aiglit);
+    auto decomposedGates = decomposeAndGate(aigline);
+    for (auto aigdecomposedline : decomposedGates){
+      std::string aigstring;
+      for (auto aiglit : aigdecomposedline){
+        aigstring += " " + std::to_string(aiglit);
+      }
+      aigstring = aigstring.substr(1);
+      outFile << aigstring << std::endl;
     }
-    aigstring = aigstring.substr(1);
-    outFile << aigstring << std::endl;
   }
   std::cout << "c end AIG output\n";
 }

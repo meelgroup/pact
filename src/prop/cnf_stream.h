@@ -257,6 +257,7 @@ class CnfStream : protected EnvObj
    */
   void dumpAIG();
   uint64_t getAIGliteral(SatLiteral lit, Node node);
+  vector<vector<uint64_t>> decomposeAndGate(vector<uint64_t> andGate);
 
   /** Stores the literal of the given node in d_literalToNodeMap.
    *
