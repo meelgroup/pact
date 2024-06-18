@@ -325,6 +325,9 @@ SatLiteral CnfStream::getLiteral(TNode node) {
 
 uint64_t CnfStream::getAIGliteral(SatLiteral lit, Node node)
 {
+  // TODO some checks like the first literal can't be or and
+  // should be good to have
+
   if (node.getKind() == Kind::NOT)
   {
     node = node[0];
@@ -340,7 +343,7 @@ uint64_t CnfStream::getAIGliteral(SatLiteral lit, Node node)
   {
     maxAIGVar = lit.getSatVariable();
   }
-  if (lit.isNegated())
+  if (lit.isNegated() || nodeKind == Kind::OR)
   {
     return lit.getSatVariable() * 2 + 1;
   }
@@ -366,13 +369,13 @@ vector<vector<uint64_t>> CnfStream::decomposeAndGate(vector<uint64_t> andGate)
     return decomposedGates;
   }
 
-  uint64_t currentLiteral = andGate[0];
-  for (size_t i = 1; i < andGate.size(); ++i)
+  uint64_t outputLit = andGate[0];
+  for (size_t i = 1; i < andGate.size() - 1; ++i)
   {
     uint64_t nextLiteral =
-        (i == andGate.size() - 1) ? andGate[i] : (maxAIGVar += 1) * 2;
-    decomposedGates.push_back({currentLiteral, andGate[i], nextLiteral});
-    currentLiteral = nextLiteral;
+        (i == andGate.size() - 2) ? andGate[i + 1] : (maxAIGVar += 1) * 2;
+    decomposedGates.push_back({outputLit, andGate[i], nextLiteral});
+    outputLit = nextLiteral;
   }
   std::cout << "Decomposed AND gate" << std::endl;
   for (auto decomposedGate : decomposedGates)
@@ -424,7 +427,7 @@ void CnfStream::dumpAIG()
 
   // set and print the header
   outFile << "aag " << maxAIGVar << " " << aigInputLits.size() << " 0 1 "
-          << aigGateLines.size() << std::endl;
+          << decomposedGates.size() << std::endl;
 
   // print the input literals
   for (auto aigInputLit : aigInputLits)
@@ -481,7 +484,11 @@ void CnfStream::handleOr(TNode orNode)
   // Get the literal for this node
   SatLiteral orLit = newLiteral(orNode);
   std::vector<uint64_t> aigliterals;
-  aigliterals.push_back(getAIGliteral(~orLit, orNode));
+
+  // orLit are not added as negation, as the gate output can't be negated
+  // it is asserted during getAIGliteral that if a orLit is found
+  // handle that after negating the literal
+  aigliterals.push_back(getAIGliteral(orLit, orNode) - 1);
 
   // Transform all the children first
   SatClause clause(numChildren + 1);
@@ -519,7 +526,7 @@ void CnfStream::handleAnd(TNode andNode)
   SatLiteral andLit = newLiteral(andNode);
 
   std::vector<uint64_t> aigliterals;
-  aigliterals.push_back(getAIGliteral(~andLit, andNode));
+  aigliterals.push_back(getAIGliteral(andLit, andNode));
 
   // Transform all the children first (remembering the negation)
   SatClause clause(numChildren + 1);
