@@ -20,8 +20,8 @@
 #include "base/check.h"
 #include "base/output.h"
 #include "expr/node.h"
-#include "options/bv_options.h"
 #include "options/base_options.h"
+#include "options/bv_options.h"
 #include "options/main_options.h"
 #include "printer/printer.h"
 #include "proof/clause_id.h"
@@ -302,19 +302,22 @@ SatLiteral CnfStream::getLiteral(TNode node) {
   SatLiteral literal = d_nodeToLiteralMap[node];
   Trace("cnf") << "CnfStream::getLiteral(" << node << ") => " << literal
                << "\n";
-  if (options().base.boolabs){
+  if (options().base.boolabs)
+  {
     auto printnode = node;
     auto printliteral = literal;
-    if (node.getKind() == Kind::NOT){
+    if (node.getKind() == Kind::NOT)
+    {
       printnode = node.negate();
       printliteral = ~literal;
     }
-    if (printnode.getKind() == Kind::EQUAL || printnode.getKind() == Kind::GEQ){
+    if (printnode.getKind() == Kind::EQUAL || printnode.getKind() == Kind::GEQ)
+    {
       std::cout << "c " << printliteral << ":" << printnode << std::endl;
     }
-    else {
+    else
+    {
       std::cout << "c " << printliteral << ": skipit\n";
-
     }
   }
   return literal;
@@ -322,96 +325,128 @@ SatLiteral CnfStream::getLiteral(TNode node) {
 
 uint64_t CnfStream::getAIGliteral(SatLiteral lit, Node node)
 {
-  if (node.getKind() == Kind::NOT){
+  if (node.getKind() == Kind::NOT)
+  {
     node = node[0];
   }
 
   auto nodeKind = node.getKind();
 
-  if (nodeKind == Kind::EQUAL || nodeKind == Kind::GEQ){
-    aigInputLits.push_back(lit.getSatVariable()*2);
+  if (nodeKind == Kind::EQUAL || nodeKind == Kind::GEQ)
+  {
+    aigInputLits.push_back(lit.getSatVariable() * 2);
   }
-  if (lit.getSatVariable() > maxAIGVar){
+  if (lit.getSatVariable() > maxAIGVar)
+  {
     maxAIGVar = lit.getSatVariable();
   }
-  if (lit.isNegated()){
-    return lit.getSatVariable()*2 + 1;
+  if (lit.isNegated())
+  {
+    return lit.getSatVariable() * 2 + 1;
   }
   else
   {
-    return lit.getSatVariable()*2;
+    return lit.getSatVariable() * 2;
   }
-
 }
 
 vector<vector<uint64_t>> CnfStream::decomposeAndGate(vector<uint64_t> andGate)
 {
-    vector<vector<uint64_t>> decomposedGates;
-  if (andGate.size() <= 2) {
-            decomposedGates.push_back(andGate);
-          return decomposedGates;
-        }
+  std::cout << "Decomposing AND gate" << std::endl;
+  std::cout << "AND gate: ";
+  for (auto aiglit : andGate)
+  {
+    std::cout << aiglit << " ";
+  }
+  std::cout << std::endl;
+  vector<vector<uint64_t>> decomposedGates;
+  if (andGate.size() <= 2)
+  {
+    decomposedGates.push_back(andGate);
+    return decomposedGates;
+  }
 
-        uint64_t currentLiteral = andGate[0];
-        for (size_t i = 1; i < andGate.size(); ++i) {
-            uint64_t nextLiteral = (i == andGate.size() - 1) ? andGate[i] : (maxAIGVar += 1)*2;
-            decomposedGates.push_back({currentLiteral, andGate[i], nextLiteral});
-            currentLiteral = nextLiteral;
-        }
-        return decomposedGates;
-
+  uint64_t currentLiteral = andGate[0];
+  for (size_t i = 1; i < andGate.size(); ++i)
+  {
+    uint64_t nextLiteral =
+        (i == andGate.size() - 1) ? andGate[i] : (maxAIGVar += 1) * 2;
+    decomposedGates.push_back({currentLiteral, andGate[i], nextLiteral});
+    currentLiteral = nextLiteral;
+  }
+  std::cout << "Decomposed AND gate" << std::endl;
+  for (auto decomposedGate : decomposedGates)
+  {
+    for (auto aiglit : decomposedGate)
+    {
+      std::cout << aiglit << " ";
+    }
+    std::cout << std::endl;
+  }
+  return decomposedGates;
 }
-
 
 void CnfStream::dumpAIG()
 {
   std::string smtfilename = options().driver.filename;
- std::string aigfilename = smtfilename.substr(smtfilename.find_last_of("/\\") + 1);
-    aigfilename = aigfilename.substr(0, aigfilename.find_last_of(".")) + ".aig";
-    std::cout << "Writing AIG to " << aigfilename << std::endl;
-std::ofstream outFile(aigfilename);
-if (!outFile) {
-        std::cerr << "Error creating file: " << aigfilename << std::endl;
-        return;
-    }
+  std::string aigfilename =
+      smtfilename.substr(smtfilename.find_last_of("/\\") + 1);
+  aigfilename = aigfilename.substr(0, aigfilename.find_last_of(".")) + ".aig";
+  std::cout << "Writing AIG to " << aigfilename << std::endl;
+  std::ofstream outFile(aigfilename);
+  if (!outFile)
+  {
+    std::cerr << "Error creating file: " << aigfilename << std::endl;
+    return;
+  }
 
   std::cout << "c AIG output\n";
   // Let 1 be the output variable
   std::vector<uint64_t> outputLitLine = {2};
-  for (auto aigAssertLit : aigAssertLits){
-    if (aigAssertLit == 2 || aigAssertLit == 5){
+  for (auto aigAssertLit : aigAssertLits)
+  {
+    if (aigAssertLit == 2 || aigAssertLit == 5)
+    {
       continue;
     }
     outputLitLine.push_back(aigAssertLit);
   }
   aigGateLines.push_back(outputLitLine);
+  vector<vector<uint64_t>> decomposedGates;
+  for (auto aigline : aigGateLines)
+  {
+    auto thisGateDecomposed = decomposeAndGate(aigline);
+    for (auto gate : thisGateDecomposed)
+    {
+      decomposedGates.push_back(gate);
+    }
+  }
 
   // set and print the header
-  outFile << "aag " << maxAIGVar << " " << aigInputLits.size() << " 0 1 " << aigGateLines.size() << std::endl;
+  outFile << "aag " << maxAIGVar << " " << aigInputLits.size() << " 0 1 "
+          << aigGateLines.size() << std::endl;
 
   // print the input literals
-  for (auto aigInputLit : aigInputLits){
+  for (auto aigInputLit : aigInputLits)
+  {
     outFile << aigInputLit << std::endl;
   }
 
   // print the output literals
   outFile << "2" << std::endl;
 
-  for (auto aigline : aigGateLines){
-    auto decomposedGates = decomposeAndGate(aigline);
-    for (auto aigdecomposedline : decomposedGates){
-      std::string aigstring;
-      for (auto aiglit : aigdecomposedline){
-        aigstring += " " + std::to_string(aiglit);
-      }
-      aigstring = aigstring.substr(1);
-      outFile << aigstring << std::endl;
+  for (auto aigdecomposedline : decomposedGates)
+  {
+    std::string aigstring;
+    for (auto aiglit : aigdecomposedline)
+    {
+      aigstring += " " + std::to_string(aiglit);
     }
+    aigstring = aigstring.substr(1);
+    outFile << aigstring << std::endl;
   }
   std::cout << "c end AIG output\n";
 }
-
-
 
 void CnfStream::handleXor(TNode xorNode)
 {
@@ -485,7 +520,6 @@ void CnfStream::handleAnd(TNode andNode)
 
   std::vector<uint64_t> aigliterals;
   aigliterals.push_back(getAIGliteral(~andLit, andNode));
-
 
   // Transform all the children first (remembering the negation)
   SatClause clause(numChildren + 1);
@@ -601,8 +635,6 @@ void CnfStream::handleIte(TNode iteNode)
   assertClause(iteNode, iteLit, ~condLit, ~thenLit);
   assertClause(iteNode, iteLit, condLit, ~elseLit);
 }
-
-
 
 SatLiteral CnfStream::toCNF(TNode node, bool negated)
 {
