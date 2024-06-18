@@ -377,6 +377,7 @@ vector<vector<uint64_t>> CnfStream::decomposeAndGate(vector<uint64_t> andGate)
     decomposedGates.push_back({outputLit, andGate[i], nextLiteral});
     outputLit = nextLiteral;
   }
+  std::reverse(decomposedGates.begin(), decomposedGates.end());
   std::cout << "Decomposed AND gate" << std::endl;
   for (auto decomposedGate : decomposedGates)
   {
@@ -394,7 +395,7 @@ void CnfStream::dumpAIG()
   std::string smtfilename = options().driver.filename;
   std::string aigfilename =
       smtfilename.substr(smtfilename.find_last_of("/\\") + 1);
-  aigfilename = aigfilename.substr(0, aigfilename.find_last_of(".")) + ".aig";
+  aigfilename = aigfilename.substr(0, aigfilename.find_last_of(".")) + ".aag";
   std::cout << "Writing AIG to " << aigfilename << std::endl;
   std::ofstream outFile(aigfilename);
   if (!outFile)
