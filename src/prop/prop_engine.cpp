@@ -171,6 +171,7 @@ void PropEngine::assertInputFormulas(
     Trace("prop") << "assertFormula(" << node << ")" << std::endl;
     assertInternal(theory::InferenceId::INPUT, node, false, false, true);
   }
+  d_cnfStream->dumpAIG();
   int64_t natomsPost = d_cnfStream->d_stats.d_numAtoms.get();
   Assert(natomsPost >= natomsPre);
   d_stats.d_numInputAtoms += (natomsPost - natomsPre);

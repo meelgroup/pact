@@ -319,8 +319,20 @@ SatLiteral CnfStream::getLiteral(TNode node) {
   return literal;
 }
 
-uint64_t CnfStream::getAIGliteral(SatLiteral lit)
+uint64_t CnfStream::getAIGliteral(SatLiteral lit, Node node)
 {
+  if (node.getKind() == Kind::NOT){
+    node = node[0];
+  }
+
+  auto nodeKind = node.getKind();
+
+  if (nodeKind == Kind::EQUAL || nodeKind == Kind::GEQ){
+    aigInputLits.push_back(lit.getSatVariable()*2);
+  }
+  if (lit.getSatVariable() > maxAIGVar){
+    maxAIGVar = lit.getSatVariable();
+  }
   if (lit.isNegated()){
     return lit.getSatVariable()*2 + 1;
   }
@@ -331,17 +343,41 @@ uint64_t CnfStream::getAIGliteral(SatLiteral lit)
 
 }
 
-void CnfStream::printAIGline(std::vector<uint64_t> aigliterals)
+
+
+void CnfStream::dumpAIG()
 {
-  if (!options().base.printaig){
-    return;
+  std::cout << "c AIG output\n";
+  // Let 1 be the output variable
+  std::vector<uint64_t> outputLitLine = {2};
+  for (auto aigAssertLit : aigAssertLits){
+    if (aigAssertLit == 2 || aigAssertLit == 5){
+      continue;
+    }
+    outputLitLine.push_back(aigAssertLit);
+  }
+  aigGateLines.push_back(outputLitLine);
+
+  // set and print the header
+  std::cout << "aag " << maxAIGVar << " " << aigInputLits.size() << " 0 1 " << aigGateLines.size() << std::endl;
+
+  // print the input literals
+  for (auto aigInputLit : aigInputLits){
+    std::cout << aigInputLit << std::endl;
   }
 
-  std::string aigstring = "aigline";
-  for (auto aiglit : aigliterals){
-    aigstring += " " + std::to_string(aiglit);
+  // print the output literals
+  std::cout << "2" << std::endl;
+
+  for (auto aigline : aigGateLines){
+    std::string aigstring;
+    for (auto aiglit : aigline){
+      aigstring += " " + std::to_string(aiglit);
+    }
+    aigstring = aigstring.substr(1);
+    std::cout << aigstring << std::endl;
   }
-  std::cout << aigstring << std::endl;
+  std::cout << "c end AIG output\n";
 }
 
 
@@ -379,7 +415,7 @@ void CnfStream::handleOr(TNode orNode)
   // Get the literal for this node
   SatLiteral orLit = newLiteral(orNode);
   std::vector<uint64_t> aigliterals;
-  aigliterals.push_back(getAIGliteral(~orLit));
+  aigliterals.push_back(getAIGliteral(~orLit, orNode));
 
   // Transform all the children first
   SatClause clause(numChildren + 1);
@@ -391,7 +427,7 @@ void CnfStream::handleOr(TNode orNode)
     // lit | ~(a_1 | a_2 | a_3 | ... | a_n)
     // (lit | ~a_1) & (lit | ~a_2) & (lit & ~a_3) & ... & (lit & ~a_n)
     assertClause(orNode, orLit, ~clause[i]);
-    aigliterals.push_back(getAIGliteral(~clause[i]));
+    aigliterals.push_back(getAIGliteral(~clause[i], orNode[i]));
   }
 
   // lit -> (a_1 | a_2 | a_3 | ... | a_n)
@@ -399,10 +435,7 @@ void CnfStream::handleOr(TNode orNode)
   clause[numChildren] = ~orLit;
   // This needs to go last, as the clause might get modified by the SAT solver
   assertClause(orNode.negate(), clause);
-  printAIGline(aigliterals);
-
-
-
+  aigGateLines.push_back(aigliterals);
 }
 
 void CnfStream::handleAnd(TNode andNode)
@@ -420,7 +453,7 @@ void CnfStream::handleAnd(TNode andNode)
   SatLiteral andLit = newLiteral(andNode);
 
   std::vector<uint64_t> aigliterals;
-  aigliterals.push_back(getAIGliteral(~andLit));
+  aigliterals.push_back(getAIGliteral(~andLit, andNode));
 
 
   // Transform all the children first (remembering the negation)
@@ -433,10 +466,10 @@ void CnfStream::handleAnd(TNode andNode)
     // ~lit | (a_1 & a_2 & a_3 & ... & a_n)
     // (~lit | a_1) & (~lit | a_2) & ... & (~lit | a_n)
     assertClause(andNode.negate(), ~andLit, ~clause[i]);
-    aigliterals.push_back(getAIGliteral(clause[i]));
+    aigliterals.push_back(getAIGliteral(clause[i], andNode[i]));
   }
 
-  printAIGline(aigliterals);
+  aigGateLines.push_back(aigliterals);
 
   // lit <- (a_1 & a_2 & a_3 & ... a_n)
   // lit | ~(a_1 & a_2 & a_3 & ... & a_n)
@@ -538,6 +571,8 @@ void CnfStream::handleIte(TNode iteNode)
   assertClause(iteNode, iteLit, condLit, ~elseLit);
 }
 
+
+
 SatLiteral CnfStream::toCNF(TNode node, bool negated)
 {
   Trace("cnf") << "toCNF(" << node
@@ -606,6 +641,10 @@ SatLiteral CnfStream::toCNF(TNode node, bool negated)
   }
 
   nodeLit = getLiteral(node);
+
+  uint64_t aigAssertLit = {getAIGliteral(negated ? ~nodeLit : nodeLit, node)};
+  aigAssertLits.push_back(aigAssertLit);
+
   Trace("cnf") << "toCNF(): resulting literal: "
                << (!negated ? nodeLit : ~nodeLit) << "\n";
   return negated ? ~nodeLit : nodeLit;

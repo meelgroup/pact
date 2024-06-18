@@ -35,6 +35,8 @@
 #include "smt/env_obj.h"
 #include "util/statistics_stats.h"
 
+using std::vector;
+
 namespace cvc5::internal {
 
 class Env;
@@ -76,6 +78,11 @@ class CnfStream : protected EnvObj
   /** Cache of what nodes have been registered to a literal. */
   typedef context::CDInsertHashMap<SatLiteral, TNode, SatLiteralHashFunction>
       LiteralToNodeMap;
+
+  vector<vector<uint64_t>> aigGateLines;
+  vector<uint64_t> aigAssertLits;
+  vector<uint64_t> aigInputLits;
+  uint64_t maxAIGVar = 0;
 
   /** Cache of what literals have been registered to a node. */
   typedef context::CDInsertHashMap<Node, SatLiteral> NodeToLiteralMap;
@@ -248,8 +255,8 @@ class CnfStream : protected EnvObj
   /**
    * Returns the literal for AIG
    */
-  void printAIGline(std::vector<uint64_t> aigliterals);
-  uint64_t getAIGliteral(SatLiteral lit);
+  void dumpAIG();
+  uint64_t getAIGliteral(SatLiteral lit, Node node);
 
   /** Stores the literal of the given node in d_literalToNodeMap.
    *
