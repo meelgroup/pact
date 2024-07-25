@@ -71,12 +71,14 @@ name   = "ModelCounting"
   long       = "hashsm=MODE"
   type       = "HashingMode"
   default    = "BV"
-  help       = "choose which hashing method to use BV, INT or FF"
+  help       = "choose which hashing method to use BV, INT, LEM or FF"
   help_mode  = "choose which hashing method to use"
 [[option.mode.BV]]
   name = "bv"
 [[option.mode.FF]]
   name = "ff"
+[[option.mode.LEM]]
+  name = "lem"
 [[option.mode.INT]]
   name = "int"
 
@@ -87,3 +89,19 @@ name   = "ModelCounting"
   type       = "uint64_t"
   default    = "0"
   help       = "slice size in SMTApproxMC"
+
+[[option]]
+  name       = "epsilon"
+  category   = "regular"
+  long       = "epsilon=N"
+  type       = "double"
+  default    = "0.8"
+  help       = "value for epsilon in SMTApproxMC"
+
+[[option]]
+  name       = "delta"
+  category   = "regular"
+  long       = "delta=N"
+  type       = "double"
+  default    = "0.2"
+  help       = "value for delta in SMTApproxMC"

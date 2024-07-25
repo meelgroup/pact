@@ -273,14 +273,13 @@ Term SmtApproxMc::generate_integer_hash(uint32_t hash_num)
 Term SmtApproxMc::generate_lemire_hash(uint32_t hash_num)
 {
   cvc5::Solver* solver = d_slv->getSolver();
-  // Lemire hash
-  uint32_t new_bv_width = slice_size;
+
+  // new_bv_width is the bitwidth of ax term which is 2w
+  uint32_t new_bv_width = slice_size * 2;
 
   uint32_t c_i = Random::getRandom().pick(0, pow(2, slice_size) - 1);
 
   Term axpb = solver->mkBitVector(new_bv_width, 0);
-  // Term one = solver->mkBitVector(new_bv_width, 1);
-  // Term maxx = solver->mkBitVector(new_bv_width, pow(2, slice_size + 1));
   Term c = solver->mkBitVector(slice_size, c_i);
 
   Sort bvsort = solver->mkBitVectorSort(new_bv_width);
@@ -289,12 +288,6 @@ Term SmtApproxMc::generate_lemire_hash(uint32_t hash_num)
   projection_var_terms.push_back(new_var);
   projection_vars =
       d_slv->getSolver()->termVectorToNodes1(projection_var_terms);
-  // Term new_var_mult_p = solver->mkTerm(BITVECTOR_MULT, {new_var, p});
-  // Term new_var_plusone = solver->mkTerm(BITVECTOR_ADD, {new_var, one});
-  // Term new_var_plusone_mult_p =
-  //     solver->mkTerm(BITVECTOR_MULT, {new_var_plusone, p});
-  // Term hash_const_less = solver->mkTerm(BITVECTOR_ULT, {new_var, maxx});
-  // c = solver->mkTerm(BITVECTOR_ADD, {c, new_var_mult_p});
 
   Trace("smap-hash") << pow(2, slice_size) << "Adding Hash: (";
 
@@ -316,38 +309,36 @@ Term SmtApproxMc::generate_lemire_hash(uint32_t hash_num)
       uint32_t a_i = Random::getRandom().pick(0, primes[slice_size] - 1);
       Trace("smap-hash") << a_i << x.getSymbol() << "[" << this_slice_start
                          << ":" << this_slice_end << "] + ";
-
+      Trace("smap") << "adding slicing operator\n";
       Op x_bit_op =
           solver->mkOp(BITVECTOR_EXTRACT, {this_slice_end, this_slice_start});
       Term x_sliced = solver->mkTerm(x_bit_op, {x});
       Op x_zero_ex_op = solver->mkOp(BITVECTOR_ZERO_EXTEND, {extend_x_by_bits});
       x_sliced = solver->mkTerm(x_zero_ex_op, {x_sliced});
       Term a = solver->mkBitVector(new_bv_width, a_i);
+      Trace("smap") << "adding multiplication operator" << new_bv_width << " "
+                    << extend_x_by_bits + slice_size << "\n";
       Term ax = solver->mkTerm(BITVECTOR_MULT, {a, x_sliced});
+      Trace("smap") << "adding addition operator\n";
       axpb = solver->mkTerm(BITVECTOR_ADD, {ax, axpb});
     }
   }
 
+  Trace("smap") << "adding div operarion\n";
+
   Op axpb_div_op =
       solver->mkOp(BITVECTOR_EXTRACT, {slice_size * 2 - 1, slice_size});
+  Trace("smap") << "creating div term\n";
   Term axpb_div = solver->mkTerm(axpb_div_op, {axpb});
-
   Trace("smap-hash") << " 0) = " << primes[slice_size] << "h" << hash_num
                      << " + " << c_i << "\n";
+  Trace("smap") << "creating equal term\n";
 
-  Term hash_const = solver->mkTerm(EQUAL, {axpb, c});
-  //   hash_const_less =
-  //     solver->mkTerm(BITVECTOR_ULE, {c,maxx});
+  Term hash_const = solver->mkTerm(EQUAL, {axpb_div, c});
+
   Trace("smap-print-hash") << "\n"
                            << "(assert " << hash_const << ")"
                            << "\n";
-  // hash_const = solver->mkTerm(AND, {hash_const, hash_const_less});
-  // Trace("smap-print-hash") << "\n"
-  //                          << "(assert " << hash_const_less << ")"
-  //                          << "\n";
-  // Trace("smap-print-hash") << "\n"
-  //                          << "(assert " << hash_const << ")"
-  //                          << "\n";
 
   return hash_const;
 }
@@ -491,6 +482,11 @@ uint64_t SmtApproxMc::smtApproxMcCore()
         else if (d_slv->getOptions().counting.hashsm
                  == options::HashingMode::BV)
           hash = generate_hash();
+        else if (d_slv->getOptions().counting.hashsm
+                 == options::HashingMode::LEM)
+        {
+          hash = generate_lemire_hash(i);
+        }
         else
         {
           Assert(d_slv->getOptions().counting.hashsm
@@ -598,6 +594,8 @@ uint64_t SmtApproxMc::smtApproxMcCore()
   {
     if (project_on_booleans)
       count *= 2;
+    else if (d_slv->getOptions().counting.hashsm == options::HashingMode::LEM)
+      count *= pow(2, slice_size);
     else
       count *= primes[slice_size];
   }
