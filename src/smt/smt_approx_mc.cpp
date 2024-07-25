@@ -15,6 +15,7 @@
  * Implementation Hash function generator needed for counting with SMTApproxMC.
  */
 
+// clang-format off
 #include <cvc5/cvc5.h>
 #include <cvc5/cvc5_export.h>
 #include <math.h>
@@ -25,6 +26,7 @@
 #include "smt/smt_approx_mc.h"
 #include "solver_engine.h"
 #include "util/random.h"
+// clang-format on
 
 using std::vector;
 
@@ -33,41 +35,12 @@ namespace counting {
 
 void SmtApproxMc::populatePrimes()
 {
-  // TODO better way to do this
-  primes.push_back(2);           // 0
-  primes.push_back(2);           // 1
-  primes.push_back(5);           // 2
-  primes.push_back(11);          // 3
-  primes.push_back(17);          // 4
-  primes.push_back(37);          // 5
-  primes.push_back(67);          // 6
-  primes.push_back(131);         // 7
-  primes.push_back(257);         // 8
-  primes.push_back(521);         // 9
-  primes.push_back(1031);        // 10
-  primes.push_back(2053);        // 11
-  primes.push_back(4099);        // 12
-  primes.push_back(8209);        // 13
-  primes.push_back(16411);       // 14
-  primes.push_back(32771);       // 15
-  primes.push_back(65537);       // 16
-  primes.push_back(131101);      // 17
-  primes.push_back(262147);      // 18
-  primes.push_back(524309);      // 19
-  primes.push_back(1048583);     // 20
-  primes.push_back(2097169);     // 21
-  primes.push_back(4194319);     // 22
-  primes.push_back(8388617);     // 23
-  primes.push_back(16777259);    // 24
-  primes.push_back(33554467);    // 25
-  primes.push_back(67108879);    // 26
-  primes.push_back(134217757);   // 27
-  primes.push_back(268435459);   // 28
-  primes.push_back(536870923);   // 29
-  primes.push_back(1073741827);  // 30
-  primes.push_back(2147483659);  // 31
-  primes.push_back(4294967311);  // 32
-  primes.push_back(8589934609);  // 33
+  primes = {2,          2,          5,          11,        17,        37,
+            67,         131,        257,        521,       1031,      2053,
+            4099,       8209,       16411,      32771,     65537,     131101,
+            262147,     524309,     1048583,    2097169,   4194319,   8388617,
+            16777259,   33554467,   67108879,   134217757, 268435459, 536870923,
+            1073741827, 2147483659, 4294967311, 8589934609};
 }
 
 uint32_t SmtApproxMc::getPivot()
@@ -293,6 +266,88 @@ Term SmtApproxMc::generate_integer_hash(uint32_t hash_num)
   Trace("smap-print-hash") << "\n"
                            << "(assert " << hash_const << ")"
                            << "\n";
+
+  return hash_const;
+}
+
+Term SmtApproxMc::generate_lemire_hash(uint32_t hash_num)
+{
+  cvc5::Solver* solver = d_slv->getSolver();
+  // Lemire hash
+  uint32_t new_bv_width = slice_size;
+
+  uint32_t c_i = Random::getRandom().pick(0, pow(2, slice_size) - 1);
+
+  Term axpb = solver->mkBitVector(new_bv_width, 0);
+  // Term one = solver->mkBitVector(new_bv_width, 1);
+  // Term maxx = solver->mkBitVector(new_bv_width, pow(2, slice_size + 1));
+  Term c = solver->mkBitVector(slice_size, c_i);
+
+  Sort bvsort = solver->mkBitVectorSort(new_bv_width);
+  std::string var_name = "hash" + std::to_string(hash_num);
+  Term new_var = solver->mkConst(bvsort, var_name);
+  projection_var_terms.push_back(new_var);
+  projection_vars =
+      d_slv->getSolver()->termVectorToNodes1(projection_var_terms);
+  // Term new_var_mult_p = solver->mkTerm(BITVECTOR_MULT, {new_var, p});
+  // Term new_var_plusone = solver->mkTerm(BITVECTOR_ADD, {new_var, one});
+  // Term new_var_plusone_mult_p =
+  //     solver->mkTerm(BITVECTOR_MULT, {new_var_plusone, p});
+  // Term hash_const_less = solver->mkTerm(BITVECTOR_ULT, {new_var, maxx});
+  // c = solver->mkTerm(BITVECTOR_ADD, {c, new_var_mult_p});
+
+  Trace("smap-hash") << pow(2, slice_size) << "Adding Hash: (";
+
+  for (cvc5::Term x : bvs_in_projset)
+  {
+    uint32_t this_bv_width = x.getSort().getBitVectorSize();
+    uint32_t num_slices = ceil(this_bv_width / slice_size);
+    if (slice_size > this_bv_width) num_slices = 1;
+    for (uint32_t slice = 0; slice < num_slices; ++slice)
+    {
+      uint32_t this_slice_start = slice * slice_size;
+      uint32_t this_slice_end = (slice + 1) * slice_size - 1;
+      uint extend_x_by_bits = slice_size;
+      if (this_slice_end >= this_bv_width)
+      {
+        extend_x_by_bits = this_slice_end - this_bv_width + slice_size - 1;
+        this_slice_end = this_bv_width - 1;
+      }
+      uint32_t a_i = Random::getRandom().pick(0, primes[slice_size] - 1);
+      Trace("smap-hash") << a_i << x.getSymbol() << "[" << this_slice_start
+                         << ":" << this_slice_end << "] + ";
+
+      Op x_bit_op =
+          solver->mkOp(BITVECTOR_EXTRACT, {this_slice_end, this_slice_start});
+      Term x_sliced = solver->mkTerm(x_bit_op, {x});
+      Op x_zero_ex_op = solver->mkOp(BITVECTOR_ZERO_EXTEND, {extend_x_by_bits});
+      x_sliced = solver->mkTerm(x_zero_ex_op, {x_sliced});
+      Term a = solver->mkBitVector(new_bv_width, a_i);
+      Term ax = solver->mkTerm(BITVECTOR_MULT, {a, x_sliced});
+      axpb = solver->mkTerm(BITVECTOR_ADD, {ax, axpb});
+    }
+  }
+
+  Op axpb_div_op =
+      solver->mkOp(BITVECTOR_EXTRACT, {slice_size * 2 - 1, slice_size});
+  Term axpb_div = solver->mkTerm(axpb_div_op, {axpb});
+
+  Trace("smap-hash") << " 0) = " << primes[slice_size] << "h" << hash_num
+                     << " + " << c_i << "\n";
+
+  Term hash_const = solver->mkTerm(EQUAL, {axpb, c});
+  //   hash_const_less =
+  //     solver->mkTerm(BITVECTOR_ULE, {c,maxx});
+  Trace("smap-print-hash") << "\n"
+                           << "(assert " << hash_const << ")"
+                           << "\n";
+  // hash_const = solver->mkTerm(AND, {hash_const, hash_const_less});
+  // Trace("smap-print-hash") << "\n"
+  //                          << "(assert " << hash_const_less << ")"
+  //                          << "\n";
+  // Trace("smap-print-hash") << "\n"
+  //                          << "(assert " << hash_const << ")"
+  //                          << "\n";
 
   return hash_const;
 }

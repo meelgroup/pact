@@ -63,8 +63,10 @@ class SmtApproxMc
   Term generate_boolean_hash();
   Term generate_hash();
   Term generate_integer_hash(uint32_t hash_num);
+  Term generate_lemire_hash(uint32_t hash_num);
   uint64_t smtApproxMcMain();
   uint64_t getMinBW();
+  uint64_t getMinBWlemire();
   uint64_t smtApproxMcCore();
   uint32_t getPivot();
   vector<Node>& get_projection_nodes();
