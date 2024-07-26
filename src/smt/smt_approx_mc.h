@@ -41,6 +41,7 @@ class SmtApproxMc
   uint32_t num_floats = 0, num_real = 0, num_integer = 0;
   uint32_t num_bv_projset = 0, num_bool_projset = 0;
   uint32_t slice_size = 2;
+  uint32_t threshold = 0, measurements = 0;
   int numHashes = 0, oldhashes = 0;
   vector<uint64_t> primes;
   std::unordered_set<Node> bvnodes_in_formula;
@@ -62,6 +63,8 @@ class SmtApproxMc
   vector<Node> generateNHashes(uint32_t numHashes);
   Term generate_boolean_hash();
   Term generate_hash();
+  void set_up_probs_threshold_measurements();
+  double calc_error_bound(uint32_t t, double p);
   Term generate_integer_hash(uint32_t hash_num);
   Term generate_lemire_hash(uint32_t hash_num);
   uint64_t smtApproxMcMain();

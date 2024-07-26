@@ -410,6 +410,86 @@ Term SmtApproxMc::generate_hash()
   return hash_const;
 }
 
+double SmtApproxMc::calc_error_bound(uint32_t t, double p)
+{
+  double curr = pow(p, t);
+  double sum = curr;
+  for (auto k = t - 1; k >= std::ceil(double(t) / 2); k--)
+  {
+    curr *= double((k + 1)) / (t - k) * (1 - p) / p;
+    sum += curr;
+  }
+
+  return sum;
+}
+
+void SmtApproxMc::set_up_probs_threshold_measurements()
+{
+  int best_match = -1;
+  double thresh_factor;
+
+  if (best_match != -1)
+  {
+    thresh_factor = 1.1;
+  }
+  else
+  {
+    thresh_factor = 1.0;
+  }
+
+  double epsilon = d_slv->getOptions().counting.epsilon;
+  double delta = d_slv->getOptions().counting.delta;
+
+  threshold = int(1
+                  + thresh_factor * 9.84 * (1.0 + (1.0 / epsilon))
+                        * (1.0 + (1.0 / epsilon))
+                        * (1.0 + (epsilon / (1.0 + epsilon))));
+
+  Trace("smap") << "[smtap] threshold set to " << threshold << "\n";
+
+  double p_L = 0;
+  if (epsilon < sqrt(2) - 1)
+  {
+    p_L = 0.262;
+  }
+  else if (epsilon < 1)
+  {
+    p_L = 0.157;
+  }
+  else if (epsilon < 3)
+  {
+    p_L = 0.085;
+  }
+  else if (epsilon < 4 * sqrt(2) - 1)
+  {
+    p_L = 0.055;
+  }
+  else
+  {
+    p_L = 0.023;
+  }
+
+  double p_U = 0;
+  if (epsilon < 3)
+  {
+    p_U = 0.169;
+  }
+  else
+  {
+    p_U = 0.044;
+  }
+
+  for (measurements = 1;; measurements += 2)
+  {
+    if (calc_error_bound(measurements, p_L)
+            + calc_error_bound(measurements, p_U)
+        <= delta)
+    {
+      break;
+    }
+  }
+}
+
 uint64_t SmtApproxMc::smtApproxMcMain()
 {
   uint32_t numIters;
