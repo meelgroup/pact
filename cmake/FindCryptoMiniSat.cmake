@@ -72,7 +72,7 @@ if(NOT CryptoMiniSat_FOUND_SYSTEM)
                -DNOSQLITE=ON
                -DNOZLIB=ON
                -DONLY_SIMPLE=ON
-               -DSTATICCOMPILE=OFF
+               -DSTATICCOMPILE=ON
     BUILD_BYPRODUCTS <INSTALL_DIR>/${CMAKE_INSTALL_LIBDIR}/libcryptominisat5.a
                      <INSTALL_DIR>/${CMAKE_INSTALL_LIBDIR}/libcryptominisat5${CMAKE_SHARED_LIBRARY_SUFFIX}
                      <INSTALL_DIR>/${CMAKE_INSTALL_LIBDIR}/libcryptominisat5${CMAKE_SHARED_LIBRARY_SUFFIX}.${CryptoMiniSat_VERSION}
@@ -86,7 +86,7 @@ if(NOT CryptoMiniSat_FOUND_SYSTEM)
   )
 
   set(CryptoMiniSat_INCLUDE_DIR "${DEPS_BASE}/include/")
-  set(CryptoMiniSat_LIBRARIES "${DEPS_BASE}/${CMAKE_INSTALL_LIBDIR}/${LIBFILENAME}${CMAKE_SHARED_LIBRARY_SUFFIX}")
+  set(CryptoMiniSat_LIBRARIES "${DEPS_BASE}/${CMAKE_INSTALL_LIBDIR}/${LIBFILENAME}.a")
 
   add_library(CryptoMiniSat STATIC IMPORTED GLOBAL)
   set_target_properties(
