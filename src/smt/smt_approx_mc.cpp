@@ -19,6 +19,7 @@
 #include <cvc5/cvc5.h>
 #include <cvc5/cvc5_export.h>
 #include <math.h>
+#include <map>
 
 #include "expr/node.h"
 #include "expr/node_converter.h"
@@ -257,15 +258,12 @@ Term SmtApproxMc::generate_integer_hash(uint32_t hash_num)
   //   hash_const_less =
   //     solver->mkTerm(BITVECTOR_ULE, {c,maxx});
   Trace("smap-print-hash") << "\n"
-                           << "(assert " << hash_const << ")"
-                           << "\n";
+                           << "(assert " << hash_const << ")" << "\n";
   hash_const = solver->mkTerm(AND, {hash_const, hash_const_less});
   Trace("smap-print-hash") << "\n"
-                           << "(assert " << hash_const_less << ")"
-                           << "\n";
+                           << "(assert " << hash_const_less << ")" << "\n";
   Trace("smap-print-hash") << "\n"
-                           << "(assert " << hash_const << ")"
-                           << "\n";
+                           << "(assert " << hash_const << ")" << "\n";
 
   return hash_const;
 }
@@ -337,13 +335,12 @@ Term SmtApproxMc::generate_lemire_hash(uint32_t hash_num)
   Term hash_const = solver->mkTerm(EQUAL, {axpb_div, c});
 
   Trace("smap-print-hash") << "\n"
-                           << "(assert " << hash_const << ")"
-                           << "\n";
+                           << "(assert " << hash_const << ")" << "\n";
 
   return hash_const;
 }
 
-Term SmtApproxMc::generate_hash()
+Term SmtApproxMc::generate_hash(uint32_t bitwidth)
 {
   cvc5::Solver* solver = d_slv->getSolver();
 
@@ -403,8 +400,7 @@ Term SmtApproxMc::generate_hash()
                      << "\n";
 
   Term hash_const = solver->mkTerm(EQUAL, {axpb, c});
-  Trace("smap-print-hash") << "chash "
-                           << "(assert " << hash_const << ")"
+  Trace("smap-print-hash") << "chash " << "(assert " << hash_const << ")"
                            << "\n";
 
   return hash_const;
@@ -537,6 +533,141 @@ double SmtApproxMc::getTime()
 
 vector<Node>& SmtApproxMc::get_projection_nodes() { return projection_vars; }
 
+uint64_t SmtApproxMc::getNextIndex(uint64_t prev_index)
+{
+  // if (conf.sampl_vars.empty())
+  // {
+  //   num_hash_list.push_back(0);
+  //   num_count_list.push_back(1);
+  //   return;
+  // }
+
+  // Tells the number of solutions found at hash number N
+  // sols_for_hash[N] tells the number of solutions found when N hashes were
+  // added
+  std::map<uint64_t, int64_t> sols_for_hash;
+
+  // threshold_sols[hash_num]==1 tells us that at hash_num number of hashes
+  // there were found to be FULL threshold number of solutions
+  // threshold_sols[hash_num]==0 tells that there were less than threshold
+  // number of solutions.
+  // if it's not set, we have no clue.
+  std::map<uint64_t, bool> threshold_sols;
+  int64_t total_max_hashes =
+      projection_vars.size();  // TODO AS : can be improved
+  int64_t num_explored = 0;
+  int64_t lower_fib = 0;
+  int64_t upper_fib = total_max_hashes;
+  int64_t prev_measure = 0;  // TODO AS : ApproxMC did not have this
+  threshold_sols[total_max_hashes] = 0;
+  sols_for_hash[total_max_hashes] = 1;
+
+  int64_t hash_cnt = prev_index;
+  int64_t hash_prev = hash_cnt;
+
+  // We are doing a galloping search here (see our IJCAI-16 paper for more
+  // details). lowerFib is referred to as loIndex and upperFib is referred to as
+  // hiIndex The key idea is that we first do an exponential search and then do
+  // binary search This is implemented by using two sentinels: lowerFib and
+  // upperFib. The correct answer
+  //  is always between lowFib and upperFib. We do exponential search until
+  //  upperFib < lowerFib/2 Once upperFib < lowerFib/2; we do a binary search.
+  // while (num_explored < total_max_hashes)
+  // {
+  uint64_t cur_hash_cnt = hash_cnt;
+  // const vector<Lit> assumps =
+  //     set_num_hashes(hash_cnt, hm->hashes, sparse_data);
+
+  double my_time = getTime();
+  // SolNum sols = bounded_sol_count(threshold + 1,  // max no. solutions
+  //                                 &assumps,       // assumptions to use
+  //                                 hash_cnt,
+  //                                 iter,
+  //                                 hm);
+
+  // int32_t count = d_slv->boundedSat(threshold, numHashes, projection_vars);
+
+  const uint64_t num_sols = std::min<uint64_t>(count, threshold + 1);
+  Assert(num_sols <= threshold + 1);
+  bool found_full = (num_sols == threshold + 1);
+
+  if (num_sols < threshold + 1)
+  {
+    num_explored = lower_fib + total_max_hashes - hash_cnt;
+
+    // one less hash count had threshold solutions
+    // this one has less than threshold
+    // so this is the real deal!
+    if (hash_cnt == 0
+        || (threshold_sols.find(hash_cnt - 1) != threshold_sols.end()
+            && threshold_sols[hash_cnt - 1] == 1))
+    {
+      num_hash_list.push_back(hash_cnt);
+      num_count_list.push_back(num_sols);
+      prev_measure = hash_cnt;
+      return;
+    }
+
+    threshold_sols[hash_cnt] = 0;
+    sols_for_hash[hash_cnt] = num_sols;
+    if (iter > 0 && std::abs(hash_cnt - prev_measure) <= 2)
+    {
+      // Doing linear, this is a re-count
+      upper_fib = hash_cnt;
+      hash_cnt--;
+    }
+    else
+    {
+      if (hash_prev > hash_cnt) hash_prev = 0;
+      upper_fib = hash_cnt;
+      if (hash_prev > lower_fib) lower_fib = hash_prev;
+      hash_cnt = (upper_fib + lower_fib) / 2;
+    }
+  }
+  else
+  {
+    Assert(num_sols == threshold + 1);
+    num_explored = hash_cnt + total_max_hashes - upper_fib;
+
+    // success record for +1 hashcount exists and is 0
+    // so one-above hashcount was below threshold, this is above
+    // we have a winner -- the one above!
+    if (threshold_sols.find(hash_cnt + 1) != threshold_sols.end()
+        && threshold_sols[hash_cnt + 1] == 0)
+    {
+      num_hash_list.push_back(hash_cnt + 1);
+      num_count_list.push_back(sols_for_hash[hash_cnt + 1]);
+      prev_measure = hash_cnt + 1;
+      return;
+    }
+
+    threshold_sols[hash_cnt] = 1;
+    sols_for_hash[hash_cnt] = threshold + 1;
+    if (iter > 0 && std::abs(hash_cnt - prev_measure) < 2)
+    {
+      // Doing linear, this is a re-count
+      lower_fib = hash_cnt;
+      hash_cnt++;
+    }
+    else if (lower_fib + (hash_cnt - lower_fib) * 2 >= upper_fib - 1)
+    {
+      // Whenever the above condition is satisfied, we are in binary search
+      // mode
+      lower_fib = hash_cnt;
+      hash_cnt = (lower_fib + upper_fib) / 2;
+    }
+    else
+    {
+      // We are in exponential search mode.
+      const auto old_hash_cnt = hash_cnt;
+      hash_cnt = lower_fib + (hash_cnt - lower_fib) * 2;
+      if (old_hash_cnt == hash_cnt) hash_cnt++;
+    }
+  }
+  hash_prev = cur_hash_cnt;
+  // }
+}
+
 uint64_t SmtApproxMc::smtApproxMcCore()
 {
   Term hash;
@@ -549,8 +680,11 @@ uint64_t SmtApproxMc::smtApproxMcCore()
   int64_t count = bound;
   std::string ss = "";
 
-  while (true)
+  bool continue_search = true;
+
+  while (continue_search)
   {
+    numHashes = getNextIndex(oldhashes);
     if (numHashes > oldhashes)
     {
       Trace("smap") << "Pushing Hashes : " << numHashes - oldhashes << "\n";
@@ -595,8 +729,7 @@ uint64_t SmtApproxMc::smtApproxMcCore()
     }
     else
     {
-      Trace("smap") << "Strange! No change in num hashes!"
-                    << "\n";
+      Trace("smap") << "No change in num hashes! This should not happen\n";
     }
 
     std::cout << "c [smtappmc] [ " << getTime()
@@ -608,160 +741,90 @@ uint64_t SmtApproxMc::smtApproxMcCore()
     std::cout << "c [smtappmc] [ " << getTime() << "] got solutions: " << count
               << " out of " << bound << std::endl;
 
-    if (count == 0)
+    return count;
+  }
+
+  template <class T>
+  inline T SmtApproxMc::findMedian(vector<T> & numList)
+  {
+    Assert(!numList.empty());
+    std::sort(numList.begin(), numList.end());
+    size_t medIndex = numList.size() / 2;
+    if (medIndex >= numList.size())
     {
-      growingphase = 0;
-      lowbound = numHashes / 2;
-      highbound = numHashes - 1;
+      return numList[numList.size() - 1];
     }
-    else if (count < bound)
+    return numList[medIndex];
+  }
+
+  vector<Node> SmtApproxMc::generateNHashes(uint32_t numhashes)
+  {
+    vector<Term> hashes;
+    vector<Node> hashes_nodes;
+    cvc5::Solver* solver = d_slv->getSolver();
+    Term bv_one = solver->mkBitVector(1u, 1u);
+
+    Assert(primes.size() >= numHashes)
+        << "Prime size = " << primes.size() << " < numHashes = " << numhashes;
+    for (uint32_t num = 0; num < numhashes; ++num)
     {
-      if (verb > 0) std::cout << "Poping Hashes : " << oldhashes << std::endl;
-      d_slv->getSolver()->pop(oldhashes);
-      if (d_slv->getOptions().counting.hashsm == options::HashingMode::INT)
+      std::string modulus = std::to_string(primes[num]);
+      Sort f5 = solver->mkFiniteFieldSort(modulus);
+
+      for (uint32_t bitwidth = 0; bitwidth < max_bitwidth; ++bitwidth)
       {
-        for (int i = 0; i < oldhashes; i++)
+        std::string value_here = std::to_string(int(pow(2, bitwidth)));
+        ff[bitwidth] = solver->mkFiniteFieldElem(value_here, f5);
+      }
+      std::string b_s =
+          std::to_string(Random::getRandom().pick(1, primes[num] - 1));
+      std::string c_s =
+          std::to_string(Random::getRandom().pick(1, primes[num] - 1));
+      Term axpb = solver->mkFiniteFieldElem(b_s, f5);
+      Term c = solver->mkFiniteFieldElem(c_s, f5);
+      if (verb > 0) std::cout << "Adding a hash constraint (";
+      for (cvc5::Term x : bvs_in_formula)
+      {
+        uint32_t num_slices = ceil(max_bitwidth / slice_size);
+
+        for (uint32_t slice = 0; slice < num_slices; ++slice)
         {
-          projection_var_terms.pop_back();
+          Term x_ff = solver->mkFiniteFieldElem("0", f5);
+
+          uint32_t this_slice_start = slice * slice_size;
+
+          std::string a_s =
+              std::to_string(Random::getRandom().pick(1, primes[num] - 1));
+          if (verb > 0)
+            std::cout << a_s << x.getSymbol() << "[" << this_slice_start << ":"
+                      << this_slice_start + slice_size - 1 << "] + ";
+
+          for (uint bit = this_slice_start; bit < this_slice_start + slice_size;
+               ++bit)
+          {
+            Op x_bit_op = solver->mkOp(BITVECTOR_EXTRACT, {bit, bit});
+            Term x_bit_bv = solver->mkTerm(x_bit_op, {x});
+            Term eq_test = solver->mkTerm(EQUAL, {x_bit_bv, bv_one});
+            Term ite_t = solver->mkTerm(ITE, {eq_test, ff[bit], ff[0]});
+
+            x_ff = solver->mkTerm(FINITE_FIELD_ADD, {x_ff, ite_t});
+          }
+
+          Term a = solver->mkFiniteFieldElem(a_s, f5);
+          Term ax = solver->mkTerm(FINITE_FIELD_MULT, {a, x_ff});
+          axpb = solver->mkTerm(FINITE_FIELD_ADD, {ax, axpb});
         }
-        projection_vars =
-            d_slv->getSolver()->termVectorToNodes1(projection_var_terms);
       }
-      break;
-    }
+      if (verb > 0)
+        std::cout << b_s << ") mod " << primes[num] << " = " << c_s
+                  << std::endl;
 
-    if (growingphase)
-    {
-      numHashes *= 2;
-      if (numHashes == 0) numHashes = 1;
+      Term hash_const = solver->mkTerm(EQUAL, {axpb, c});
+      hashes.push_back(hash_const);
     }
-    else
-    {
-      nochange = 0;
-      if (highbound < lowbound)
-      {
-        Trace("smap") << "Poping Hashes : " << oldhashes << "\n";
-        d_slv->getSolver()->pop(oldhashes);
-        break;
-      }
-      else if (count == bound)
-      {
-        if (lowbound == numHashes) nochange = 1;
-        lowbound = numHashes;
-      }
-      else if (count == 0)
-      {
-        if (highbound == numHashes) nochange = 1;
-        highbound = numHashes;
-      }
-      else
-      {
-        Trace("smap") << "Poping Hashes : " << oldhashes << "\n";
-        d_slv->getSolver()->pop(oldhashes);
-        break;
-      }
-      if (nochange)
-      {
-        Trace("smap") << "Poping Hashes : " << oldhashes << "\n";
-        d_slv->getSolver()->pop(oldhashes);
-        return 0;
-      }
-      numHashes = ceil((lowbound + highbound) / 2);
-    }
+    hashes_nodes = solver->termVectorToNodes1(hashes);
+    return hashes_nodes;
   }
-
-  for (int i = 0; i < numHashes; ++i)
-  {
-    if (project_on_booleans)
-      count *= 2;
-    else if (d_slv->getOptions().counting.hashsm == options::HashingMode::LEM)
-      count *= pow(2, slice_size);
-    else
-      count *= primes[slice_size];
-  }
-  return count;
-}
-
-template <class T>
-inline T SmtApproxMc::findMedian(vector<T>& numList)
-{
-  Assert(!numList.empty());
-  std::sort(numList.begin(), numList.end());
-  size_t medIndex = numList.size() / 2;
-  if (medIndex >= numList.size())
-  {
-    return numList[numList.size() - 1];
-  }
-  return numList[medIndex];
-}
-
-vector<Node> SmtApproxMc::generateNHashes(uint32_t numhashes)
-{
-  vector<Term> hashes;
-  vector<Node> hashes_nodes;
-  cvc5::Solver* solver = d_slv->getSolver();
-  Term bv_one = solver->mkBitVector(1u, 1u);
-
-  Assert(primes.size() >= numHashes)
-      << "Prime size = " << primes.size() << " < numHashes = " << numhashes;
-  for (uint32_t num = 0; num < numhashes; ++num)
-  {
-    std::string modulus = std::to_string(primes[num]);
-    Sort f5 = solver->mkFiniteFieldSort(modulus);
-
-    for (uint32_t bitwidth = 0; bitwidth < max_bitwidth; ++bitwidth)
-    {
-      std::string value_here = std::to_string(int(pow(2, bitwidth)));
-      ff[bitwidth] = solver->mkFiniteFieldElem(value_here, f5);
-    }
-    std::string b_s =
-        std::to_string(Random::getRandom().pick(1, primes[num] - 1));
-    std::string c_s =
-        std::to_string(Random::getRandom().pick(1, primes[num] - 1));
-    Term axpb = solver->mkFiniteFieldElem(b_s, f5);
-    Term c = solver->mkFiniteFieldElem(c_s, f5);
-    if (verb > 0) std::cout << "Adding a hash constraint (";
-    for (cvc5::Term x : bvs_in_formula)
-    {
-      uint32_t num_slices = ceil(max_bitwidth / slice_size);
-
-      for (uint32_t slice = 0; slice < num_slices; ++slice)
-      {
-        Term x_ff = solver->mkFiniteFieldElem("0", f5);
-
-        uint32_t this_slice_start = slice * slice_size;
-
-        std::string a_s =
-            std::to_string(Random::getRandom().pick(1, primes[num] - 1));
-        if (verb > 0)
-          std::cout << a_s << x.getSymbol() << "[" << this_slice_start << ":"
-                    << this_slice_start + slice_size - 1 << "] + ";
-
-        for (uint bit = this_slice_start; bit < this_slice_start + slice_size;
-             ++bit)
-        {
-          Op x_bit_op = solver->mkOp(BITVECTOR_EXTRACT, {bit, bit});
-          Term x_bit_bv = solver->mkTerm(x_bit_op, {x});
-          Term eq_test = solver->mkTerm(EQUAL, {x_bit_bv, bv_one});
-          Term ite_t = solver->mkTerm(ITE, {eq_test, ff[bit], ff[0]});
-
-          x_ff = solver->mkTerm(FINITE_FIELD_ADD, {x_ff, ite_t});
-        }
-
-        Term a = solver->mkFiniteFieldElem(a_s, f5);
-        Term ax = solver->mkTerm(FINITE_FIELD_MULT, {a, x_ff});
-        axpb = solver->mkTerm(FINITE_FIELD_ADD, {ax, axpb});
-      }
-    }
-    if (verb > 0)
-      std::cout << b_s << ") mod " << primes[num] << " = " << c_s << std::endl;
-
-    Term hash_const = solver->mkTerm(EQUAL, {axpb, c});
-    hashes.push_back(hash_const);
-  }
-  hashes_nodes = solver->termVectorToNodes1(hashes);
-  return hashes_nodes;
-}
 
 }  // namespace counting
 }  // namespace cvc5::internal

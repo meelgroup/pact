@@ -44,6 +44,8 @@ class SmtApproxMc
   uint32_t threshold = 0, measurements = 0;
   int numHashes = 0, oldhashes = 0;
   vector<uint64_t> primes;
+  vector<uint64_t> num_hash_list;
+  vector<double> num_count_list;
   std::unordered_set<Node> bvnodes_in_formula;
   std::vector<Node> bvnode_in_formula_v, projection_vars;
   std::vector<Term> bvs_in_projset, booleans_in_projset;
@@ -62,7 +64,7 @@ class SmtApproxMc
   void populatePrimes();
   vector<Node> generateNHashes(uint32_t numHashes);
   Term generate_boolean_hash();
-  Term generate_hash();
+  Term generate_hash(uint32_t bitwidth = 0);
   void set_up_probs_threshold_measurements();
   double calc_error_bound(uint32_t t, double p);
   Term generate_integer_hash(uint32_t hash_num);
@@ -71,6 +73,7 @@ class SmtApproxMc
   uint64_t getMinBW();
   uint64_t getMinBWlemire();
   uint64_t smtApproxMcCore();
+  uint64_t getNextIndex(uint64_t prev_index);
   uint32_t getPivot();
   vector<Node>& get_projection_nodes();
   uint32_t getNumIter();

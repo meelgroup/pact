@@ -74,8 +74,8 @@ RealAlgebraicNumber::RealAlgebraicNumber(const std::vector<long>& coefficients,
 #ifdef CVC5_ASSERTIONS
   for (long c : coefficients)
   {
-    Assert(std::numeric_limits<std::int32_t>::min() <= c
-           && c <= std::numeric_limits<std::int32_t>::max())
+    Assert(std::numeric_limits<int32_t>::min() <= c
+           && c <= std::numeric_limits<int32_t>::max())
         << "Coefficients need to fit within 32 bit integers. Please use the "
            "constructor based on Integer instead.";
   }
@@ -216,21 +216,24 @@ RealAlgebraicNumber& operator*=(RealAlgebraicNumber& lhs,
   return lhs;
 }
 
-int sgn(const RealAlgebraicNumber& ran) {
+int sgn(const RealAlgebraicNumber& ran)
+{
 #ifdef CVC5_POLY_IMP
   return sgn(ran.getValue());
 #else
   return ran.getValue().sgn();
 #endif
 }
-bool isZero(const RealAlgebraicNumber& ran) {
+bool isZero(const RealAlgebraicNumber& ran)
+{
 #ifdef CVC5_POLY_IMP
   return is_zero(ran.getValue());
 #else
   return ran.getValue().isZero();
 #endif
 }
-bool isOne(const RealAlgebraicNumber& ran) {
+bool isOne(const RealAlgebraicNumber& ran)
+{
 #ifdef CVC5_POLY_IMP
   return is_one(ran.getValue());
 #else

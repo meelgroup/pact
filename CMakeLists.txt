@@ -322,7 +322,7 @@ else()
   endif()
 endif()
 
-if(DEFINED BUILD_BINDINGS_PYTHON_VERSION) 
+if(DEFINED BUILD_BINDINGS_PYTHON_VERSION)
   find_package(Python ${BUILD_BINDINGS_PYTHON_VERSION} EXACT COMPONENTS Interpreter REQUIRED)
 else()
   find_supported_python_version()
@@ -331,13 +331,13 @@ endif()
 # Some cmake packages are not compatible with the newest version
 # of FindPython, introduced in cmake 3.12.
 # We define the symbols below to be backward compatible.
-if(NOT DEFINED PYTHON_EXECUTABLE) 
+if(NOT DEFINED PYTHON_EXECUTABLE)
   set(PYTHON_EXECUTABLE "${Python_EXECUTABLE}")
 endif()
-if (NOT DEFINED PYTHON_INCLUDE_DIRS) 
+if (NOT DEFINED PYTHON_INCLUDE_DIRS)
   set(PYTHON_INCLUDE_DIRS "${Python_INCLUDE_DIRS}")
 endif()
-if (NOT DEFINED PYTHON_LIBRARIES) 
+if (NOT DEFINED PYTHON_LIBRARIES)
   set(PYTHON_LIBRARIES "${Python_LIBRARIES}")
 endif()
 
@@ -555,7 +555,7 @@ include(CMakePackageConfigHelpers)
 # (in the assumption that only reasonably experienced users use this and
 # also that custom installation prefixes are not used for longer periods of
 # time anyway). Also, we print a big warning with further instructions.
-if(BUILD_SHARED_LIBS)
+if(z)
   # Get the libraries that cvc5 links against
   get_target_property(libs cvc5 INTERFACE_LINK_LIBRARIES)
   set(LIBS_SHARED_FROM_DEPS "")
