@@ -56,6 +56,7 @@ class SmtApproxMc
   bool project_on_booleans = true;
   bool get_projected_count = false;
   std::vector<Term> projection_var_terms;
+  int64_t count;
 
   // The following things in this file needs to be reinitialized for each
   // iteration of the SMTApproxMC core loop

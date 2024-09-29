@@ -535,10 +535,22 @@ vector<Node>& SmtApproxMc::get_projection_nodes() { return projection_vars; }
 
 // Return next index to look at for count, -1 denotes that we have found the
 // count, done
-int64_t SmtApproxMc::getNextIndex(uint64_t prev_index, uint64_t count)
+int64_t SmtApproxMc::getNextIndex(uint64_t prev_index, uint64_t count_i)
 {
   hash_cnt = prev_index;
   hash_prev = hash_cnt;
+  bool is_first_iter = false;
+
+  if (count_i == threshold + 1)
+  {
+    threshold_sols[hash_cnt] = 1;
+    Trace("smap") << "Threshold solutions found at " << hash_cnt << "\n";
+  }
+  else
+  {
+    threshold_sols[hash_cnt] = 0;
+    Trace("smap") << "Threshold solutions not found at " << hash_cnt << "\n";
+  }
 
   // We are doing a galloping search here (see our IJCAI-16 paper for more
   // details). lowerFib is referred to as loIndex and upperFib is referred to as
@@ -550,10 +562,11 @@ int64_t SmtApproxMc::getNextIndex(uint64_t prev_index, uint64_t count)
   // while (num_explored < total_max_hashes)
   // {
 
-  if (lower_fib == 0 && upper_fib == 0 && hash_cnt == 0)
+  if (lower_fib == 0 && upper_fib == total_max_hashes && hash_cnt == 0)
   {
     Assert(prev_index == 0);
     Trace("smap") << "getNextIndex returning 0 as first iteration\n";
+    is_first_iter = true;
   }
 
   uint64_t cur_hash_cnt = hash_cnt;
@@ -565,6 +578,8 @@ int64_t SmtApproxMc::getNextIndex(uint64_t prev_index, uint64_t count)
   if (num_sols < threshold + 1)
   {
     num_explored = lower_fib + total_max_hashes - hash_cnt;
+    Trace("smap") << "Found " << num_sols << " solutions at " << hash_cnt
+                  << "threshold " << threshold << "\n";
 
     // one less hash count had threshold solutions
     // this one has less than threshold
@@ -598,17 +613,20 @@ int64_t SmtApproxMc::getNextIndex(uint64_t prev_index, uint64_t count)
   else
   {
     Assert(num_sols == threshold + 1);
+    Trace("smap") << "Found full solutions at " << hash_cnt << "\n";
     num_explored = hash_cnt + total_max_hashes - upper_fib;
 
     // success record for +1 hashcount exists and is 0
     // so one-above hashcount was below threshold, this is above
     // we have a winner -- the one above!
     if (threshold_sols.find(hash_cnt + 1) != threshold_sols.end()
-        && threshold_sols[hash_cnt + 1] == 0)
+        && threshold_sols[hash_cnt + 1] == 0 && !is_first_iter)
     {
       num_hash_list.push_back(hash_cnt + 1);
       num_count_list.push_back(sols_for_hash[hash_cnt + 1]);
       prev_measure = hash_cnt + 1;
+      Trace("smap") << "Found winner (617)" << sols_for_hash[hash_cnt + 1]
+                    << " solutions at " << hash_cnt + 1 << "\n";
       return -1;
     }
 
@@ -619,6 +637,8 @@ int64_t SmtApproxMc::getNextIndex(uint64_t prev_index, uint64_t count)
       // Doing linear, this is a re-count
       lower_fib = hash_cnt;
       hash_cnt++;
+      Trace("smap") << "Linear search: " << lower_fib << " " << hash_cnt << " "
+                    << upper_fib << "\n";
     }
     else if (lower_fib + (hash_cnt - lower_fib) * 2 >= upper_fib - 1)
     {
@@ -626,6 +646,8 @@ int64_t SmtApproxMc::getNextIndex(uint64_t prev_index, uint64_t count)
       // mode
       lower_fib = hash_cnt;
       hash_cnt = (lower_fib + upper_fib) / 2;
+      Trace("smap") << "Binary search: " << lower_fib << " " << hash_cnt << " "
+                    << upper_fib << "\n";
     }
     else
     {
@@ -633,12 +655,15 @@ int64_t SmtApproxMc::getNextIndex(uint64_t prev_index, uint64_t count)
       const auto old_hash_cnt = hash_cnt;
       hash_cnt = lower_fib + (hash_cnt - lower_fib) * 2;
       if (old_hash_cnt == hash_cnt) hash_cnt++;
+      Trace("smap") << "Exponential search: " << lower_fib << " "
+                    << old_hash_cnt << " " << upper_fib << " " << hash_cnt
+                    << "\n";
     }
   }
+  Trace("smap") << "Returning hash count: " << hash_cnt << "\n";
   hash_prev = cur_hash_cnt;
-  return cur_hash_cnt;
+  return hash_cnt;
 }
-
 void SmtApproxMc::init_iteration_data()
 {
   num_hash_list.clear();
@@ -646,12 +671,14 @@ void SmtApproxMc::init_iteration_data()
   threshold_sols.clear();
   sols_for_hash.clear();
   // TODO AS max hashes is not the right term here
-  total_max_hashes = projection_vars.size();
+  total_max_hashes = projection_vars.size()
+                     * 32;  // should be getmaxBW or something complicated
   lower_fib = 0;
   upper_fib = total_max_hashes;
   hash_cnt = 0;
   hash_prev = 0;
   threshold = getPivot();
+  count = threshold + 1;
   // TODO AS remember to add the actual constant generation routine
   threshold_sols[total_max_hashes] = 0;
   sols_for_hash[total_max_hashes] = 1;
@@ -666,7 +693,6 @@ uint64_t SmtApproxMc::smtApproxMcCore()
   oldhashes = 0;
 
   int64_t bound = getPivot();
-  int64_t count = threshold + 1;
   std::string ss = "";
 
   bool continue_search = true;
@@ -675,8 +701,13 @@ uint64_t SmtApproxMc::smtApproxMcCore()
   while (continue_search)
   {
     numHashes = getNextIndex(oldhashes, count);
-    Trace("smap") << "Hashes now = " << numHashes << "old hashes:" << oldhashes
+    Trace("smap") << "Hashes now = " << numHashes << " old hashes:" << oldhashes
                   << "\n";
+    if (numHashes == -1)
+    {
+      continue_search = false;
+      break;
+    }
 
     if (numHashes > oldhashes)
     {
@@ -729,7 +760,7 @@ uint64_t SmtApproxMc::smtApproxMcCore()
               << "] bounded_sol_count looking for " << bound
               << " solutions -- hashes active: " << numHashes << std::endl;
 
-    count = d_slv->boundedSat(bound, numHashes, projection_vars);
+    count = d_slv->boundedSat(bound + 1, numHashes, projection_vars);
 
     std::cout << "c [smtappmc] [ " << getTime() << "] got solutions: " << count
               << " out of " << bound << std::endl;
