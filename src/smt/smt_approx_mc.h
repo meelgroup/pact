@@ -57,6 +57,30 @@ class SmtApproxMc
   bool get_projected_count = false;
   std::vector<Term> projection_var_terms;
 
+  // The following things in this file needs to be reinitialized for each
+  // iteration of the SMTApproxMC core loop
+
+  // Tells the number of solutions found at hash number N
+  // sols_for_hash[N] tells the number of solutions found when N hashes were
+  // added
+  std::map<uint64_t, int64_t> sols_for_hash;
+
+  int64_t lower_fib = 0;
+  int64_t upper_fib = 0;
+  int64_t hash_cnt = 0;
+  int64_t hash_prev = 0;
+  int64_t total_max_hashes = 0;
+  int64_t num_explored = 0;
+  int64_t prev_measure = 0;  // TODO AS : ApproxMC did not have this
+  int64_t iter = 0;
+
+  // threshold_sols[hash_num]==1 tells us that at hash_num number of hashes
+  // there were found to be FULL threshold number of solutions
+  // threshold_sols[hash_num]==0 tells that there were less than threshold
+  // number of solutions.
+  // if it's not set, we have no clue.
+  std::map<uint64_t, bool> threshold_sols;
+
  public:
   SmtApproxMc(SolverEngine* slv);
   virtual ~SmtApproxMc() {}
@@ -69,11 +93,12 @@ class SmtApproxMc
   double calc_error_bound(uint32_t t, double p);
   Term generate_integer_hash(uint32_t hash_num);
   Term generate_lemire_hash(uint32_t hash_num);
+  void init_iteration_data();
   uint64_t smtApproxMcMain();
   uint64_t getMinBW();
   uint64_t getMinBWlemire();
   uint64_t smtApproxMcCore();
-  uint64_t getNextIndex(uint64_t prev_index);
+  int64_t getNextIndex(uint64_t prev_index, uint64_t count);
   uint32_t getPivot();
   vector<Node>& get_projection_nodes();
   uint32_t getNumIter();
