@@ -42,7 +42,7 @@ class SmtApproxMc
   uint32_t num_bv_projset = 0, num_bool_projset = 0;
   uint32_t slice_size = 2;
   uint32_t threshold = 0, measurements = 0;
-  int numHashes = 0, oldhashes = 0;
+  int numHashes = 0, oldhashes = 0, olderhashes = 0;
   vector<uint64_t> primes;
   vector<uint64_t> num_hash_list;
   vector<double> num_count_list;
@@ -99,7 +99,9 @@ class SmtApproxMc
   uint64_t getMinBW();
   uint64_t getMinBWlemire();
   uint64_t smtApproxMcCore();
-  int64_t getNextIndex(uint64_t prev_index, uint64_t count);
+  int64_t getNextIndex(uint64_t prev_index,
+                       uint64_t prev_prev_index,
+                       uint64_t count);
   uint32_t getPivot();
   vector<Node>& get_projection_nodes();
   uint32_t getNumIter();
