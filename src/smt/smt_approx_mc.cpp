@@ -55,6 +55,7 @@ uint32_t SmtApproxMc::getPivot()
 uint32_t SmtApproxMc::getNumIter()
 {
   double delta = 2.5;
+  std::cout << "numiter = " << (ceil(25 * log(3 / delta))) << std::endl;
   return int(ceil(25 * log(3 / delta)));
 }
 
@@ -70,6 +71,7 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
 
   projection_prefix = slv->getOptions().counting.projprefix;
   get_projected_count = slv->getOptions().counting.projcount;
+  two_factor_prime = slv->getOptions().counting.twofactorprime;
 
   for (Node n : tlAsserts)
   {
@@ -498,21 +500,26 @@ uint64_t SmtApproxMc::smtApproxMcMain()
   for (iter = 0; iter < numIters; ++iter)
   {
     countThisIter = smtApproxMcCore();
-    if (countThisIter == 0 && numHashes > 0)
+    prev_measure = hash_cnt;
+    // if (countThisIter == 0 && numHashes > 0)
+    // {
+    //   std::cout << "c [smtappmc] [ " << getTime()
+    //             << "] completed round: " << iter << "] failing count "
+    //             << std::endl;
+    //   iter--;
+    // }
+    // else
+    // {
+    std::cout << "c [smtappmc] [ " << getTime() << "] completed round: " << iter
+              << " count: " << countThisIter << std::endl;
+    numList.push_back(countThisIter);
+    // }
+    if (numHashes == 0)
     {
       std::cout << "c [smtappmc] [ " << getTime()
-                << "] completed round: " << iter << "] failing count "
-                << std::endl;
-      iter--;
+                << "] terminating as exact count is found" << std::endl;
+      break;
     }
-    else
-    {
-      std::cout << "c [smtappmc] [ " << getTime()
-                << "] completed round: " << iter << " count: " << countThisIter
-                << std::endl;
-      numList.push_back(countThisIter);
-    }
-    if (numHashes == 0) break;
   }
   countThisIter = findMedian(numList);
   std::cout << "c Total time : " << getTime() << std::endl;
@@ -537,7 +544,8 @@ vector<Node>& SmtApproxMc::get_projection_nodes() { return projection_vars; }
 // count in the last iteration, done
 int64_t SmtApproxMc::getNextIndex(uint64_t prev_index,
                                   uint64_t prev_prev_index,
-                                  uint64_t count_i)
+                                  uint64_t count_i,
+                                  bool start_of_iter)
 {
   hash_cnt = prev_index;
   hash_prev = prev_prev_index;
@@ -572,6 +580,12 @@ int64_t SmtApproxMc::getNextIndex(uint64_t prev_index,
     Trace("pact-getnext") << "getNextIndex returning 0 as first iteration\n";
     upper_fib = total_max_hashes - 1;
     is_first_iter = true;
+    if (prev_measure != 0)
+    {
+      Assert(prev_measure != 0) << "prev_measure is 0, which is unlikely";
+      Trace("pact-getnext")
+          << "Returning prev_measure " << prev_measure << "\n";
+    }
   }
 
   uint64_t cur_hash_cnt = hash_cnt;
@@ -680,7 +694,13 @@ int64_t SmtApproxMc::getNextIndex(uint64_t prev_index,
   }
   Trace("pact-getnext") << "Returning hash count: " << hash_cnt << "\n";
   hash_prev = cur_hash_cnt;
-  if (is_first_iter) return 0;
+  if (is_first_iter)
+  {
+    if (prev_measure != 0)
+      return prev_measure;
+    else
+      return 0;
+  }
   return hash_cnt;
 }
 void SmtApproxMc::init_iteration_data()
@@ -707,20 +727,21 @@ void SmtApproxMc::init_iteration_data()
 uint64_t SmtApproxMc::smtApproxMcCore()
 {
   Term hash;
-
-  oldhashes = 0, olderhashes = 0;
+  numHashes = 0, oldhashes = 0, olderhashes = 0;
 
   int64_t bound = getPivot();
   std::string ss = "";
 
   bool continue_search = true;
+  bool start_of_iter = true;
   init_iteration_data();
 
   while (continue_search)
   {
-    numHashes = getNextIndex(oldhashes, olderhashes, count);
+    numHashes = getNextIndex(oldhashes, olderhashes, count, start_of_iter);
     Trace("pact-getnext") << "Hashes now = " << numHashes
                           << " old hashes:" << oldhashes << "\n";
+    start_of_iter = false;
     if (numHashes == -1)
     {
       continue_search = false;
@@ -797,7 +818,6 @@ uint64_t SmtApproxMc::smtApproxMcCore()
       count *= primes[slice_size];
   }
   d_slv->getSolver()->pop(oldhashes);
-  numHashes = 0, oldhashes = 0, olderhashes = 0;
   return count;
 }
 
@@ -821,7 +841,7 @@ vector<Node> SmtApproxMc::generateNHashes(uint32_t numhashes)
   cvc5::Solver* solver = d_slv->getSolver();
   Term bv_one = solver->mkBitVector(1u, 1u);
 
-  Assert(primes.size() >= numHashes)
+  Assert(primes.size() >= (uint64_t)numHashes)
       << "Prime size = " << primes.size() << " < numHashes = " << numhashes;
   for (uint32_t num = 0; num < numhashes; ++num)
   {

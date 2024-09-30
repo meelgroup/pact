@@ -55,6 +55,7 @@ class SmtApproxMc
   std::string projection_prefix;
   bool project_on_booleans = true;
   bool get_projected_count = false;
+  bool two_factor_prime = true;
   std::vector<Term> projection_var_terms;
   int64_t count;
 
@@ -101,7 +102,8 @@ class SmtApproxMc
   uint64_t smtApproxMcCore();
   int64_t getNextIndex(uint64_t prev_index,
                        uint64_t prev_prev_index,
-                       uint64_t count);
+                       uint64_t count,
+                       bool start_of_iter);
   uint32_t getPivot();
   vector<Node>& get_projection_nodes();
   uint32_t getNumIter();

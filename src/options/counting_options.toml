@@ -49,6 +49,15 @@ name   = "ModelCounting"
   help       = "verbosity while counting"
 
 [[option]]
+  name       = "twofactorprime"
+  category   = "regular"
+  long       = "tfp"
+  type       = "bool"
+  default    = "true"
+  help       = "use two factor of primes to reach correct epsilon"
+
+
+[[option]]
   name       = "projcount"
   category   = "regular"
   long       = "projcount"
