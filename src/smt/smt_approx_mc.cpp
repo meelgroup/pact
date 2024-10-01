@@ -421,6 +421,36 @@ double SmtApproxMc::calc_error_bound(uint32_t t, double p)
   return sum;
 }
 
+uint64_t SmtApproxMc::two_factor_check(uint slice)
+{
+  int64_t bound = getPivot();
+  d_slv->getSolver()->pop();
+  uint32_t i = 1;
+  uint64_t bounded_sat_count = 1;
+  for (i = slice; i > 0; i--)
+  {
+    Term hash = generate_hash(i);
+    d_slv->getSolver()->push();
+    d_slv->getSolver()->assertFormula(hash);
+    bounded_sat_count = d_slv->boundedSat(bound, 0, projection_vars);
+    Trace("pact-tfc") << "Count at " << i << " is " << count << "\n";
+    if (count <= bound)
+    {
+      Trace("pact-tfc") << "Popping\n";
+      d_slv->getSolver()->pop();
+      Trace("pact-tfc") << "Count is less than bound at " << i
+                        << ", breaking, popped\n";
+      break;
+    }
+    Trace("pact-tfc") << "Popping\n";
+    d_slv->getSolver()->pop();
+    Trace("pact-tfc") << "should multiply by " << primes[i] << ", popped\n";
+  }
+  d_slv->getSolver()->push();
+  // this is a fake push just to keep the pop stack consistent
+  return primes[i] * bounded_sat_count;
+}
+
 void SmtApproxMc::set_up_probs_threshold_measurements()
 {
   int best_match = -1;
@@ -745,7 +775,8 @@ uint64_t SmtApproxMc::smtApproxMcCore()
     if (numHashes == -1)
     {
       continue_search = false;
-      numHashes = oldhashes;
+      numHashes = oldhashes - 1;
+      count = two_factor_check(slice_size) / primes[slice_size];
       break;
     }
 

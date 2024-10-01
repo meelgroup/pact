@@ -92,6 +92,7 @@ class SmtApproxMc
   Term generate_boolean_hash();
   Term generate_hash(uint32_t bitwidth = 0);
   void set_up_probs_threshold_measurements();
+  uint64_t two_factor_check(uint slice_size);
   double calc_error_bound(uint32_t t, double p);
   Term generate_integer_hash(uint32_t hash_num);
   Term generate_lemire_hash(uint32_t hash_num);
