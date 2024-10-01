@@ -175,6 +175,10 @@ Term SmtApproxMc::generate_boolean_hash()
 
 uint64_t SmtApproxMc::getMinBW(int bitwidth = 0)
 {
+  if (d_slv->getOptions().counting.hashsm == options::HashingMode::ASH)
+    return bitwidth;
+  else if (d_slv->getOptions().counting.lessbw)
+    return bitwidth + 2;
   uint32_t min_bw = 2 * slice_size + 1;
   uint32_t num_sliced_var = 0;
   if (bitwidth == 0) bitwidth = slice_size;
@@ -265,6 +269,61 @@ Term SmtApproxMc::generate_integer_hash(uint32_t hash_num)
   Trace("smap-print-hash") << "\n"
                            << "(assert " << hash_const << ")" << "\n";
 
+  return hash_const;
+}
+
+Term SmtApproxMc::generate_ashwin_hash(uint32_t bitwidth)
+{
+  cvc5::Solver* solver = d_slv->getSolver();
+
+  uint32_t c_i = Random::getRandom().pick(0, pow(2, bitwidth) - 1);
+
+  Term axpb = solver->mkBitVector(bitwidth, 0);
+  Term c = solver->mkBitVector(bitwidth, c_i);
+
+  Sort bvsort = solver->mkBitVectorSort(bitwidth);
+
+  projection_vars =
+      d_slv->getSolver()->termVectorToNodes1(projection_var_terms);
+
+  Trace("smap-hash") << "Adding Hash: (";
+
+  for (cvc5::Term x : bvs_in_projset)
+  {
+    uint32_t this_bv_width = x.getSort().getBitVectorSize();
+    uint32_t num_slices = ceil(this_bv_width / bitwidth);
+    if (bitwidth > this_bv_width) num_slices = 1;
+    for (uint32_t slice = 0; slice < num_slices; ++slice)
+    {
+      uint32_t this_slice_start = slice * bitwidth;
+      uint32_t this_slice_end = (slice + 1) * bitwidth - 1;
+      if (this_slice_end >= this_bv_width)
+      {
+        this_slice_end = this_bv_width - 1;
+      }
+      uint32_t a_i =
+          Random::getRandom().pick(0, pow(2, bitwidth - 1) - 1) * 2 + 1;
+      Trace("smap-hash") << a_i << x.getSymbol() << "[" << this_slice_start
+                         << ":" << this_slice_end << "] + ";
+      Trace("smap") << "adding slicing operator\n";
+      Op x_bit_op =
+          solver->mkOp(BITVECTOR_EXTRACT, {this_slice_end, this_slice_start});
+      Term x_sliced = solver->mkTerm(x_bit_op, {x});
+      Term a = solver->mkBitVector(bitwidth, a_i);
+      Term ax = solver->mkTerm(BITVECTOR_MULT, {a, x_sliced});
+      Trace("smap") << "adding addition operator\n";
+      axpb = solver->mkTerm(BITVECTOR_ADD, {ax, axpb});
+    }
+  }
+
+  Trace("smap") << "adding div operarion\n";
+
+  Trace("smap-hash") << " 0) = " << c_i << "\n";
+  Trace("smap") << "creating equal term\n";
+
+  Term hash_const = solver->mkTerm(EQUAL, {axpb, c});
+  Trace("smap-print-hash") << "\n"
+                           << "(assert " << hash_const << ")" << "\n";
   return hash_const;
 }
 
@@ -426,9 +485,13 @@ uint64_t SmtApproxMc::two_factor_check(uint slice)
   uint64_t bound = getPivot() + 1;
   uint32_t i = 1;
   uint64_t bounded_sat_count = 1, last_count = 1;
+  Term hash;
   for (i = slice; i > 0; i--)
   {
-    Term hash = generate_hash(i);
+    if (d_slv->getOptions().counting.hashsm == options::HashingMode::ASH)
+      hash = generate_ashwin_hash(i);
+    else if (d_slv->getOptions().counting.hashsm == options::HashingMode::BV)
+      hash = generate_hash(i);
     Trace("smap") << "Pushing Hashes : " << 1 << "\n";
 
     d_slv->getSolver()->push();
@@ -436,7 +499,7 @@ uint64_t SmtApproxMc::two_factor_check(uint slice)
     bounded_sat_count = d_slv->boundedSat(bound, 0, projection_vars);
     Trace("pact-tfc") << "Count at " << i << " is " << bounded_sat_count
                       << "\n";
-    if (bounded_sat_count > bound)
+    if (bounded_sat_count >= bound)
     {
       Trace("smap") << "Poping Hashes : " << 1 << "\n";
       d_slv->getSolver()->pop(1);
@@ -451,6 +514,9 @@ uint64_t SmtApproxMc::two_factor_check(uint slice)
 
   Trace("pact-tfc") << "should multiply by " << primes[i + 1] * last_count
                     << "\n";
+  std::cout << "c [smtappmc] [ " << getTime()
+            << "] two-factor check: last prime is " << primes[i + 1]
+            << std::endl;
   return primes[i + 1] * last_count;
 }
 
@@ -812,8 +878,11 @@ uint64_t SmtApproxMc::smtApproxMcCore()
         if (project_on_booleans && get_projected_count)
           hash = generate_boolean_hash();
         else if (d_slv->getOptions().counting.hashsm
+                 == options::HashingMode::ASH)
+          hash = generate_ashwin_hash(slice_size);
+        else if (d_slv->getOptions().counting.hashsm
                  == options::HashingMode::BV)
-          hash = generate_hash();
+          hash = generate_hash(slice_size);
         else if (d_slv->getOptions().counting.hashsm
                  == options::HashingMode::LEM)
         {

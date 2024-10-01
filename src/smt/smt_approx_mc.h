@@ -91,6 +91,7 @@ class SmtApproxMc
   vector<Node> generateNHashes(uint32_t numHashes);
   Term generate_boolean_hash();
   Term generate_hash(uint32_t bitwidth);
+  Term generate_ashwin_hash(uint32_t bitwidth);
   void set_up_probs_threshold_measurements();
   uint64_t two_factor_check(uint slice_size);
   double calc_error_bound(uint32_t t, double p);

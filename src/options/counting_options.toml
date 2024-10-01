@@ -56,6 +56,14 @@ name   = "ModelCounting"
   default    = "true"
   help       = "use two factor of primes to reach correct epsilon"
 
+[[option]]
+  name       = "lessbw"
+  category   = "regular"
+  long       = "lessbw"
+  type       = "bool"
+  default    = "false"
+  alternate  = false
+  help       = "Use less BW in BV hashing (count comes without guarantee)"
 
 [[option]]
   name       = "projcount"
@@ -88,6 +96,8 @@ name   = "ModelCounting"
   name = "ff"
 [[option.mode.LEM]]
   name = "lem"
+[[option.mode.ASH]]
+  name = "ash"
 [[option.mode.INT]]
   name = "int"
 
