@@ -55,7 +55,6 @@ uint32_t SmtApproxMc::getPivot()
 uint32_t SmtApproxMc::getNumIter()
 {
   double delta = 2.5;
-  std::cout << "numiter = " << (ceil(25 * log(3 / delta))) << std::endl;
   return int(ceil(25 * log(3 / delta)));
 }
 
@@ -424,8 +423,7 @@ double SmtApproxMc::calc_error_bound(uint32_t t, double p)
 
 uint64_t SmtApproxMc::two_factor_check(uint slice)
 {
-  int64_t bound = getPivot();
-  // d_slv->getSolver()->pop(1);
+  uint64_t bound = getPivot() + 1;
   uint32_t i = 1;
   uint64_t bounded_sat_count = 1, last_count = 1;
   for (i = slice; i > 0; i--)
@@ -434,11 +432,11 @@ uint64_t SmtApproxMc::two_factor_check(uint slice)
     Trace("smap") << "Pushing Hashes : " << 1 << "\n";
 
     d_slv->getSolver()->push();
-    // d_slv->getSolver()->assertFormula(hash);
-    last_count = bounded_sat_count;
+    d_slv->getSolver()->assertFormula(hash);
     bounded_sat_count = d_slv->boundedSat(bound, 0, projection_vars);
-    Trace("pact-tfc") << "Count at " << i << " is " << count << "\n";
-    if (count > bound)
+    Trace("pact-tfc") << "Count at " << i << " is " << bounded_sat_count
+                      << "\n";
+    if (bounded_sat_count > bound)
     {
       Trace("smap") << "Poping Hashes : " << 1 << "\n";
       d_slv->getSolver()->pop(1);
@@ -448,11 +446,11 @@ uint64_t SmtApproxMc::two_factor_check(uint slice)
     }
     Trace("smap") << "Poping Hashes : " << 1 << "\n";
     d_slv->getSolver()->pop(1);
+    last_count = bounded_sat_count;
   }
-  Trace("smap") << "Pushing Hashes : " << 1 << "\n";
-  // d_slv->getSolver()->pop();
-  Trace("pact-tfc") << "should multiply by " << primes[i + 1] << ", popped\n";
-  // this is a fake push just to keep the pop stack consistent
+
+  Trace("pact-tfc") << "should multiply by " << primes[i + 1] * last_count
+                    << "\n";
   return primes[i + 1] * last_count;
 }
 
@@ -575,8 +573,8 @@ double SmtApproxMc::getTime()
 
 vector<Node>& SmtApproxMc::get_projection_nodes() { return projection_vars; }
 
-// Return next index to look at for count, -1 denotes that we have found the
-// count in the last iteration, done
+// Return next index to look at for count, negative denotes that we have found
+// the count in the last iteration, done
 int64_t SmtApproxMc::getNextIndex(uint64_t prev_index,
                                   uint64_t prev_prev_index,
                                   uint64_t count_i,
@@ -649,7 +647,7 @@ int64_t SmtApproxMc::getNextIndex(uint64_t prev_index,
       Trace("pact-getnext")
           << "Found winner (595)" << num_sols << " solutions at " << hash_cnt
           << prev_measure << "\n";
-      return -1;
+      return -(hash_cnt);
     }
 
     threshold_sols[hash_cnt] = 0;
@@ -694,7 +692,7 @@ int64_t SmtApproxMc::getNextIndex(uint64_t prev_index,
       Trace("pact-getnext")
           << "Found winner (617)" << sols_for_hash[hash_cnt + 1]
           << " solutions at " << hash_cnt + 1 << "\n";
-      return -1;
+      return -(hash_cnt + 1);
     }
 
     threshold_sols[hash_cnt] = 1;
@@ -766,24 +764,42 @@ uint64_t SmtApproxMc::smtApproxMcCore()
 
   int64_t bound = getPivot();
   std::string ss = "";
+  uint64_t final_count = 0;
 
-  bool continue_search = true;
   bool start_of_iter = true;
   init_iteration_data();
 
-  while (continue_search)
+  while (true)
   {
     numHashes = getNextIndex(oldhashes, olderhashes, count, start_of_iter);
-    Trace("pact-getnext") << "Hashes now = " << numHashes
-                          << " old hashes:" << oldhashes << "\n";
+    Trace("pact-getnext") << "Next hash to check boudedsat = " << numHashes
+                          << " last checked:" << oldhashes << "\n";
     start_of_iter = false;
-    if (numHashes == -1)
+    if (numHashes < 0)
     {
-      continue_search = false;
-      numHashes = oldhashes - 1;
-      Trace("smap") << "Poping Hashes : " << 1 << "\n";
-      d_slv->getSolver()->pop(1);
-      count = two_factor_check(slice_size) / primes[slice_size];
+      // numHashes = oldhashes - 1;
+      Trace("pact-tfc") << "Count at " << 1 << " is " << count << "\n";
+      if (abs(numHashes) == oldhashes)
+      {
+        Trace("pact-tfc") << "new = old case, pop 1\n";
+        d_slv->getSolver()->pop(1);
+      }
+      else
+      {
+        Trace("pact-tfc") << "new = old + 1 case, no pop\n";
+        Assert(abs(numHashes) == oldhashes + 1);
+      }
+      final_count = two_factor_check(slice_size);
+      Trace("pact-tfc") << "count returned by tfc is " << final_count << "\n";
+      if (abs(numHashes) == oldhashes)
+      {
+        d_slv->getSolver()->push();
+        // this is a fake push just to keep the pop stack consistent
+        Trace("smap") << "Pushing Hashes : " << 1 << "\n";
+        // final_count = final_count / primes[slice_size];
+        // numHashes += 1;
+      }
+      numHashes = abs(numHashes) - 1;
       break;
     }
 
@@ -846,6 +862,10 @@ uint64_t SmtApproxMc::smtApproxMcCore()
     std::cout << "c [smtappmc] [ " << getTime() << "] got solutions: " << count
               << " out of " << bound + 1 << std::endl;
   }
+
+  Trace("pact-tfc") << "Count returned is " << final_count << "*"
+                    << primes[slice_size] << "^" << numHashes << "\n";
+
   for (int i = 0; i < numHashes; ++i)
   {
     if (project_on_booleans)
@@ -853,12 +873,12 @@ uint64_t SmtApproxMc::smtApproxMcCore()
     else if (d_slv->getOptions().counting.hashsm == options::HashingMode::LEM)
       count *= pow(2, slice_size);
     else
-      count *= primes[slice_size];
+      final_count *= primes[slice_size];
   }
   Trace("smap") << "Poping Hashes : " << oldhashes << "\n";
 
   d_slv->getSolver()->pop(oldhashes);
-  return count;
+  return final_count;
 }
 
 template <class T>
