@@ -90,7 +90,7 @@ class SmtApproxMc
   void populatePrimes();
   vector<Node> generateNHashes(uint32_t numHashes);
   Term generate_boolean_hash();
-  Term generate_hash(uint32_t bitwidth = 0);
+  Term generate_hash(uint32_t bitwidth);
   void set_up_probs_threshold_measurements();
   uint64_t two_factor_check(uint slice_size);
   double calc_error_bound(uint32_t t, double p);
@@ -98,7 +98,7 @@ class SmtApproxMc
   Term generate_lemire_hash(uint32_t hash_num);
   void init_iteration_data();
   uint64_t smtApproxMcMain();
-  uint64_t getMinBW();
+  uint64_t getMinBW(int bitwidth);
   uint64_t getMinBWlemire();
   uint64_t smtApproxMcCore();
   int64_t getNextIndex(uint64_t prev_index,

@@ -174,23 +174,22 @@ Term SmtApproxMc::generate_boolean_hash()
   return xorcons;
 }
 
-uint64_t SmtApproxMc::getMinBW()
+uint64_t SmtApproxMc::getMinBW(int bitwidth = 0)
 {
   uint32_t min_bw = 2 * slice_size + 1;
   uint32_t num_sliced_var = 0;
+  if (bitwidth == 0) bitwidth = slice_size;
+
   for (cvc5::Term x : bvs_in_projset)
   {
     uint32_t this_bv_width = x.getSort().getBitVectorSize();
-    uint32_t num_slices = (this_bv_width + slice_size - 1) / slice_size;
+    uint32_t num_slices = (this_bv_width + bitwidth - 1) / bitwidth;
     num_sliced_var += num_slices;
   }
   uint32_t extension_for_sum =
       static_cast<uint32_t>(std::ceil(std::log(num_sliced_var) / std::log(2)));
 
   min_bw += extension_for_sum;
-  // std::cout << "extending " << slice_size << " bits to " << slice_size +
-  // min_bw << std::endl;
-
   return min_bw;
 }
 
@@ -342,15 +341,18 @@ Term SmtApproxMc::generate_lemire_hash(uint32_t hash_num)
   return hash_const;
 }
 
-Term SmtApproxMc::generate_hash(uint32_t bitwidth)
+Term SmtApproxMc::generate_hash(uint32_t bitwidth = 0)
 {
+  if (bitwidth == 0) bitwidth = slice_size;
+  Trace("smap-hash") << "Generating hash for bitwidth " << bitwidth << "\n";
+  Assert(bitwidth > 0) << "Bitwidth should be greater than 0";
   cvc5::Solver* solver = d_slv->getSolver();
 
-  uint32_t new_bv_width = getMinBW();
+  uint32_t new_bv_width = getMinBW(bitwidth);
 
-  Term p = solver->mkBitVector(new_bv_width, primes[slice_size]);
+  Term p = solver->mkBitVector(new_bv_width, primes[bitwidth]);
 
-  uint32_t c_i = Random::getRandom().pick(0, primes[slice_size] - 1);
+  uint32_t c_i = Random::getRandom().pick(0, primes[bitwidth] - 1);
 
   Term axpb = solver->mkBitVector(new_bv_width, 0);
   Term c = solver->mkBitVector(new_bv_width, c_i);
@@ -361,27 +363,27 @@ Term SmtApproxMc::generate_hash(uint32_t bitwidth)
   for (cvc5::Term x : bvs_in_projset)
   {
     uint32_t this_bv_width = x.getSort().getBitVectorSize();
-    uint32_t num_slices = ceil(this_bv_width / slice_size);
-    if (slice_size > this_bv_width)
+    uint32_t num_slices = ceil(this_bv_width / bitwidth);
+    if (bitwidth > this_bv_width)
     {
       num_slices = 1;
     }
     for (uint32_t slice = 0; slice < num_slices; ++slice)
     {
-      uint32_t this_slice_start = slice * slice_size;
-      uint32_t this_slice_end = (slice + 1) * slice_size - 1;
-      uint32_t extend_x_by_bits = new_bv_width - slice_size;
+      uint32_t this_slice_start = slice * bitwidth;
+      uint32_t this_slice_end = (slice + 1) * bitwidth - 1;
+      uint32_t extend_x_by_bits = new_bv_width - bitwidth;
 
       // If slicesize does not divide bv width, and this is last
       // slice, then extend this slice more than others
       if (this_slice_end >= this_bv_width)
       {
         extend_x_by_bits =
-            this_slice_end - this_bv_width + 1 + new_bv_width - slice_size;
+            this_slice_end - this_bv_width + 1 + new_bv_width - bitwidth;
         this_slice_end = this_bv_width - 1;
       }
 
-      uint32_t a_i = Random::getRandom().pick(0, primes[slice_size] - 1);
+      uint32_t a_i = Random::getRandom().pick(0, primes[bitwidth] - 1);
       Trace("smap-hash") << a_i << x.getSymbol() << "[" << this_slice_start
                          << ":" << this_slice_end << "] + ";
 
@@ -398,8 +400,7 @@ Term SmtApproxMc::generate_hash(uint32_t bitwidth)
   }
 
   axpb = solver->mkTerm(BITVECTOR_UREM, {axpb, p});
-  Trace("smap-hash") << " 0) mod " << primes[slice_size] << " = " << c_i
-                     << "\n";
+  Trace("smap-hash") << " 0) mod " << primes[bitwidth] << " = " << c_i << "\n";
 
   Term hash_const = solver->mkTerm(EQUAL, {axpb, c});
   Trace("smap-print-hash") << "chash " << "(assert " << hash_const << ")"
@@ -424,31 +425,35 @@ double SmtApproxMc::calc_error_bound(uint32_t t, double p)
 uint64_t SmtApproxMc::two_factor_check(uint slice)
 {
   int64_t bound = getPivot();
-  d_slv->getSolver()->pop();
+  // d_slv->getSolver()->pop(1);
   uint32_t i = 1;
-  uint64_t bounded_sat_count = 1;
+  uint64_t bounded_sat_count = 1, last_count = 1;
   for (i = slice; i > 0; i--)
   {
     Term hash = generate_hash(i);
+    Trace("smap") << "Pushing Hashes : " << 1 << "\n";
+
     d_slv->getSolver()->push();
-    d_slv->getSolver()->assertFormula(hash);
+    // d_slv->getSolver()->assertFormula(hash);
+    last_count = bounded_sat_count;
     bounded_sat_count = d_slv->boundedSat(bound, 0, projection_vars);
     Trace("pact-tfc") << "Count at " << i << " is " << count << "\n";
-    if (count <= bound)
+    if (count > bound)
     {
-      Trace("pact-tfc") << "Popping\n";
-      d_slv->getSolver()->pop();
-      Trace("pact-tfc") << "Count is less than bound at " << i
+      Trace("smap") << "Poping Hashes : " << 1 << "\n";
+      d_slv->getSolver()->pop(1);
+      Trace("pact-tfc") << "Count is grater than bound at " << i
                         << ", breaking, popped\n";
       break;
     }
-    Trace("pact-tfc") << "Popping\n";
-    d_slv->getSolver()->pop();
-    Trace("pact-tfc") << "should multiply by " << primes[i] << ", popped\n";
+    Trace("smap") << "Poping Hashes : " << 1 << "\n";
+    d_slv->getSolver()->pop(1);
   }
-  d_slv->getSolver()->push();
+  Trace("smap") << "Pushing Hashes : " << 1 << "\n";
+  // d_slv->getSolver()->pop();
+  Trace("pact-tfc") << "should multiply by " << primes[i + 1] << ", popped\n";
   // this is a fake push just to keep the pop stack consistent
-  return primes[i] * bounded_sat_count;
+  return primes[i + 1] * last_count;
 }
 
 void SmtApproxMc::set_up_probs_threshold_measurements()
@@ -776,6 +781,8 @@ uint64_t SmtApproxMc::smtApproxMcCore()
     {
       continue_search = false;
       numHashes = oldhashes - 1;
+      Trace("smap") << "Poping Hashes : " << 1 << "\n";
+      d_slv->getSolver()->pop(1);
       count = two_factor_check(slice_size) / primes[slice_size];
       break;
     }
@@ -848,6 +855,8 @@ uint64_t SmtApproxMc::smtApproxMcCore()
     else
       count *= primes[slice_size];
   }
+  Trace("smap") << "Poping Hashes : " << oldhashes << "\n";
+
   d_slv->getSolver()->pop(oldhashes);
   return count;
 }
