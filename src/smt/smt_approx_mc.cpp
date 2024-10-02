@@ -613,7 +613,7 @@ uint64_t SmtApproxMc::smtApproxMcMain()
               << " count: " << countThisIter << std::endl;
     numList.push_back(countThisIter);
     // }
-    if (numHashes == 0)
+    if (exact_count == true)
     {
       std::cout << "c [smtappmc] [ " << getTime()
                 << "] terminating as exact count is found" << std::endl;
@@ -830,7 +830,7 @@ uint64_t SmtApproxMc::smtApproxMcCore()
 
   int64_t bound = getPivot();
   std::string ss = "";
-  uint64_t final_count = 0;
+  uint64_t final_count = 0, old_count = 42;
 
   bool start_of_iter = true;
   init_iteration_data();
@@ -843,7 +843,20 @@ uint64_t SmtApproxMc::smtApproxMcCore()
     start_of_iter = false;
     if (numHashes < 0)
     {
-      // numHashes = oldhashes - 1;
+      if (!two_factor_prime)
+      {
+        if (abs(numHashes) == oldhashes)
+        {
+          final_count = count;
+        }
+        else
+        {
+          final_count = old_count;
+          Assert(abs(numHashes) == oldhashes + 1);
+        }
+        numHashes = abs(numHashes);
+        break;
+      }
       Trace("pact-tfc") << "Count at " << 1 << " is " << count << "\n";
       if (abs(numHashes) == oldhashes)
       {
@@ -859,11 +872,9 @@ uint64_t SmtApproxMc::smtApproxMcCore()
       Trace("pact-tfc") << "count returned by tfc is " << final_count << "\n";
       if (abs(numHashes) == oldhashes)
       {
-        d_slv->getSolver()->push();
         // this is a fake push just to keep the pop stack consistent
         Trace("smap") << "Pushing Hashes : " << 1 << "\n";
-        // final_count = final_count / primes[slice_size];
-        // numHashes += 1;
+        d_slv->getSolver()->push();
       }
       numHashes = abs(numHashes) - 1;
       break;
@@ -926,7 +937,12 @@ uint64_t SmtApproxMc::smtApproxMcCore()
               << "] bounded_sol_count looking for " << bound + 1
               << " solutions -- hashes active: " << numHashes << std::endl;
 
+    old_count = count;
     count = d_slv->boundedSat(bound + 1, numHashes, projection_vars);
+    if (count > bound)
+    {
+      exact_count = false;
+    }
 
     std::cout << "c [smtappmc] [ " << getTime() << "] got solutions: " << count
               << " out of " << bound + 1 << std::endl;

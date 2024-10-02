@@ -58,6 +58,7 @@ class SmtApproxMc
   bool two_factor_prime = true;
   std::vector<Term> projection_var_terms;
   int64_t count;
+  bool exact_count = true;
 
   // The following things in this file needs to be reinitialized for each
   // iteration of the SMTApproxMC core loop
