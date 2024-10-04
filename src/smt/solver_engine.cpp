@@ -721,8 +721,20 @@ int32_t SolverEngine::boundedSat(uint64_t bound,
                             .count();
     double elapsed_time_in_ms = time_elapsed / 1E3;
 
-    Trace("satcall-time") << "c it " << num_hashes << "," << count + 1 << ","
-                          << elapsed_time_in_ms << std::endl;
+    Trace("satcall-time") << "c it ----------- " << num_hashes << ","
+                          << count + 1 << "," << elapsed_time_in_ms
+                          << std::endl;
+
+    if (getOptions().counting.listint && res.getStatus() == Result::SAT)
+    {
+      // block the model
+      for (const Node& t : terms_to_block)
+      {
+        Node val = getValue(t);
+        Trace("satcall-block") << "c " << t << ": " << val << std::endl;
+      }
+    }
+
     if (res.getStatus() == Result::SAT)
     {
       finishInit();

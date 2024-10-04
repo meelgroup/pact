@@ -66,6 +66,15 @@ name   = "ModelCounting"
   help       = "Use less BW in BV hashing (count comes without guarantee)"
 
 [[option]]
+  name       = "listint"
+  category   = "regular"
+  long       = "listint"
+  type       = "bool"
+  default    = "false"
+  alternate  = false
+  help       = "List models of integer variables"
+
+[[option]]
   name       = "projcount"
   category   = "regular"
   long       = "projcount"

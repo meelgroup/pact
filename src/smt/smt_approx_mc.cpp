@@ -127,6 +127,12 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
     }
     else if (n.getSort().isInteger())
     {
+      if (d_slv->getOptions().counting.listint)
+      {
+        bvs_in_projset.push_back(n);
+        std::cout << "c [smtappmc] Integer variable in projection set: "
+                  << n.getSymbol() << std::endl;
+      }
       num_integer++;
     }
   }
@@ -140,7 +146,11 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
   projection_var_terms.insert(projection_var_terms.end(),
                               booleans_in_projset.begin(),
                               booleans_in_projset.end());
-
+  if (d_slv->getOptions().counting.listint)
+  {
+    std::cout << "c [smtappmc] Number of varibales "
+              << projection_var_terms.size() << std::endl;
+  }
   projection_vars = slv->getSolver()->termVectorToNodes1(projection_var_terms);
 
   slice_size = slv->getOptions().counting.slicesize;
@@ -275,6 +285,7 @@ Term SmtApproxMc::generate_integer_hash(uint32_t hash_num)
 Term SmtApproxMc::generate_ashwin_hash(uint32_t bitwidth)
 {
   cvc5::Solver* solver = d_slv->getSolver();
+  uint32_t a_i;
 
   uint32_t c_i = Random::getRandom().pick(0, pow(2, bitwidth) - 1);
 
@@ -301,8 +312,11 @@ Term SmtApproxMc::generate_ashwin_hash(uint32_t bitwidth)
       {
         this_slice_end = this_bv_width - 1;
       }
-      uint32_t a_i =
-          Random::getRandom().pick(0, pow(2, bitwidth - 1) - 1) * 2 + 1;
+      if (bitwidth == 1)
+        a_i = Random::getRandom().pick(0, pow(2, bitwidth) - 1);  // * 2 + 1;
+      else
+        a_i = Random::getRandom().pick(0, pow(2, bitwidth - 1) - 1) * 2 + 1;
+
       Trace("smap-hash") << a_i << x.getSymbol() << "[" << this_slice_start
                          << ":" << this_slice_end << "] + ";
       Trace("smap") << "adding slicing operator\n";
