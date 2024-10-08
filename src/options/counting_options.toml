@@ -32,15 +32,6 @@ name   = "ModelCounting"
   help       = "approximate model count using SMTApproxMC"
 
 [[option]]
-  name       = "printHashedConstraints"
-  category   = "regular"
-  long       = "printhash"
-  type       = "bool"
-  default    = "false"
-  alternate  = false
-  help       = "Print Hashing constraints added (as .smt files)"
-
-[[option]]
   name       = "countingverb"
   category   = "regular"
   long       = "cv"
@@ -64,6 +55,23 @@ name   = "ModelCounting"
   default    = "false"
   alternate  = false
   help       = "Use less BW in BV hashing (count comes without guarantee)"
+
+[[option]]
+  name       = "printhash"
+  category   = "regular"
+  long       = "printhash"
+  type       = "bool"
+  default    = "false"
+  alternate  = false
+  help       = "Just Print 100 hash in a file and exit"
+
+[[option]]
+  name       = "hashatfile"
+  category   = "regular"
+  long       = "hashatfile=PREFIX"
+  type       = "std::string"
+  default    = '""'
+  help       = "filename where to store the hashfile"
 
 [[option]]
   name       = "listint"

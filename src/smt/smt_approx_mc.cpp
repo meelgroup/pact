@@ -20,6 +20,7 @@
 #include <cvc5/cvc5_export.h>
 #include <math.h>
 #include <map>
+#include <fstream>
 
 #include "expr/node.h"
 #include "expr/node_converter.h"
@@ -69,6 +70,11 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
   std::vector<Node> tlAsserts = slv->getAssertions();
 
   projection_prefix = slv->getOptions().counting.projprefix;
+  if (slv->getOptions().counting.printhash)
+  {
+    logFile.open(slv->getOptions().counting.hashatfile);
+    print_hash_at_file = true;
+  }
   get_projected_count = slv->getOptions().counting.projcount;
   two_factor_prime = slv->getOptions().counting.twofactorprime;
 
@@ -406,9 +412,15 @@ Term SmtApproxMc::generate_lemire_hash(uint32_t bitwidth)
   Trace("smap") << "creating equal term\n";
 
   Term hash_const = solver->mkTerm(EQUAL, {axpb_div, c});
+  if (print_hash_at_file)
+  {
+    logFile << "(assert " << hash_const << ")" << "\n";
+  }
 
   Trace("smap-print-hash") << "\n"
                            << "(assert " << hash_const << ")" << "\n";
+
+  // log into file
 
   return hash_const;
 }
@@ -477,6 +489,10 @@ Term SmtApproxMc::generate_hash(uint32_t bitwidth = 0)
   Term hash_const = solver->mkTerm(EQUAL, {axpb, c});
   Trace("smap-print-hash") << "chash " << "(assert " << hash_const << ")"
                            << "\n";
+  if (print_hash_at_file)
+  {
+    logFile << "(assert " << hash_const << ")" << "\n";
+  }
 
   return hash_const;
 }
@@ -961,7 +977,8 @@ uint64_t SmtApproxMc::smtApproxMcCore()
               << " solutions -- hashes active: " << numHashes << std::endl;
 
     old_count = count;
-    count = d_slv->boundedSat(bound + 1, numHashes, projection_vars);
+    if (!print_hash_at_file)
+      count = d_slv->boundedSat(bound + 1, numHashes, projection_vars);
 
     std::cout << "c [smtappmc] [ " << getTime() << "] got solutions: " << count
               << " out of " << bound + 1 << std::endl;

@@ -53,6 +53,9 @@ class SmtApproxMc
   Term ff[100];
   int verb = 0;
   std::string projection_prefix;
+  std::string hashfile_prefix;
+  std::ofstream logFile;
+  bool print_hash_at_file = false;
   bool project_on_booleans = true;
   bool get_projected_count = false;
   bool two_factor_prime = true;
