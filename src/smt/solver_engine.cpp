@@ -738,8 +738,7 @@ int32_t SolverEngine::boundedSat(uint64_t bound,
     if (res.getStatus() == Result::SAT)
     {
       finishInit();
-      if (opts.counting.projcount
-          || opts.counting.hashsm == options::HashingMode::INT)
+      if (opts.counting.projcount || opts.counting.enumerateCount || true)
       {
         blockModelValues(terms_to_block);
       }
@@ -749,7 +748,7 @@ int32_t SolverEngine::boundedSat(uint64_t bound,
       }
       count++;
     }
-  } while (res.getStatus() == Result::SAT && (count < bound || bound == 0) );
+  } while (res.getStatus() == Result::SAT && (count < bound || bound == 0));
   pop();
 
   return count;

@@ -962,13 +962,20 @@ uint64_t SmtApproxMc::smtApproxMcCore()
 
     old_count = count;
     count = d_slv->boundedSat(bound + 1, numHashes, projection_vars);
-    if (count > bound)
-    {
-      exact_count = false;
-    }
 
     std::cout << "c [smtappmc] [ " << getTime() << "] got solutions: " << count
               << " out of " << bound + 1 << std::endl;
+    if (count >= bound || numHashes > 0)
+    {
+      exact_count = false;
+    }
+    else
+    {
+      std::cout << "c [smtappmc] [ " << getTime()
+                << "] terminating as exact count is found" << std::endl;
+      final_count = count;
+      break;
+    }
   }
 
   Trace("pact-tfc") << "Count returned is " << final_count << "*"
