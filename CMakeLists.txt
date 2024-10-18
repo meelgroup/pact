@@ -324,7 +324,13 @@ endif()
 #
 # More information on RPATH in CMake:
 # https://gitlab.kitware.com/cmake/community/wikis/doc/cmake/RPATH-handling
-set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR};${PROJECT_SOURCE_DIR}/deps/install/lib")
+if(NOT SKIP_SET_RPATH)
+  if (APPLE)
+    SET(CMAKE_INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
+  else()
+    SET(CMAKE_INSTALL_RPATH "\${ORIGIN}/../${CMAKE_INSTALL_LIBDIR}")
+  endif()
+endif()
 
 # Set visibility to default if unit tests are enabled. If unit tests are
 # enabled, we also check if we can execute white box unit tests (some versions
@@ -780,6 +786,9 @@ print_config("Api docs                  " ${BUILD_DOCS})
 message("")
 if(GLPK_DIR)
   print_config("GLPK dir                  " ${GLPK_DIR})
+endif()
+if(PYTHONIC_PATH)
+  print_config("Pythonic API path         " ${PYTHONIC_PATH})
 endif()
 message("")
 print_config("CPPLAGS (-D...)" "${CVC5_DEFINITIONS}")

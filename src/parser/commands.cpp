@@ -354,9 +354,9 @@ void CheckSatCommand::invoke(cvc5::Solver* solver, SymManager* sm)
       count = true;
     if (count)
     {
-      std::vector<cvc5::Sort> declareSorts = sm->getModelDeclareSorts();
-      std::vector<cvc5::Term> declareTerms = sm->getModelDeclareTerms();
-      d_result = solver->modelCount(declareSorts,declareTerms);
+      std::vector<cvc5::Sort> declareSorts = sm->getModelDeclaredSorts();
+      std::vector<cvc5::Term> declareTerms = sm->getModelDeclaredTerms();
+      d_result = solver->modelCount(declareSorts, declareTerms);
     }
     else
     {
