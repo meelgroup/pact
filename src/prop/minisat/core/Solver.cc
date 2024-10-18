@@ -135,7 +135,7 @@ Solver::Solver(Env& env,
                cvc5::internal::prop::TheoryProxy* proxy,
                context::Context* context,
                context::UserContext* userContext,
-               ProofNodeManager* pnm,
+               PropPfManager* ppm,
                bool enableIncremental)
     : EnvObj(env),
       d_proxy(proxy),
@@ -208,9 +208,10 @@ Solver::Solver(Env& env,
       propagation_budget(-1),
       asynch_interrupt(false)
 {
-  if (pnm)
+  if (ppm)
   {
-    d_pfManager.reset(new SatProofManager(env, this, proxy->getCnfStream()));
+    d_pfManager.reset(
+        new SatProofManager(env, this, proxy->getCnfStream(), ppm));
   }
 
   // Create the constant variables
@@ -387,7 +388,7 @@ CRef Solver::reason(Var x) {
     Trace("pf::sat") << "..user level is " << userContext()->getLevel() << "\n";
     Assert(userContext()->getLevel()
            == static_cast<uint32_t>(assertionLevel + 1));
-    d_proxy->notifyCurrPropagationInsertedAtLevel(explLevel);
+    d_pfManager->notifyCurrPropagationInsertedAtLevel(explLevel);
   }
   // Construct the reason
   CRef real_reason = ca.alloc(explLevel, explanation, true);
@@ -517,7 +518,7 @@ bool Solver::addClause_(vec<Lit>& ps, bool removable, ClauseId& id)
           }
           SatClause satClause;
           MinisatSatSolver::toSatClause(ca[cr], satClause);
-          d_proxy->notifyClauseInsertedAtLevel(satClause, clauseLevel);
+          d_pfManager->notifyClauseInsertedAtLevel(satClause, clauseLevel);
         }
         if (options().smt.produceUnsatCores || needProof())
         {
@@ -556,6 +557,11 @@ bool Solver::addClause_(vec<Lit>& ps, bool removable, ClauseId& id)
           {
             d_pfManager->registerSatLitAssumption(ps[0]);
           }
+          // Call notifySatClause. This call site handles unit clauses not
+          // learned in the standard way.
+          SatClause satClause;
+          satClause.push_back(MinisatSatSolver::toSatLiteral(ps[0]));
+          d_proxy->notifySatClause(satClause);
         }
         CRef confl = propagate(CHECK_WITHOUT_THEORY);
         if (!(ok = (confl == CRef_Undef)))
@@ -680,8 +686,8 @@ bool Solver::satisfied(const Clause& c) const {
 void Solver::cancelUntil(int level) {
     Trace("minisat") << "minisat::cancelUntil(" << level << ")" << std::endl;
 
-    if (decisionLevel() > level){
-      uint32_t nlevels = trail_lim.size() - level;
+    if (decisionLevel() > level)
+    {
       // Pop the SMT context
       for (int l = trail_lim.size() - level; l > 0; --l)
       {
@@ -702,7 +708,7 @@ void Solver::cancelUntil(int level) {
         trail.shrink(trail.size() - trail_lim[level]);
         trail_lim.shrink(trail_lim.size() - level);
         flipped.shrink(flipped.size() - level);
-        d_proxy->notifyBacktrack(nlevels);
+        d_proxy->notifyBacktrack();
     }
 }
 
@@ -715,15 +721,30 @@ void Solver::resetTrail() { cancelUntil(0); }
 Lit Solver::pickBranchLit()
 {
     Lit nextLit;
+    bool stopSearch = false;
+    bool requirePhase = false;
 
     // Theory requests
-    nextLit =
-        MinisatSatSolver::toMinisatLit(d_proxy->getNextTheoryDecisionRequest());
-    while (nextLit != lit_Undef) {
-      if(value(var(nextLit)) == l_Undef) {
-        Trace("theoryDecision")
-            << "getNextTheoryDecisionRequest(): now deciding on " << nextLit
-            << std::endl;
+    nextLit = MinisatSatSolver::toMinisatLit(
+        d_proxy->getNextDecisionRequest(requirePhase, stopSearch));
+    if (stopSearch)
+    {
+      return lit_Undef;
+    }
+    while (nextLit != lit_Undef)
+    {
+      Var next = var(nextLit);
+      if (!requirePhase)
+      {
+        if (polarity[next] & 0x2)
+        {
+          nextLit = mkLit(next, polarity[next] & 0x1);
+        }
+      }
+      if (value(next) == l_Undef)
+      {
+        Trace("theoryDecision") << "getNextDecisionRequest(): now deciding on "
+                                << nextLit << std::endl;
         decisions++;
 
         // org-mode tracing -- theory decision
@@ -743,51 +764,19 @@ Lit Solver::pickBranchLit()
         }
 
         return nextLit;
-      } else {
+      }
+      else
+      {
         Trace("theoryDecision")
-            << "getNextTheoryDecisionRequest(): would decide on " << nextLit
+            << "getNextDecisionRequest(): would decide on " << nextLit
             << " but it already has an assignment" << std::endl;
       }
       nextLit = MinisatSatSolver::toMinisatLit(
-          d_proxy->getNextTheoryDecisionRequest());
-    }
-    Trace("theoryDecision")
-        << "getNextTheoryDecisionRequest(): decide on another literal"
-        << std::endl;
-
-    // DE requests
-    bool stopSearch = false;
-    nextLit = MinisatSatSolver::toMinisatLit(
-        d_proxy->getNextDecisionEngineRequest(stopSearch));
-    if(stopSearch) {
-      return lit_Undef;
-    }
-    if(nextLit != lit_Undef) {
-      Assert(value(var(nextLit)) == l_Undef)
-          << "literal to decide already has value";
-      decisions++;
-      Var next = var(nextLit);
-      if(polarity[next] & 0x2) {
-        nextLit = mkLit(next, polarity[next] & 0x1);
-      }
-
-      // org-mode tracing -- decision engine decision
-      if (TraceIsOn("dtview"))
+          d_proxy->getNextDecisionRequest(requirePhase, stopSearch));
+      if (stopSearch)
       {
-        dtviewDecisionHelper(
-            d_context->getLevel(),
-            d_proxy->getNode(MinisatSatSolver::toSatLiteral(nextLit)),
-            "DE",
-            options().base.incrementalSolving);
+        return lit_Undef;
       }
-
-      if (TraceIsOn("dtview::prop"))
-      {
-        dtviewPropagationHeaderHelper(d_context->getLevel(),
-                                      options().base.incrementalSolving);
-      }
-
-      return nextLit;
     }
 
     Var next = var_Undef;
@@ -807,33 +796,15 @@ Lit Solver::pickBranchLit()
             next = order_heap.removeMin();
         }
 
-        if(!decision[next]) continue;
-        // Check with decision engine about relevancy
-        if (d_proxy->isDecisionRelevant(MinisatSatSolver::toSatVariable(next))
-            == false)
-        {
-          next = var_Undef;
-        }
+        if (!decision[next]) continue;
     }
 
     if(next == var_Undef) {
       return lit_Undef;
     } else {
       decisions++;
-      // Check with decision engine if it can tell polarity
-      lbool dec_pol = MinisatSatSolver::toMinisatlbool(
-          d_proxy->getDecisionPolarity(MinisatSatSolver::toSatVariable(next)));
-      Lit decisionLit;
-      if(dec_pol != l_Undef) {
-        Assert(dec_pol == l_True || dec_pol == l_False);
-        decisionLit = mkLit(next, (dec_pol == l_True));
-      }
-      else
-      {
-        // If it can't use internal heuristic to do that
-        decisionLit = mkLit(
-            next, rnd_pol ? drand(random_seed) < 0.5 : (polarity[next] & 0x1));
-      }
+      Lit decisionLit = mkLit(
+          next, rnd_pol ? drand(random_seed) < 0.5 : (polarity[next] & 0x1));
 
       // org-mode tracing -- decision engine decision
       if (TraceIsOn("dtview"))
@@ -1561,12 +1532,20 @@ lbool Solver::search(int nof_conflicts)
         {
           d_pfManager->endResChain(learnt_clause[0]);
         }
+        // Call notifySatClause here.
+        SatClause satClause;
+        satClause.push_back(MinisatSatSolver::toSatLiteral(learnt_clause[0]));
+        d_proxy->notifySatClause(satClause);
       }
       else
       {
         CRef cr = ca.alloc(assertionLevelOnly() ? assertionLevel : max_level,
                            learnt_clause,
                            true);
+        // Call notifySatClause here.
+        SatClause satClause;
+        MinisatSatSolver::toSatClause(ca[cr], satClause);
+        d_proxy->notifySatClause(satClause);
         clauses_removable.push(cr);
         attachClause(cr);
         claBumpActivity(ca[cr]);
@@ -2115,7 +2094,7 @@ CRef Solver::updateLemmas() {
         }
         SatClause satClause;
         MinisatSatSolver::toSatClause(ca[lemma_ref], satClause);
-        d_proxy->notifyClauseInsertedAtLevel(satClause, clauseLevel);
+        d_pfManager->notifyClauseInsertedAtLevel(satClause, clauseLevel);
       }
       if (removable) {
         clauses_removable.push(lemma_ref);

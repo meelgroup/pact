@@ -1,4 +1,5 @@
 ; DISABLE-TESTER: lfsc
+; DISABLE-TESTER: cpc
 ; COMMAND-LINE: --inst-max-level=0 --simplification=none
 ; EXPECT: unsat
 (set-logic UF)

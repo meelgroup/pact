@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds
+ *   Andrew Reynolds, Aina Niemetz, Mathias Preiner
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -15,6 +15,7 @@
 
 #include "theory/uf/conversions_solver.h"
 
+#include "options/uf_options.h"
 #include "theory/arith/arith_utilities.h"
 #include "theory/theory_inference_manager.h"
 #include "theory/theory_model.h"
@@ -76,14 +77,25 @@ void ConversionsSolver::checkReduction(Node n)
     Trace("bv-convs") << "...already correct in model" << std::endl;
     return;
   }
+  if (options().uf.modelBasedArithBvConv)
+  {
+    NodeManager* nm = NodeManager::currentNM();
+    Node argval = d_state.getModel()->getValue(n[0]);
+    Trace("bv-convs-debug") << "  arg value = " << argval << std::endl;
+    Node eval = rewrite(nm->mkNode(n.getOperator(), argval));
+    Trace("bv-convs-debug") << "  evaluated = " << eval << std::endl;
+    Node lem = nm->mkNode(Kind::IMPLIES, n[0].eqNode(argval), n.eqNode(eval));
+    d_im.lemma(lem, InferenceId::UF_ARITH_BV_CONV_VALUE_REFINE);
+    return;
+  }
 
   Node lem;
   Kind k = n.getKind();
-  if (k == BITVECTOR_TO_NAT)
+  if (k == Kind::BITVECTOR_TO_NAT)
   {
     lem = arith::eliminateBv2Nat(n);
   }
-  else if (k == INT_TO_BITVECTOR)
+  else if (k == Kind::INT_TO_BITVECTOR)
   {
     lem = arith::eliminateInt2Bv(n);
   }

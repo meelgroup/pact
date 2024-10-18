@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds
+ *   Andrew Reynolds, Aina Niemetz
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -37,7 +37,7 @@ void SharedSolverDistributed::setEqualityEngine(eq::EqualityEngine* ee)
 
 void SharedSolverDistributed::preRegisterSharedInternal(TNode t)
 {
-  if (t.getKind() == kind::EQUAL)
+  if (t.getKind() == Kind::EQUAL)
   {
     // When sharing is enabled, we propagate from the shared terms manager also
     d_sharedTerms.addEqualityToPropagate(t);

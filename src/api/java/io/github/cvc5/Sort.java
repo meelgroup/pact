@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -39,11 +39,6 @@ public class Sort extends AbstractPointer implements Comparable<Sort>
 
   protected native void deletePointer(long pointer);
 
-  public long getPointer()
-  {
-    return pointer;
-  }
-
   // endregion
 
   /**
@@ -55,9 +50,13 @@ public class Sort extends AbstractPointer implements Comparable<Sort>
   public boolean equals(Object s)
   {
     if (this == s)
+    {
       return true;
+    }
     if (s == null || getClass() != s.getClass())
+    {
       return false;
+    }
     Sort sort = (Sort) s;
     if (this.pointer == sort.pointer)
     {
@@ -86,7 +85,7 @@ public class Sort extends AbstractPointer implements Comparable<Sort>
   /**
    * @return The kind of this sort.
    * @api.note This method is experimental and may change in future versions.
-   * @throws CVC5ApiException
+   * @throws CVC5ApiException on error
    */
   public SortKind getKind() throws CVC5ApiException
   {
@@ -321,6 +320,17 @@ public class Sort extends AbstractPointer implements Comparable<Sort>
   private native boolean isTuple(long pointer);
 
   /**
+   * Determine if this a nullable sort.
+   * @return True if this sort is a nullable sort.
+   */
+  public boolean isNullable()
+  {
+    return isNullable(pointer);
+  }
+
+  private native boolean isNullable(long pointer);
+
+  /**
    * Determine if this is a record sort.
    * @api.note This method is experimental and may change in future versions.
    * @return True if the sort is a record sort.
@@ -466,6 +476,7 @@ public class Sort extends AbstractPointer implements Comparable<Sort>
    * @api.note This method is experimental and may change in future versions.
    *
    * @param params The list of sort parameters to instantiate with.
+   * @return The instantiated sort.
    */
   public Sort instantiate(Sort[] params)
   {
@@ -495,13 +506,15 @@ public class Sort extends AbstractPointer implements Comparable<Sort>
   /**
    * Substitution of Sorts.
    *
-   * Note that this replacement is applied during a pre-order traversal and
+   * @api.note This replacement is applied during a pre-order traversal and
    * only once to the sort. It is not run until fix point.
    *
    * @api.note This method is experimental and may change in future versions.
    *
    * @param sort The subsort to be substituted within this sort.
    * @param replacement The sort replacing the substituted subsort.
+   * @return The sort yielded by substituting the replacement sort within the
+   *         given sort.
    */
   public Sort substitute(Sort sort, Sort replacement)
   {
@@ -527,6 +540,8 @@ public class Sort extends AbstractPointer implements Comparable<Sort>
    *
    * @param sorts The subsorts to be substituted within this sort.
    * @param replacements The sort replacing the substituted subsorts.
+   * @return The sorts yielded by substituting the replacement sort within the
+   *         given sorts.
    */
   public Sort substitute(Sort[] sorts, Sort[] replacements)
   {
@@ -728,7 +743,7 @@ public class Sort extends AbstractPointer implements Comparable<Sort>
   /**
    * @return The sort kind of an abstract sort, which denotes the kind of
    * sorts that this abstract sort denotes.
-   * @throws CVC5ApiException
+   * @throws CVC5ApiException on error
    *
    * @api.note This method is experimental and may change in future versions.
    */
@@ -832,4 +847,27 @@ public class Sort extends AbstractPointer implements Comparable<Sort>
   }
 
   private native long[] getTupleSorts(long pointer);
+
+  /**
+   * @return The element sort of a nullable sort.
+   */
+  public Sort getNullableElementSort()
+  {
+    long sortPointer = getNullableElementSort(pointer);
+    return new Sort(sortPointer);
+  }
+
+  private native long getNullableElementSort(long pointer);
+
+  /**
+   * Get the hash value of a sort.
+   * @return The hash value.
+   */
+  @Override
+  public int hashCode()
+  {
+    return hashCode(pointer);
+  }
+
+  private native int hashCode(long pointer);
 }

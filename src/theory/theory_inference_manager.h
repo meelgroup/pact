@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -22,7 +22,7 @@
 
 #include "context/cdhashset.h"
 #include "expr/node.h"
-#include "proof/proof_rule.h"
+#include "cvc5/cvc5_proof_rule.h"
 #include "proof/trust_node.h"
 #include "smt/env_obj.h"
 #include "theory/inference_id.h"
@@ -32,7 +32,6 @@
 namespace cvc5::internal {
 
 class ProofNodeManager;
-class AnnotationProofGenerator;
 class EagerProofGenerator;
 
 namespace theory {
@@ -40,7 +39,6 @@ namespace theory {
 class Theory;
 class TheoryState;
 class DecisionManager;
-class InferenceIdProofAnnotator;
 namespace eq {
 class EqualityEngine;
 class ProofEqEngine;
@@ -173,7 +171,7 @@ class TheoryInferenceManager : protected EnvObj
    * engine as the proof generator (if it exists).
    */
   void conflictExp(InferenceId id,
-                   PfRule pfr,
+                   ProofRule pfr,
                    const std::vector<Node>& exp,
                    const std::vector<Node>& args);
   /**
@@ -181,7 +179,7 @@ class TheoryInferenceManager : protected EnvObj
    * the responsibility of the caller to subsequently call trustedConflict with
    * the returned trust node.
    */
-  TrustNode mkConflictExp(PfRule pfr,
+  TrustNode mkConflictExp(ProofRule pfr,
                           const std::vector<Node>& exp,
                           const std::vector<Node>& args);
   /**
@@ -241,7 +239,7 @@ class TheoryInferenceManager : protected EnvObj
    */
   bool lemmaExp(Node conc,
                 InferenceId id,
-                PfRule pfr,
+                ProofRule pfr,
                 const std::vector<Node>& exp,
                 const std::vector<Node>& noExplain,
                 const std::vector<Node>& args,
@@ -251,7 +249,7 @@ class TheoryInferenceManager : protected EnvObj
    * caller to subsequently call trustedLemma with the returned trust node.
    */
   TrustNode mkLemmaExp(Node conc,
-                       PfRule id,
+                       ProofRule id,
                        const std::vector<Node>& exp,
                        const std::vector<Node>& noExplain,
                        const std::vector<Node>& args);
@@ -329,7 +327,7 @@ class TheoryInferenceManager : protected EnvObj
   bool assertInternalFact(TNode atom,
                           bool pol,
                           InferenceId id,
-                          PfRule pfr,
+                          ProofRule pfr,
                           const std::vector<Node>& exp,
                           const std::vector<Node>& args);
   /**
@@ -359,9 +357,9 @@ class TheoryInferenceManager : protected EnvObj
   DecisionManager* getDecisionManager();
   /**
    * Set that literal n has SAT phase requirement pol, that is, it should be
-   * decided with polarity pol, for details see OutputChannel::requirePhase.
+   * decided with polarity pol, for details see OutputChannel::preferPhase.
    */
-  void requirePhase(TNode n, bool pol);
+  void preferPhase(TNode n, bool pol);
 
   /**
    * Forward to OutputChannel::spendResource() to spend resources.
@@ -406,7 +404,7 @@ class TheoryInferenceManager : protected EnvObj
   bool processInternalFact(TNode atom,
                            bool pol,
                            InferenceId iid,
-                           PfRule id,
+                           ProofRule id,
                            const std::vector<Node>& exp,
                            const std::vector<Node>& args,
                            ProofGenerator* pg);
@@ -444,14 +442,6 @@ class TheoryInferenceManager : protected EnvObj
    * override this method to take the lemma property into account as needed.
    */
   virtual bool cacheLemma(TNode lem, LemmaProperty p);
-  /**
-   * Return the trust node that is equivalent to trn, but its proof (if asked
-   * for) will be wrapped in (ANNOTATE ... :args id). We return a trust
-   * node of trust node kind CONFLICT if isConflict is true.
-   */
-  TrustNode annotateId(const TrustNode& trn,
-                       InferenceId id,
-                       bool isConflict = false);
   /** The theory object */
   Theory& d_theory;
   /** Reference to the state of theory */
@@ -468,10 +458,6 @@ class TheoryInferenceManager : protected EnvObj
   std::unique_ptr<eq::ProofEqEngine> d_pfeeAlloc;
   /** Proof generator for trusted THEORY_LEMMA steps */
   std::unique_ptr<EagerProofGenerator> d_defaultPg;
-  /** The inference id proof annotator */
-  std::unique_ptr<InferenceIdProofAnnotator> d_iipa;
-  /** The annotation proof generator */
-  std::unique_ptr<AnnotationProofGenerator> d_apg;
   /** Whether this manager caches lemmas */
   bool d_cacheLemmas;
   /**

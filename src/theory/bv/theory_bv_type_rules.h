@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Aina Niemetz, Liana Hadarean, Dejan Jovanovic
+ *   Aina Niemetz, Andrew Reynolds, Tim King
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -40,6 +40,19 @@ class CardinalityComputer
 class BitVectorConstantTypeRule
 {
  public:
+  static TypeNode preComputeType(NodeManager* nm, TNode n);
+  static TypeNode computeType(NodeManager* nodeManager,
+                              TNode n,
+                              bool check,
+                              std::ostream* errOut);
+};
+
+/* -------------------------------------------------------------------------- */
+
+class BitVectorConstantSymbolicTypeRule
+{
+ public:
+  static TypeNode preComputeType(NodeManager* nm, TNode n);
   static TypeNode computeType(NodeManager* nodeManager,
                               TNode n,
                               bool check,
@@ -51,6 +64,7 @@ class BitVectorConstantTypeRule
 class BitVectorFixedWidthTypeRule
 {
  public:
+  static TypeNode preComputeType(NodeManager* nm, TNode n);
   static TypeNode computeType(NodeManager* nodeManager,
                               TNode n,
                               bool check,
@@ -62,6 +76,7 @@ class BitVectorFixedWidthTypeRule
 class BitVectorPredicateTypeRule
 {
  public:
+  static TypeNode preComputeType(NodeManager* nm, TNode n);
   static TypeNode computeType(NodeManager* nodeManager,
                               TNode n,
                               bool check,
@@ -71,6 +86,7 @@ class BitVectorPredicateTypeRule
 class BitVectorRedTypeRule
 {
  public:
+  static TypeNode preComputeType(NodeManager* nm, TNode n);
   static TypeNode computeType(NodeManager* nodeManager,
                               TNode n,
                               bool check,
@@ -80,6 +96,7 @@ class BitVectorRedTypeRule
 class BitVectorBVPredTypeRule
 {
  public:
+  static TypeNode preComputeType(NodeManager* nm, TNode n);
   static TypeNode computeType(NodeManager* nodeManager,
                               TNode n,
                               bool check,
@@ -90,9 +107,20 @@ class BitVectorBVPredTypeRule
 /* non-parameterized operator kinds                                           */
 /* -------------------------------------------------------------------------- */
 
+class BitVectorSizeTypeRule
+{
+ public:
+  static TypeNode preComputeType(NodeManager* nm, TNode n);
+  static TypeNode computeType(NodeManager* nodeManager,
+                              TNode n,
+                              bool check,
+                              std::ostream* errOut);
+};
+
 class BitVectorConcatTypeRule
 {
  public:
+  static TypeNode preComputeType(NodeManager* nm, TNode n);
   static TypeNode computeType(NodeManager* nodeManager,
                               TNode n,
                               bool check,
@@ -102,26 +130,17 @@ class BitVectorConcatTypeRule
 class BitVectorToBVTypeRule
 {
  public:
-  inline static TypeNode computeType(NodeManager* nodeManager,
-                                     TNode n,
-                                     bool check,
-                                     std::ostream* errOut)
-  {
-    for (const auto& child : n)
-    {
-      TypeNode t = child.getType(check);
-      if (!t.isBoolean())
-      {
-        throw TypeCheckingExceptionPrivate(n, "expecting Boolean terms");
-      }
-    }
-    return nodeManager->mkBitVectorType(n.getNumChildren());
-  }
+  static TypeNode preComputeType(NodeManager* nm, TNode n);
+  static TypeNode computeType(NodeManager* nodeManager,
+                              TNode n,
+                              bool check,
+                              std::ostream* errOut);
 };
 
 class BitVectorITETypeRule
 {
  public:
+  static TypeNode preComputeType(NodeManager* nm, TNode n);
   static TypeNode computeType(NodeManager* nodeManager,
                               TNode n,
                               bool check,
@@ -132,9 +151,10 @@ class BitVectorITETypeRule
 /* parameterized operator kinds                                               */
 /* -------------------------------------------------------------------------- */
 
-class BitVectorBitOfTypeRule
+class BitVectorBitTypeRule
 {
  public:
+  static TypeNode preComputeType(NodeManager* nm, TNode n);
   static TypeNode computeType(NodeManager* nodeManager,
                               TNode n,
                               bool check,
@@ -144,6 +164,7 @@ class BitVectorBitOfTypeRule
 class BitVectorExtractTypeRule
 {
  public:
+  static TypeNode preComputeType(NodeManager* nm, TNode n);
   static TypeNode computeType(NodeManager* nodeManager,
                               TNode n,
                               bool check,
@@ -153,6 +174,7 @@ class BitVectorExtractTypeRule
 class BitVectorRepeatTypeRule
 {
  public:
+  static TypeNode preComputeType(NodeManager* nm, TNode n);
   static TypeNode computeType(NodeManager* nodeManager,
                               TNode n,
                               bool check,
@@ -162,6 +184,7 @@ class BitVectorRepeatTypeRule
 class BitVectorExtendTypeRule
 {
  public:
+  static TypeNode preComputeType(NodeManager* nm, TNode n);
   static TypeNode computeType(NodeManager* nodeManager,
                               TNode n,
                               bool check,
@@ -175,6 +198,7 @@ class BitVectorExtendTypeRule
 class BitVectorEagerAtomTypeRule
 {
  public:
+  static TypeNode preComputeType(NodeManager* nm, TNode n);
   static TypeNode computeType(NodeManager* nodeManager,
                               TNode n,
                               bool check,
@@ -184,6 +208,7 @@ class BitVectorEagerAtomTypeRule
 class BitVectorAckermanizationUdivTypeRule
 {
  public:
+  static TypeNode preComputeType(NodeManager* nm, TNode n);
   static TypeNode computeType(NodeManager* nodeManager,
                               TNode n,
                               bool check,
@@ -193,6 +218,7 @@ class BitVectorAckermanizationUdivTypeRule
 class BitVectorAckermanizationUremTypeRule
 {
  public:
+  static TypeNode preComputeType(NodeManager* nm, TNode n);
   static TypeNode computeType(NodeManager* nodeManager,
                               TNode n,
                               bool check,

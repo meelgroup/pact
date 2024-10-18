@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Morgan Deters, Dejan Jovanovic, Aina Niemetz
+ *   Morgan Deters, Dejan Jovanovic, Andrew Reynolds
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -471,6 +471,9 @@ class CVC5_EXPORT TypeNode
   /** Is this a Set type? */
   bool isSet() const;
 
+  /** Is this a Relation type (set of tuples)? */
+  bool isRelation() const;
+
   /** Is this a Bag type? */
   bool isBag() const;
 
@@ -624,6 +627,9 @@ class CVC5_EXPORT TypeNode
   /** Is this a tuple type? */
   bool isTuple() const;
 
+  /** Is this a nullable type? */
+  bool isNullable() const;
+
   /** Is this a record type? */
   bool isRecord() const;
 
@@ -632,6 +638,9 @@ class CVC5_EXPORT TypeNode
 
   /** Get the constituent types of a tuple type */
   std::vector<TypeNode> getTupleTypes() const;
+
+  /** Get the element type (for nullable types) */
+  TypeNode getNullableElementType() const;
 
   /** Is this a regexp type */
   bool isRegExp() const;
@@ -920,33 +929,31 @@ inline void TypeNode::printAst(std::ostream& out, int indent) const {
 }
 
 inline bool TypeNode::isBoolean() const {
-  return
-    ( getKind() == kind::TYPE_CONSTANT && getConst<TypeConstant>() == BOOLEAN_TYPE );
+  return (getKind() == Kind::TYPE_CONSTANT
+          && getConst<TypeConstant>() == BOOLEAN_TYPE);
 }
 
 inline bool TypeNode::isString() const {
-  return getKind() == kind::TYPE_CONSTANT &&
-    getConst<TypeConstant>() == STRING_TYPE;
+  return getKind() == Kind::TYPE_CONSTANT
+         && getConst<TypeConstant>() == STRING_TYPE;
 }
 
 /** Is this a regexp type */
 inline bool TypeNode::isRegExp() const {
-  return getKind() == kind::TYPE_CONSTANT &&
-    getConst<TypeConstant>() == REGEXP_TYPE;
+  return getKind() == Kind::TYPE_CONSTANT
+         && getConst<TypeConstant>() == REGEXP_TYPE;
  }
 
 inline bool TypeNode::isRoundingMode() const {
-  return getKind() == kind::TYPE_CONSTANT &&
-    getConst<TypeConstant>() == ROUNDINGMODE_TYPE;
+  return getKind() == Kind::TYPE_CONSTANT
+         && getConst<TypeConstant>() == ROUNDINGMODE_TYPE;
 }
 
-inline bool TypeNode::isArray() const {
-  return getKind() == kind::ARRAY_TYPE;
-}
+inline bool TypeNode::isArray() const { return getKind() == Kind::ARRAY_TYPE; }
 
 inline bool TypeNode::isFiniteField() const
 {
-  return getKind() == kind::FINITE_FIELD_TYPE;
+  return getKind() == Kind::FINITE_FIELD_TYPE;
 }
 
 inline TypeNode TypeNode::getArrayIndexType() const {
@@ -977,13 +984,11 @@ inline TypeNode TypeNode::getDatatypeSelectorRangeType() const
   return (*this)[1];
 }
 
-inline bool TypeNode::isSet() const {
-  return getKind() == kind::SET_TYPE;
-}
+inline bool TypeNode::isSet() const { return getKind() == Kind::SET_TYPE; }
 
 inline bool TypeNode::isSequence() const
 {
-  return getKind() == kind::SEQUENCE_TYPE;
+  return getKind() == Kind::SEQUENCE_TYPE;
 }
 
 inline TypeNode TypeNode::getSetElementType() const {
@@ -992,15 +997,12 @@ inline TypeNode TypeNode::getSetElementType() const {
 }
 
 inline bool TypeNode::isFunction() const {
-  return getKind() == kind::FUNCTION_TYPE;
+  return getKind() == Kind::FUNCTION_TYPE;
 }
 
 inline bool TypeNode::isFunctionLike() const {
-  return
-    getKind() == kind::FUNCTION_TYPE ||
-    getKind() == kind::CONSTRUCTOR_TYPE ||
-    getKind() == kind::SELECTOR_TYPE ||
-    getKind() == kind::TESTER_TYPE;
+  return getKind() == Kind::FUNCTION_TYPE || getKind() == Kind::CONSTRUCTOR_TYPE
+         || getKind() == Kind::SELECTOR_TYPE || getKind() == Kind::TESTER_TYPE;
 }
 
 inline bool TypeNode::isPredicate() const {

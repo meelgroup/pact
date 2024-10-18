@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds
+ *   Andrew Reynolds, Abdalrhman Mohamed, Hans-Joerg Schurr
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -15,8 +15,8 @@
 
 #include "cvc5_private.h"
 
-#ifndef CVC4__PROOF__LFSC__LFSC_POST_PROCESSOR_H
-#define CVC4__PROOF__LFSC__LFSC_POST_PROCESSOR_H
+#ifndef CVC5__PROOF__LFSC__LFSC_POST_PROCESSOR_H
+#define CVC5__PROOF__LFSC__LFSC_POST_PROCESSOR_H
 
 #include <map>
 #include <unordered_set>
@@ -52,7 +52,7 @@ class LfscProofPostprocessCallback : protected EnvObj,
                     bool& continueUpdate) override;
   /** Update the proof rule application. */
   bool update(Node res,
-              PfRule id,
+              ProofRule id,
               const std::vector<Node>& children,
               const std::vector<Node>& args,
               CDProof* cdp,
@@ -89,7 +89,7 @@ class LfscProofPostprocessCallback : protected EnvObj,
                   CDProof* cdp,
                   Node startOp);
   /** Make fresh dummy predicate */
-  static Node mkDummyPredicate();
+  static Node mkDummyPredicate(NodeManager* nm);
 };
 
 /**

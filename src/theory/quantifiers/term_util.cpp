@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Aina Niemetz, Mathias Preiner
+ *   Andrew Reynolds, Aina Niemetz, Andres Noetzli
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -18,6 +18,7 @@
 #include "expr/array_store_all.h"
 #include "expr/function_array_const.h"
 #include "expr/node_algorithm.h"
+#include "expr/sequence.h"
 #include "expr/skolem_manager.h"
 #include "theory/arith/arith_msum.h"
 #include "theory/bv/theory_bv_utils.h"
@@ -47,9 +48,12 @@ Node TermUtil::getRemoveQuantifiers2( Node n, std::map< Node, Node >& visited ) 
     return it->second;
   }else{
     Node ret = n;
-    if( n.getKind()==FORALL ){
+    if (n.getKind() == Kind::FORALL)
+    {
       ret = getRemoveQuantifiers2( n[1], visited );
-    }else if( n.getNumChildren()>0 ){
+    }
+    else if (n.getNumChildren() > 0)
+    {
       std::vector< Node > children;
       bool childrenChanged = false;
       for( unsigned i=0; i<n.getNumChildren(); i++ ){
@@ -70,13 +74,21 @@ Node TermUtil::getRemoveQuantifiers2( Node n, std::map< Node, Node >& visited ) 
 }
 
 Node TermUtil::getInstConstAttr( Node n ) {
-  if (!n.hasAttribute(InstConstantAttribute()) ){
+  if (!n.hasAttribute(InstConstantAttribute()))
+  {
     Node q;
-    if (n.hasOperator())
+    if (n.isVar())
     {
-      q = getInstConstAttr(n.getOperator());
+      // If it is a purification variable, it may correspond to a term
+      // with instantiation constants in it. We get the unpurified form here
+      // to handle this case.
+      Node un = SkolemManager::getUnpurifiedForm(n);
+      if (!un.isNull() && un != n)
+      {
+        q = getInstConstAttr(un);
+      }
     }
-    if (q.isNull())
+    else
     {
       for (const Node& nc : n)
       {
@@ -84,6 +96,13 @@ Node TermUtil::getInstConstAttr( Node n ) {
         if (!q.isNull())
         {
           break;
+        }
+      }
+      if (q.isNull())
+      {
+        if (n.hasOperator())
+        {
+          q = getInstConstAttr(n.getOperator());
         }
       }
     }
@@ -95,16 +114,18 @@ Node TermUtil::getInstConstAttr( Node n ) {
 
 bool TermUtil::hasInstConstAttr(Node n)
 {
-  n = SkolemManager::getOriginalForm(n);
   return !getInstConstAttr(n).isNull();
 }
 
 Node TermUtil::getBoundVarAttr( Node n ) {
   if (!n.hasAttribute(BoundVarAttribute()) ){
     Node bv;
-    if( n.getKind()==BOUND_VARIABLE ){
+    if (n.getKind() == Kind::BOUND_VARIABLE)
+    {
       bv = n;
-    }else{
+    }
+    else
+    {
       for( unsigned i=0; i<n.getNumChildren(); i++ ){
         bv = getBoundVarAttr(n[i]);
         if( !bv.isNull() ){
@@ -130,17 +151,17 @@ Node TermUtil::getRemoveQuantifiers( Node n ) {
 
 void TermUtil::computeInstConstContains(Node n, std::vector<Node>& ics)
 {
-  computeVarContainsInternal(n, INST_CONSTANT, ics);
+  computeVarContainsInternal(n, Kind::INST_CONSTANT, ics);
 }
 
 void TermUtil::computeVarContains(Node n, std::vector<Node>& vars)
 {
-  computeVarContainsInternal(n, BOUND_VARIABLE, vars);
+  computeVarContainsInternal(n, Kind::BOUND_VARIABLE, vars);
 }
 
 void TermUtil::computeQuantContains(Node n, std::vector<Node>& quants)
 {
-  computeVarContainsInternal(n, FORALL, quants);
+  computeVarContainsInternal(n, Kind::FORALL, quants);
 }
 
 void TermUtil::computeVarContainsInternal(Node n,
@@ -223,19 +244,31 @@ bool TermUtil::containsUninterpretedConstant( Node n ) {
   }
   bool ret = false;
   Kind k = n.getKind();
-  if (k == UNINTERPRETED_SORT_VALUE)
+  if (k == Kind::UNINTERPRETED_SORT_VALUE)
   {
     Assert(n.getType().isUninterpretedSort());
     ret = true;
   }
-  else if (k == STORE_ALL)
+  else if (k == Kind::STORE_ALL)
   {
     ret = containsUninterpretedConstant(n.getConst<ArrayStoreAll>().getValue());
   }
-  else if (k == FUNCTION_ARRAY_CONST)
+  else if (k == Kind::FUNCTION_ARRAY_CONST)
   {
     ret = containsUninterpretedConstant(
         n.getConst<FunctionArrayConst>().getArrayValue());
+  }
+  else if (k == Kind::CONST_SEQUENCE)
+  {
+    const std::vector<Node>& charVec = n.getConst<Sequence>().getVec();
+    for (const Node& nc : charVec)
+    {
+      if (containsUninterpretedConstant(nc))
+      {
+        ret = true;
+        break;
+      }
+    }
   }
   else
   {
@@ -257,13 +290,14 @@ Node TermUtil::simpleNegate(Node n)
 {
   Assert(n.getType().isBoolean());
   NodeManager* nm = NodeManager::currentNM();
-  if( n.getKind()==OR || n.getKind()==AND ){
+  if (n.getKind() == Kind::OR || n.getKind() == Kind::AND)
+  {
     std::vector< Node > children;
     for (const Node& cn : n)
     {
       children.push_back(simpleNegate(cn));
     }
-    return nm->mkNode(n.getKind() == OR ? AND : OR, children);
+    return nm->mkNode(n.getKind() == Kind::OR ? Kind::AND : Kind::OR, children);
   }
   else if (n.isConst())
   {
@@ -283,54 +317,62 @@ Node TermUtil::mkNegate(Kind notk, Node n)
 
 bool TermUtil::isNegate(Kind k)
 {
-  return k == NOT || k == BITVECTOR_NOT || k == BITVECTOR_NEG || k == NEG;
+  return k == Kind::NOT || k == Kind::BITVECTOR_NOT || k == Kind::BITVECTOR_NEG
+         || k == Kind::NEG;
 }
 
 bool TermUtil::isAssoc(Kind k, bool reqNAry)
 {
   if (reqNAry)
   {
-    if (k == SET_UNION || k == SET_INTER)
+    if (k == Kind::SET_UNION || k == Kind::SET_INTER)
     {
       return false;
     }
   }
-  return k == ADD || k == MULT || k == NONLINEAR_MULT || k == AND || k == OR
-         || k == XOR || k == BITVECTOR_ADD || k == BITVECTOR_MULT
-         || k == BITVECTOR_AND || k == BITVECTOR_OR || k == BITVECTOR_XOR
-         || k == BITVECTOR_XNOR || k == BITVECTOR_CONCAT || k == STRING_CONCAT
-         || k == SET_UNION || k == SET_INTER || k == RELATION_JOIN
-         || k == RELATION_PRODUCT || k == SEP_STAR;
+  return k == Kind::ADD || k == Kind::MULT || k == Kind::NONLINEAR_MULT
+         || k == Kind::AND || k == Kind::OR || k == Kind::XOR
+         || k == Kind::BITVECTOR_ADD || k == Kind::BITVECTOR_MULT
+         || k == Kind::BITVECTOR_AND || k == Kind::BITVECTOR_OR
+         || k == Kind::BITVECTOR_XOR || k == Kind::BITVECTOR_XNOR
+         || k == Kind::BITVECTOR_CONCAT || k == Kind::STRING_CONCAT
+         || k == Kind::SET_UNION || k == Kind::SET_INTER
+         || k == Kind::RELATION_JOIN || k == Kind::RELATION_TABLE_JOIN
+         || k == Kind::RELATION_PRODUCT || k == Kind::SEP_STAR;
 }
 
 bool TermUtil::isComm(Kind k, bool reqNAry)
 {
   if (reqNAry)
   {
-    if (k == SET_UNION || k == SET_INTER)
+    if (k == Kind::SET_UNION || k == Kind::SET_INTER)
     {
       return false;
     }
   }
-  return k == EQUAL || k == ADD || k == MULT || k == NONLINEAR_MULT || k == AND
-         || k == OR || k == XOR || k == BITVECTOR_ADD || k == BITVECTOR_MULT
-         || k == BITVECTOR_AND || k == BITVECTOR_OR || k == BITVECTOR_XOR
-         || k == BITVECTOR_XNOR || k == SET_UNION || k == SET_INTER
-         || k == SEP_STAR;
+  return k == Kind::EQUAL || k == Kind::ADD || k == Kind::MULT
+         || k == Kind::NONLINEAR_MULT || k == Kind::AND || k == Kind::OR
+         || k == Kind::XOR || k == Kind::BITVECTOR_ADD
+         || k == Kind::BITVECTOR_MULT || k == Kind::BITVECTOR_AND
+         || k == Kind::BITVECTOR_OR || k == Kind::BITVECTOR_XOR
+         || k == Kind::BITVECTOR_XNOR || k == Kind::SET_UNION
+         || k == Kind::SET_INTER || k == Kind::SEP_STAR;
 }
 
 bool TermUtil::isNonAdditive( Kind k ) {
-  return k==AND || k==OR || k==BITVECTOR_AND || k==BITVECTOR_OR;
+  return k == Kind::AND || k == Kind::OR || k == Kind::BITVECTOR_AND
+         || k == Kind::BITVECTOR_OR;
 }
 
 bool TermUtil::isBoolConnective( Kind k ) {
-  return k==OR || k==AND || k==EQUAL || k==ITE || k==FORALL || k==NOT || k==SEP_STAR;
+  return k == Kind::OR || k == Kind::AND || k == Kind::EQUAL || k == Kind::ITE
+         || k == Kind::FORALL || k == Kind::NOT || k == Kind::SEP_STAR;
 }
 
 bool TermUtil::isBoolConnectiveTerm( TNode n ) {
-  return isBoolConnective( n.getKind() ) &&
-         ( n.getKind()!=EQUAL || n[0].getType().isBoolean() ) && 
-         ( n.getKind()!=ITE || n.getType().isBoolean() );
+  return isBoolConnective(n.getKind())
+         && (n.getKind() != Kind::EQUAL || n[0].getType().isBoolean())
+         && (n.getKind() != Kind::ITE || n.getType().isBoolean());
 }
 
 Node TermUtil::mkTypeValue(TypeNode tn, int32_t val)
@@ -411,34 +453,34 @@ Node TermUtil::mkTypeConst(TypeNode tn, bool pol)
 
 bool TermUtil::isAntisymmetric(Kind k, Kind& dk)
 {
-  if (k == GT)
+  if (k == Kind::GT)
   {
-    dk = LT;
+    dk = Kind::LT;
     return true;
   }
-  else if (k == GEQ)
+  else if (k == Kind::GEQ)
   {
-    dk = LEQ;
+    dk = Kind::LEQ;
     return true;
   }
-  else if (k == BITVECTOR_UGT)
+  else if (k == Kind::BITVECTOR_UGT)
   {
-    dk = BITVECTOR_ULT;
+    dk = Kind::BITVECTOR_ULT;
     return true;
   }
-  else if (k == BITVECTOR_UGE)
+  else if (k == Kind::BITVECTOR_UGE)
   {
-    dk = BITVECTOR_ULE;
+    dk = Kind::BITVECTOR_ULE;
     return true;
   }
-  else if (k == BITVECTOR_SGT)
+  else if (k == Kind::BITVECTOR_SGT)
   {
-    dk = BITVECTOR_SLT;
+    dk = Kind::BITVECTOR_SLT;
     return true;
   }
-  else if (k == BITVECTOR_SGE)
+  else if (k == Kind::BITVECTOR_SGE)
   {
-    dk = BITVECTOR_SLE;
+    dk = Kind::BITVECTOR_SLE;
     return true;
   }
   return false;
@@ -452,37 +494,37 @@ bool TermUtil::isIdempotentArg(Node n, Kind ik, int arg)
   TypeNode tn = n.getType();
   if (n == mkTypeValue(tn, 0))
   {
-    if (ik == ADD || ik == OR || ik == XOR || ik == BITVECTOR_ADD
-        || ik == BITVECTOR_OR || ik == BITVECTOR_XOR || ik == STRING_CONCAT)
+    if (ik == Kind::ADD || ik == Kind::OR || ik == Kind::XOR
+        || ik == Kind::BITVECTOR_ADD || ik == Kind::BITVECTOR_OR
+        || ik == Kind::BITVECTOR_XOR || ik == Kind::STRING_CONCAT)
     {
       return true;
     }
-    else if (ik == SUB || ik == BITVECTOR_SHL || ik == BITVECTOR_LSHR
-             || ik == BITVECTOR_ASHR || ik == BITVECTOR_SUB
-             || ik == BITVECTOR_UREM)
+    else if (ik == Kind::SUB || ik == Kind::BITVECTOR_SHL
+             || ik == Kind::BITVECTOR_LSHR || ik == Kind::BITVECTOR_ASHR
+             || ik == Kind::BITVECTOR_SUB || ik == Kind::BITVECTOR_UREM)
     {
       return arg == 1;
     }
   }
   else if (n == mkTypeValue(tn, 1))
   {
-    if (ik == MULT || ik == BITVECTOR_MULT)
+    if (ik == Kind::MULT || ik == Kind::BITVECTOR_MULT)
     {
       return true;
     }
-    else if (ik == DIVISION || ik == DIVISION_TOTAL || ik == INTS_DIVISION
-             || ik == INTS_DIVISION_TOTAL
-             || ik == INTS_MODULUS
-             || ik == INTS_MODULUS_TOTAL
-             || ik == BITVECTOR_UDIV
-             || ik == BITVECTOR_SDIV)
+    else if (ik == Kind::DIVISION || ik == Kind::DIVISION_TOTAL
+             || ik == Kind::INTS_DIVISION || ik == Kind::INTS_DIVISION_TOTAL
+             || ik == Kind::INTS_MODULUS || ik == Kind::INTS_MODULUS_TOTAL
+             || ik == Kind::BITVECTOR_UDIV || ik == Kind::BITVECTOR_SDIV)
     {
       return arg == 1;
     }
   }
   else if (n == mkTypeMaxValue(tn))
   {
-    if (ik == EQUAL || ik == BITVECTOR_AND || ik == BITVECTOR_XNOR)
+    if (ik == Kind::EQUAL || ik == Kind::BITVECTOR_AND
+        || ik == Kind::BITVECTOR_XNOR)
     {
       return true;
     }
@@ -495,19 +537,20 @@ Node TermUtil::isSingularArg(Node n, Kind ik, unsigned arg)
   TypeNode tn = n.getType();
   if (n == mkTypeValue(tn, 0))
   {
-    if (ik == AND || ik == MULT || ik == BITVECTOR_AND || ik == BITVECTOR_MULT)
+    if (ik == Kind::AND || ik == Kind::MULT || ik == Kind::BITVECTOR_AND
+        || ik == Kind::BITVECTOR_MULT)
     {
       return n;
     }
-    else if (ik == BITVECTOR_SHL || ik == BITVECTOR_LSHR || ik == BITVECTOR_ASHR
-             || ik == BITVECTOR_UREM)
+    else if (ik == Kind::BITVECTOR_SHL || ik == Kind::BITVECTOR_LSHR
+             || ik == Kind::BITVECTOR_ASHR || ik == Kind::BITVECTOR_UREM)
     {
       if (arg == 0)
       {
         return n;
       }
     }
-    else if (ik == BITVECTOR_UDIV || ik == BITVECTOR_SDIV)
+    else if (ik == Kind::BITVECTOR_UDIV || ik == Kind::BITVECTOR_SDIV)
     {
       if (arg == 0)
       {
@@ -518,17 +561,16 @@ Node TermUtil::isSingularArg(Node n, Kind ik, unsigned arg)
         return mkTypeMaxValue(tn);
       }
     }
-    else if (ik == DIVISION || ik == DIVISION_TOTAL || ik == INTS_DIVISION
-             || ik == INTS_DIVISION_TOTAL
-             || ik == INTS_MODULUS
-             || ik == INTS_MODULUS_TOTAL)
+    else if (ik == Kind::DIVISION || ik == Kind::DIVISION_TOTAL
+             || ik == Kind::INTS_DIVISION || ik == Kind::INTS_DIVISION_TOTAL
+             || ik == Kind::INTS_MODULUS || ik == Kind::INTS_MODULUS_TOTAL)
     {
       if (arg == 0)
       {
         return n;
       }
     }
-    else if (ik == STRING_SUBSTR)
+    else if (ik == Kind::STRING_SUBSTR)
     {
       if (arg == 0)
       {
@@ -539,7 +581,7 @@ Node TermUtil::isSingularArg(Node n, Kind ik, unsigned arg)
         return mkTypeValue(NodeManager::currentNM()->stringType(), 0);
       }
     }
-    else if (ik == STRING_INDEXOF)
+    else if (ik == Kind::STRING_INDEXOF)
     {
       if (arg == 0 || arg == 1)
       {
@@ -549,14 +591,14 @@ Node TermUtil::isSingularArg(Node n, Kind ik, unsigned arg)
   }
   else if (n == mkTypeValue(tn, 1))
   {
-    if (ik == BITVECTOR_UREM)
+    if (ik == Kind::BITVECTOR_UREM)
     {
       return mkTypeValue(tn, 0);
     }
   }
   else if (n == mkTypeMaxValue(tn))
   {
-    if (ik == OR || ik == BITVECTOR_OR)
+    if (ik == Kind::OR || ik == Kind::BITVECTOR_OR)
     {
       return n;
     }
@@ -566,11 +608,11 @@ Node TermUtil::isSingularArg(Node n, Kind ik, unsigned arg)
     if (n.getType().isInteger() && n.getConst<Rational>().sgn() < 0)
     {
       // negative arguments
-      if (ik == STRING_SUBSTR || ik == STRING_CHARAT)
+      if (ik == Kind::STRING_SUBSTR || ik == Kind::STRING_CHARAT)
       {
         return mkTypeValue(NodeManager::currentNM()->stringType(), 0);
       }
-      else if (ik == STRING_INDEXOF)
+      else if (ik == Kind::STRING_INDEXOF)
       {
         Assert(arg == 2);
         return mkTypeValue(NodeManager::currentNM()->integerType(), -1);
@@ -582,28 +624,46 @@ Node TermUtil::isSingularArg(Node n, Kind ik, unsigned arg)
 
 bool TermUtil::hasOffsetArg(Kind ik, int arg, int& offset, Kind& ok)
 {
-  if (ik == LT)
+  if (ik == Kind::LT)
   {
     Assert(arg == 0 || arg == 1);
     offset = arg == 0 ? 1 : -1;
-    ok = LEQ;
+    ok = Kind::LEQ;
     return true;
   }
-  else if (ik == BITVECTOR_ULT)
+  else if (ik == Kind::BITVECTOR_ULT)
   {
     Assert(arg == 0 || arg == 1);
     offset = arg == 0 ? 1 : -1;
-    ok = BITVECTOR_ULE;
+    ok = Kind::BITVECTOR_ULE;
     return true;
   }
-  else if (ik == BITVECTOR_SLT)
+  else if (ik == Kind::BITVECTOR_SLT)
   {
     Assert(arg == 0 || arg == 1);
     offset = arg == 0 ? 1 : -1;
-    ok = BITVECTOR_SLE;
+    ok = Kind::BITVECTOR_SLE;
     return true;
   }
   return false;
+}
+
+Node TermUtil::ensureType(Node n, TypeNode tn)
+{
+  TypeNode ntn = n.getType();
+  if (ntn == tn)
+  {
+    return n;
+  }
+  if (tn.isInteger())
+  {
+    return NodeManager::currentNM()->mkNode(Kind::TO_INTEGER, n);
+  }
+  else if (tn.isReal())
+  {
+    return NodeManager::currentNM()->mkNode(Kind::TO_REAL, n);
+  }
+  return Node::null();
 }
 
 }  // namespace quantifiers

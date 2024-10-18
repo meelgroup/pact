@@ -31,7 +31,7 @@ name   = "SMT Layer"
   long       = "simplification-bcp"
   type       = "bool"
   default    = "false"
-  help       = "apply Boolean constant propagation as a substituion during simplification"
+  help       = "apply Boolean constant propagation as a substitution during simplification"
 
 [[option]]
   name       = "staticLearning"
@@ -126,12 +126,19 @@ name   = "SMT Layer"
   help_mode  = "proof modes."
 [[option.mode.OFF]]
   name = "off"
+  help = "Do not produce proofs."
 [[option.mode.PP_ONLY]]
   name = "pp-only"
+  help = "Only produce proofs for preprocessing."
 [[option.mode.SAT]]
   name = "sat-proof"
+  help = "Produce proofs for preprocessing and for the SAT solver."
 [[option.mode.FULL]]
   name = "full-proof"
+  help = "Produce full proofs of preprocessing, SAT and theory lemmas."
+[[option.mode.FULL_STRICT]]
+  name = "full-proof-strict"
+  help = "Produce full proofs of preprocessing, SAT and theory lemmas. Additionally disable techniques that will lead to incomplete proofs."
 
 [[option]]
   name       = "checkProofs"
@@ -176,12 +183,12 @@ name   = "SMT Layer"
   help       = "if an unsat core is produced, it is reduced to a minimal unsat core"
 
 [[option]]
-  name       = "printUnsatCoresFull"
+  name       = "printCoresFull"
   category   = "regular"
-  long       = "print-unsat-cores-full"
+  long       = "print-cores-full"
   type       = "bool"
   default    = "false"
-  help       = "when printing unsat cores, include unlabeled assertions"
+  help       = "print all formulas regardless of whether they are named, e.g. in unsat cores"
 
 [[option]]
   name       = "checkUnsatCores"
@@ -350,7 +357,7 @@ name   = "SMT Layer"
 
 [[option]]
   name       = "solveBVAsInt"
-  category   = "expert"
+  category   = "regular"
   long       = "solve-bv-as-int=MODE"
   type       = "SolveBVAsIntMode"
   default    = "OFF"
@@ -364,7 +371,7 @@ name   = "SMT Layer"
   help = "Generate a sum expression for each bvand instance, based on the value in --solve-bv-as-int-granularity"
 [[option.mode.IAND]]
   name = "iand"
-  help = "Translate bvand to the iand operator (experimental)"
+  help = "Translate bvand to the iand operator"
 [[option.mode.BV]]
   name = "bv"
   help = "Translate bvand back to bit-vectors"
@@ -374,7 +381,7 @@ name   = "SMT Layer"
 
 [[option]]
   name       = "bvToIntUsePow2"
-  category   = "undocumented"
+  category   = "expert"
   long       = "bv-to-int-use-pow2"
   type       = "bool"
   default    = "false"
@@ -514,3 +521,11 @@ name   = "SMT Layer"
   minimum    = "0.0"
   maximum    = "1000.0"
   help       = "sets the threshold for average assertions per literal before a deep restart"
+
+[[option]]
+  name       = "toCoreTimeout"
+  category   = "expert"
+  long       = "timeout-core-timeout=N"
+  type       = "uint64_t"
+  default    = "10000"
+  help       = "timeout (in milliseconds) for satisfiability checks for timeout cores"

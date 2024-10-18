@@ -5,7 +5,7 @@
 #
 # This file is part of the cvc5 project.
 #
-# Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+# Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
 # in the top-level source directory and their institutional affiliations.
 # All rights reserved.  See the file COPYING in the top-level source
 # directory for licensing information.
@@ -33,17 +33,19 @@ NL = '\n'
 
 NAMESPACE_START = 'namespace'
 
-# Expected C++ Enum Declarations
-ENUM_START = 'enum'
+# Expected 'enum' with ENUM macro
+ENUM_START = 'enum ENUM('
 ENUM_END = CCB + SC
-
+# Enum value starts with EVALUE(
+EVALUE_START = 'EVALUE('
 # Comments and Macro Tokens
 COMMENT = '//'
 BLOCK_COMMENT_BEGIN = '/*'
 BLOCK_COMMENT_END = '*/'
 MACRO_BLOCK_BEGIN = '#if 0'
 MACRO_BLOCK_END = '#endif'
-
+CMACRO_BLOCK_BEGIN = '#ifdef CVC5_API_USE_C_ENUMS'
+CMACRO_BLOCK_END = '#endif'
 
 class CppNamespace:
 
@@ -68,7 +70,8 @@ class CppEnum:
 class EnumParser:
     tokenmap = {
         BLOCK_COMMENT_BEGIN: BLOCK_COMMENT_END,
-        MACRO_BLOCK_BEGIN: MACRO_BLOCK_END
+        MACRO_BLOCK_BEGIN: MACRO_BLOCK_END,
+        CMACRO_BLOCK_BEGIN: CMACRO_BLOCK_END,
     }
 
     def __init__(self):
@@ -123,6 +126,8 @@ class EnumParser:
 
         # check if entering block comment or macro block
         for token in self.tokenmap:
+            if token == CMACRO_BLOCK_BEGIN and not self.in_enum:
+                continue
             if token in line:
                 # if entering block comment, override previous block comment
                 if token == BLOCK_COMMENT_BEGIN:
@@ -167,6 +172,8 @@ class EnumParser:
                 elif self.in_enum:
                     if line == OCB:
                         continue
+                    assert line.startswith(EVALUE_START)
+                    line = line.split('(')[1].split(')')[0]
                     name = None
                     value = None
                     if EQ in line:
@@ -192,8 +199,7 @@ class EnumParser:
                     enum.enumerators_doc[name] = fmt_comment
                 elif line.startswith(ENUM_START):
                     self.in_enum = True
-                    tokens = line.split()
-                    name = tokens[1]
+                    name = line.split('(')[1].split(')')[0]
                     self.get_current_namespace().enums.append(CppEnum(name))
                     continue
                 elif line.startswith(NAMESPACE_START):

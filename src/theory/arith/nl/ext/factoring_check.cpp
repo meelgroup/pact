@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Gereon Kremer, Tim King
+ *   Andrew Reynolds, Gereon Kremer, Hans-Joerg Schurr
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -35,13 +35,13 @@ namespace nl {
 FactoringCheck::FactoringCheck(Env& env, ExtState* data)
     : EnvObj(env), d_data(data)
 {
-  d_one = NodeManager::currentNM()->mkConstReal(Rational(1));
+  d_one = nodeManager()->mkConstReal(Rational(1));
 }
 
 void FactoringCheck::check(const std::vector<Node>& asserts,
                            const std::vector<Node>& false_asserts)
 {
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   Trace("nl-ext") << "Get factoring lemmas..." << std::endl;
   for (const Node& lit : asserts)
   {
@@ -126,7 +126,7 @@ void FactoringCheck::check(const std::vector<Node>& asserts,
           Node sum = nm->mkNode(Kind::ADD, itf->second);
           sum = rewrite(sum);
           // remove TO_REAL if necessary here
-          sum = sum.getKind() == TO_REAL ? sum[0] : sum;
+          sum = sum.getKind() == Kind::TO_REAL ? sum[0] : sum;
           Trace("nl-ext-factor")
               << "* Factored sum for " << x << " : " << sum << std::endl;
 
@@ -172,9 +172,11 @@ void FactoringCheck::check(const std::vector<Node>& asserts,
           {
             Node k_eq = kf.eqNode(sum);
             Node split = nm->mkNode(Kind::OR, lit, lit.notNode());
-            proof->addStep(split, PfRule::SPLIT, {}, {lit});
-            proof->addStep(
-                flem, PfRule::MACRO_SR_PRED_TRANSFORM, {split, k_eq}, {flem});
+            proof->addStep(split, ProofRule::SPLIT, {}, {lit});
+            proof->addStep(flem,
+                           ProofRule::MACRO_SR_PRED_TRANSFORM,
+                           {split, k_eq},
+                           {flem});
           }
           d_data->d_im.addPendingLemma(
               flem, InferenceId::ARITH_NL_FACTOR, proof);
@@ -190,8 +192,8 @@ Node FactoringCheck::getFactorSkolem(Node n, CDProof* proof)
   Node k;
   if (itf == d_factor_skolem.end())
   {
-    NodeManager* nm = NodeManager::currentNM();
-    k = nm->getSkolemManager()->mkPurifySkolem(n, "kf");
+    NodeManager* nm = nodeManager();
+    k = nm->getSkolemManager()->mkPurifySkolem(n);
     Node k_eq = k.eqNode(n);
     Trace("nl-ext-factor") << "...adding factor skolem " << k << " == " << n
                            << std::endl;
@@ -205,7 +207,7 @@ Node FactoringCheck::getFactorSkolem(Node n, CDProof* proof)
   if (d_data->isProofEnabled())
   {
     Node k_eq = k.eqNode(n);
-    proof->addStep(k_eq, PfRule::MACRO_SR_PRED_INTRO, {}, {k_eq});
+    proof->addStep(k_eq, ProofRule::MACRO_SR_PRED_INTRO, {}, {k_eq});
   }
   return k;
 }

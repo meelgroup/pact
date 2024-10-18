@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Mathias Preiner
+ *   Andrew Reynolds, Mathias Preiner, Aina Niemetz
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -142,7 +142,7 @@ bool NaryMatchTrie::getMatches(Node n, NotifyMatch* ntm) const
             // variable of type Real, then (+ x y) does *not* match
             // (+ 1.0 2 1.5), despite { x -> (+ 1.0 2), y -> 1.5 } being
             // a well-typed match.
-            if (s.isNull() || s.getType() != var.getType())
+            if (s.isNull() || !s.getType().isComparableTo(var.getType()))
             {
               foundChildren = false;
               break;
@@ -153,7 +153,7 @@ bool NaryMatchTrie::getMatches(Node n, NotifyMatch* ntm) const
           if (foundChildren)
           {
             // we are matching the next list
-            next = nm->mkNode(SEXPR, currChildren);
+            next = nm->mkNode(Kind::SEXPR, currChildren);
           }
           else
           {
@@ -176,7 +176,7 @@ bool NaryMatchTrie::getMatches(Node n, NotifyMatch* ntm) const
                 << "Compare types " << var << " " << next << " "
                 << var.getType() << " " << next.getType() << std::endl;
             // check types in the (non-list) case
-            if (var.getType() != next.getType())
+            if (!var.getType().isComparableTo(next.getType()))
             {
               Trace("match-debug") << "...fail" << std::endl;
               next = Node::null();

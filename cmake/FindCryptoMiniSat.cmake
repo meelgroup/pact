@@ -1,10 +1,10 @@
 ###############################################################################
 # Top contributors (to current version):
-#   Gereon Kremer, Mathias Preiner, Andrew V. Jones
+#   Gereon Kremer, Mathias Preiner, Andrew V. Teylu
 #
 # This file is part of the cvc5 project.
 #
-# Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+# Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
 # in the top-level source directory and their institutional affiliations.
 # All rights reserved.  See the file COPYING in the top-level source
 # directory for licensing information.
@@ -35,7 +35,7 @@ if(cryptominisat5_FOUND)
 endif()
 
 if(NOT CryptoMiniSat_FOUND_SYSTEM)
-  set(CryptoMiniSat_VERSION "5.11.4")
+  set(CryptoMiniSat_VERSION "5.11.21")
 
   check_ep_downloaded("CryptoMiniSat-EP")
   if(NOT CryptoMiniSat-EP_DOWNLOADED)
@@ -53,12 +53,8 @@ if(NOT CryptoMiniSat_FOUND_SYSTEM)
   ExternalProject_Add(
     CryptoMiniSat-EP
     ${COMMON_EP_CONFIG}
-    BUILD_IN_SOURCE ON
     URL https://github.com/msoos/cryptominisat/archive/refs/tags/${CryptoMiniSat_VERSION}.tar.gz
-    URL_HASH SHA1=63a5290601ba93d89215ac6b12dbf27249931a60
-    #PATCH_COMMAND
-      #patch <SOURCE_DIR>/src/packedmatrix.h
-      #${CMAKE_CURRENT_LIST_DIR}/deps-utils/CryptoMiniSat-patch-ba6f76e3.patch
+    URL_HASH SHA256=288fd53d801909af797c72023361a75af3229d1806dbc87a0fcda18f5e03763b
     CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release
                # make sure not to register with cmake
                -DCMAKE_EXPORT_NO_PACKAGE_REGISTRY=ON
@@ -74,8 +70,6 @@ if(NOT CryptoMiniSat_FOUND_SYSTEM)
                -DONLY_SIMPLE=ON
                -DSTATICCOMPILE=ON
     BUILD_BYPRODUCTS <INSTALL_DIR>/${CMAKE_INSTALL_LIBDIR}/libcryptominisat5.a
-                     <INSTALL_DIR>/${CMAKE_INSTALL_LIBDIR}/libcryptominisat5${CMAKE_SHARED_LIBRARY_SUFFIX}
-                     <INSTALL_DIR>/${CMAKE_INSTALL_LIBDIR}/libcryptominisat5${CMAKE_SHARED_LIBRARY_SUFFIX}.${CryptoMiniSat_VERSION}
   )
   # remove unused stuff to keep folder small
   ExternalProject_Add_Step(
@@ -116,4 +110,8 @@ else()
       "Building CryptoMiniSat ${CryptoMiniSat_VERSION}: ${CryptoMiniSat_LIBRARIES}"
   )
   add_dependencies(CryptoMiniSat CryptoMiniSat-EP)
+  # Install static library only if it is a static build.
+  if(NOT BUILD_SHARED_LIBS)
+    install(FILES ${CryptoMiniSat_LIBRARIES} TYPE ${LIB_BUILD_TYPE})
+  endif()
 endif()

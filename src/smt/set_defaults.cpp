@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -20,21 +20,26 @@
 #include "base/output.h"
 #include "options/arith_options.h"
 #include "options/arrays_options.h"
+#include "options/bags_options.h"
 #include "options/base_options.h"
 #include "options/booleans_options.h"
 #include "options/bv_options.h"
 #include "options/datatypes_options.h"
 #include "options/decision_options.h"
+#include "options/ff_options.h"
+#include "options/fp_options.h"
 #include "options/language.h"
 #include "options/main_options.h"
 #include "options/counting_options.h"
 #include "options/option_exception.h"
 #include "options/parallel_options.h"
+#include "options/parser_options.h"
 #include "options/printer_options.h"
 #include "options/proof_options.h"
 #include "options/prop_options.h"
 #include "options/quantifiers_options.h"
 #include "options/sep_options.h"
+#include "options/sets_options.h"
 #include "options/smt_options.h"
 #include "options/strings_options.h"
 #include "options/theory_options.h"
@@ -46,6 +51,58 @@ using namespace cvc5::internal::theory;
 
 namespace cvc5::internal {
 namespace smt {
+
+/**
+ * Set domain.optName to value due to reason. Notify if value changes.
+ * Note this macro should be used if the value is concrete.
+ */
+#define SET_AND_NOTIFY(domain, optName, value, reason)                      \
+  if (opts.write_##domain().optName != value)                               \
+  {                                                                         \
+    notifyModifyOption(options::domain::longName::optName, #value, reason); \
+    opts.write_##domain().optName = value;                                  \
+  }
+/**
+ * Set domain.optName to value due to reason. Notify if value changes.
+ *
+ * Note this macro should be used if the value passed to the macro is not
+ * concrete (i.e., stored in a variable).
+ */
+#define SET_AND_NOTIFY_VAL_SYM(domain, optName, value, reason)    \
+  if (opts.write_##domain().optName != value)                     \
+  {                                                               \
+    std::stringstream sstmp;                                      \
+    sstmp << value;                                               \
+    notifyModifyOption(                                           \
+        options::domain::longName::optName, sstmp.str(), reason); \
+    opts.write_##domain().optName = value;                        \
+  }
+/**
+ * Set domain.optName to value due to reason if the option was not already set
+ * by the user. Notify if value changes.
+ * Note this macro should be used if the value is concrete.
+ */
+#define SET_AND_NOTIFY_IF_NOT_USER(domain, optName, value, reason)          \
+  if (!opts.write_##domain().optName##WasSetByUser                          \
+      && opts.write_##domain().optName != value)                            \
+  {                                                                         \
+    notifyModifyOption(options::domain::longName::optName, #value, reason); \
+    opts.write_##domain().optName = value;                                  \
+  }
+/**
+ * Set domain.optName to value due to reason if the option was not already set
+ * by the user. Notify if value changes.
+ */
+#define SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(domain, optName, value, reason) \
+  if (!opts.write_##domain().optName##WasSetByUser                         \
+      && opts.write_##domain().optName != value)                           \
+  {                                                                        \
+    std::stringstream sstmp;                                               \
+    sstmp << value;                                                        \
+    notifyModifyOption(                                                    \
+        options::domain::longName::optName, sstmp.str(), reason);          \
+    opts.write_##domain().optName = value;                                 \
+  }
 
 SetDefaults::SetDefaults(Env& env, bool isInternalSubsolver)
     : EnvObj(env), d_isInternalSubsolver(isInternalSubsolver)
@@ -64,10 +121,28 @@ void SetDefaults::setDefaults(LogicInfo& logic, Options& opts)
 
 void SetDefaults::setDefaultsPre(Options& opts)
 {
+  // safe options
+  if (options().base.safeOptions)
+  {
+    // all "experimental" theories that are enabled by default should be
+    // disabled here
+    SET_AND_NOTIFY_IF_NOT_USER(uf, hoExp, false, "safe options");
+    SET_AND_NOTIFY_IF_NOT_USER(uf, cardExp, false, "safe options");
+    SET_AND_NOTIFY_IF_NOT_USER(arith, arithExp, false, "safe options");
+    SET_AND_NOTIFY_IF_NOT_USER(sep, sepExp, false, "safe options");
+    SET_AND_NOTIFY_IF_NOT_USER(bags, bagsExp, false, "safe options");
+    SET_AND_NOTIFY_IF_NOT_USER(ff, ffExp, false, "safe options");
+    SET_AND_NOTIFY_IF_NOT_USER(
+        datatypes, codatatypesExp, false, "safe options");
+    // these are disabled by default but are listed here in case they are
+    // enabled by default later
+    SET_AND_NOTIFY_IF_NOT_USER(fp, fpExp, false, "safe options");
+    SET_AND_NOTIFY_IF_NOT_USER(sets, setsExp, false, "safe options");
+  }
   // implied options
   if (opts.smt.debugCheckModels)
   {
-    opts.writeSmt().checkModels = true;
+    SET_AND_NOTIFY(smt, checkModels, true, "debugCheckModels");
   }
   if (opts.counting.enumerateCount || opts.counting.smtapproxMC)
   {
@@ -84,68 +159,111 @@ void SetDefaults::setDefaultsPre(Options& opts)
   }
   if (opts.smt.checkModels || opts.driver.dumpModels)
   {
-    opts.writeSmt().produceModels = true;
+    SET_AND_NOTIFY(smt, produceModels, true, "check or dump models");
   }
   if (opts.smt.checkModels)
   {
-    opts.writeSmt().produceAssignments = true;
+    SET_AND_NOTIFY(smt, produceAssignments, true, "checkModels");
   }
   // unsat cores and proofs shenanigans
   if (opts.driver.dumpDifficulty)
   {
-    opts.writeSmt().produceDifficulty = true;
+    SET_AND_NOTIFY(smt, produceDifficulty, true, "dumpDifficulty");
   }
   if (opts.smt.checkUnsatCores || opts.driver.dumpUnsatCores
-      || opts.smt.unsatAssumptions || opts.smt.minimalUnsatCores
+      || opts.driver.dumpUnsatCoresLemmas || opts.smt.unsatAssumptions
+      || opts.smt.minimalUnsatCores
       || opts.smt.unsatCoresMode != options::UnsatCoresMode::OFF)
   {
-    opts.writeSmt().produceUnsatCores = true;
+    SET_AND_NOTIFY(
+        smt, produceUnsatCores, true, "option requiring unsat cores");
   }
   if (opts.smt.produceUnsatCores
       && opts.smt.unsatCoresMode == options::UnsatCoresMode::OFF)
   {
-    if (opts.smt.unsatCoresModeWasSetByUser)
-    {
-      notifyModifyOption(
-          "unsatCoresMode", "assumptions", "enabling unsat cores");
-    }
-    opts.writeSmt().unsatCoresMode = options::UnsatCoresMode::ASSUMPTIONS;
+    SET_AND_NOTIFY(smt,
+                   unsatCoresMode,
+                   options::UnsatCoresMode::ASSUMPTIONS,
+                   "enabling unsat cores");
   }
   if (opts.proof.checkProofSteps)
   {
-    notifyModifyOption("checkProofs", "true", "check-proof-steps");
-    opts.writeSmt().checkProofs = true;
-    if (!opts.proof.proofGranularityModeWasSetByUser)
-    {
-      // maximize the granularity
-      notifyModifyOption(
-          "proofGranularityMode", "dsl-rewrite", "check-proof-steps");
-      opts.writeProof().proofGranularityMode =
-          options::ProofGranularityMode::DSL_REWRITE;
-    }
+    SET_AND_NOTIFY(smt, checkProofs, true, "check-proof-steps");
+    // maximize the granularity
+    SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(
+        proof,
+        proofGranularityMode,
+        options::ProofGranularityMode::DSL_REWRITE,
+        "check-proof-steps");
   }
-  // if check-proofs, dump-proofs, or proof-mode=full, then proofs being fully
-  // enabled is implied
+  // if check-proofs, dump-proofs, dump-unsat-cores-lemmas, or proof-mode=full,
+  // then proofs being fully enabled is implied
   if (opts.smt.checkProofs || opts.driver.dumpProofs
-      || opts.smt.proofMode == options::ProofMode::FULL)
+      || opts.driver.dumpUnsatCoresLemmas
+      || opts.smt.proofMode == options::ProofMode::FULL
+      || opts.smt.proofMode == options::ProofMode::FULL_STRICT)
   {
-    opts.writeSmt().produceProofs = true;
+    SET_AND_NOTIFY(smt, produceProofs, true, "option requiring proofs");
   }
 
   // this check assumes the user has requested *full* proofs
   if (opts.smt.produceProofs)
   {
-    // if the user requested proofs, proof mode is full
-    opts.writeSmt().proofMode = options::ProofMode::FULL;
-    // unsat cores are available due to proofs being enabled
-    if (opts.smt.unsatCoresMode != options::UnsatCoresMode::SAT_PROOF)
+    // if the user requested proofs, proof mode is (at least) full
+    if (opts.smt.proofMode < options::ProofMode::FULL)
     {
-      if (opts.smt.unsatCoresModeWasSetByUser)
+      SET_AND_NOTIFY_IF_NOT_USER(
+          smt, proofMode, options::ProofMode::FULL, "enabling proofs");
+    }
+    // Default granularity is theory rewrite if we are intentionally using
+    // proofs, otherwise it is MACRO (e.g. if produce unsat cores is true)
+    if (!opts.proof.proofGranularityModeWasSetByUser
+        && opts.proof.proofGranularityMode
+               < options::ProofGranularityMode::THEORY_REWRITE)
+    {
+      SET_AND_NOTIFY(proof,
+                     proofGranularityMode,
+                     options::ProofGranularityMode::THEORY_REWRITE,
+                     "enabling proofs");
+    }
+    // unsat cores are available due to proofs being enabled, as long as
+    // SAT proofs are available
+    if (opts.smt.unsatCoresMode != options::UnsatCoresMode::SAT_PROOF
+        && opts.smt.proofMode != options::ProofMode::PP_ONLY)
+    {
+      SET_AND_NOTIFY(smt, produceUnsatCores, true, "enabling proofs");
+      if (options().prop.satSolver == options::SatSolverMode::MINISAT)
       {
-        notifyModifyOption("unsatCoresMode", "sat-proof", "enabling proofs");
+        // if full proofs are available in minisat, use them for unsat cores
+        SET_AND_NOTIFY(smt,
+                       unsatCoresMode,
+                       options::UnsatCoresMode::SAT_PROOF,
+                       "enabling proofs, minisat");
       }
-      opts.writeSmt().produceUnsatCores = true;
-      opts.writeSmt().unsatCoresMode = options::UnsatCoresMode::SAT_PROOF;
+      else if (options().prop.satSolver == options::SatSolverMode::CADICAL)
+      {
+        // unsat cores available by assumptions by default if proofs are enabled
+        // with CaDiCaL.
+        SET_AND_NOTIFY(smt,
+                       unsatCoresMode,
+                       options::UnsatCoresMode::ASSUMPTIONS,
+                       "enabling proofs, non-minisat");
+      }
+    }
+    // note that this test assumes that granularity modes are ordered and
+    // THEORY_REWRITE is gonna be, in the enum, after the lower granularity
+    // levels
+    if (opts.proof.proofFormatMode == options::ProofFormatMode::ALETHE)
+    {
+      if (opts.proof.proofGranularityMode
+          < options::ProofGranularityMode::THEORY_REWRITE)
+      {
+        SET_AND_NOTIFY_VAL_SYM(
+            proof,
+            proofGranularityMode,
+            options::ProofGranularityMode::THEORY_REWRITE,
+            "Alethe requires granularity at least theory-rewrite");
+      }
     }
   }
   if (!opts.smt.produceProofs)
@@ -154,32 +272,50 @@ void SetDefaults::setDefaultsPre(Options& opts)
     {
       // if (expert) user set proof mode to something other than off, enable
       // proofs
-      opts.writeSmt().produceProofs = true;
+      SET_AND_NOTIFY(smt, produceProofs, true, "proof mode");
     }
     // if proofs weren't enabled by user, and we are producing difficulty
     if (opts.smt.produceDifficulty)
     {
-      opts.writeSmt().produceProofs = true;
+      SET_AND_NOTIFY(smt, produceProofs, true, "produce difficulty");
       // ensure at least preprocessing proofs are enabled
       if (opts.smt.proofMode == options::ProofMode::OFF)
       {
-        opts.writeSmt().proofMode = options::ProofMode::PP_ONLY;
+        SET_AND_NOTIFY_VAL_SYM(
+            smt, proofMode, options::ProofMode::PP_ONLY, "produce difficulty");
       }
     }
     // if proofs weren't enabled by user, and we are producing unsat cores
     if (opts.smt.produceUnsatCores)
     {
-      opts.writeSmt().produceProofs = true;
+      SET_AND_NOTIFY(smt, produceProofs, true, "unsat cores");
       if (opts.smt.unsatCoresMode == options::UnsatCoresMode::SAT_PROOF)
       {
         // if requested to be based on proofs, we produce (preprocessing +) SAT
         // proofs
-        opts.writeSmt().proofMode = options::ProofMode::SAT;
+        SET_AND_NOTIFY_VAL_SYM(
+            smt, proofMode, options::ProofMode::SAT, "unsat cores SAT proof");
       }
       else if (opts.smt.proofMode == options::ProofMode::OFF)
       {
         // otherwise, we always produce preprocessing proofs
-        opts.writeSmt().proofMode = options::ProofMode::PP_ONLY;
+        SET_AND_NOTIFY_VAL_SYM(
+            smt, proofMode, options::ProofMode::PP_ONLY, "unsat cores");
+      }
+    }
+  }
+  if (opts.smt.produceProofs)
+  {
+    // determine the prop proof mode, based on which SAT solver we are using
+    if (!opts.proof.propProofModeWasSetByUser)
+    {
+      if (opts.prop.satSolver == options::SatSolverMode::CADICAL)
+      {
+        // use SAT_EXTERNAL_PROVE for cadical by default
+        SET_AND_NOTIFY(proof,
+                       propProofMode,
+                       options::PropProofMode::SAT_EXTERNAL_PROVE,
+                       "cadical");
       }
     }
   }
@@ -191,7 +327,7 @@ void SetDefaults::setDefaultsPre(Options& opts)
   Assert(opts.smt.produceProofs
          == (opts.smt.proofMode != options::ProofMode::OFF));
 
-  // if we requiring disabling proofs, disable them now
+  // if we require disabling options due to proofs, disable them now
   if (opts.smt.produceProofs)
   {
     std::stringstream reasonNoProofs;
@@ -206,10 +342,15 @@ void SetDefaults::setDefaultsPre(Options& opts)
   {
     // these options must be disabled on internal subsolvers, as they are
     // used by the user to rephrase the input.
-    opts.writeQuantifiers().sygusInference = false;
-    opts.writeQuantifiers().sygusRewSynthInput = false;
+    SET_AND_NOTIFY_VAL_SYM(quantifiers,
+                           sygusInference,
+                           options::SygusInferenceMode::OFF,
+                           "internal subsolver");
     // deep restart does not work with internal subsolvers?
-    opts.writeSmt().deepRestartMode = options::DeepRestartMode::NONE;
+    SET_AND_NOTIFY_VAL_SYM(smt,
+                           deepRestartMode,
+                           options::DeepRestartMode::NONE,
+                           "internal subsolver");
   }
 }
 
@@ -217,7 +358,7 @@ void SetDefaults::finalizeLogic(LogicInfo& logic, Options& opts) const
 {
   if (opts.quantifiers.sygusInstWasSetByUser)
   {
-    if (isSygus(opts))
+    if (opts.quantifiers.sygusInst && isSygus(opts))
     {
       throw OptionException(std::string(
           "SyGuS instantiation quantifiers module cannot be enabled "
@@ -230,7 +371,7 @@ void SetDefaults::finalizeLogic(LogicInfo& logic, Options& opts) const
                    && logic.areIntegersUsed()))
            && !opts.base.incrementalSolving)
   {
-    opts.writeQuantifiers().sygusInst = true;
+    SET_AND_NOTIFY(quantifiers, sygusInst, true, "logic");
   }
 
   if (opts.bv.bitblastMode == options::BitblastMode::EAGER)
@@ -242,18 +383,20 @@ void SetDefaults::finalizeLogic(LogicInfo& logic, Options& opts) const
       if (opts.bv.bitblastModeWasSetByUser
           || opts.smt.produceModelsWasSetByUser)
       {
-        throw OptionException(std::string(
-            "Eager bit-blasting currently does not support model generation "
-            "for the combination of bit-vectors with arrays or uinterpreted "
-            "functions. Try --bitblast=lazy"));
+        std::stringstream ss;
+        ss << "Eager bit-blasting currently does not support model generation ";
+        ss << "for the combination of bit-vectors with arrays or uinterpreted ";
+        ss << "functions. Try --" << options::bv::longName::bitblastMode << "="
+           << options::BitblastMode::LAZY << ".";
+        throw OptionException(ss.str());
       }
-      notifyModifyOption("bitblastMode", "lazy", "model generation");
-      opts.writeBv().bitblastMode = options::BitblastMode::LAZY;
+      SET_AND_NOTIFY(
+          bv, bitblastMode, options::BitblastMode::LAZY, "model generation");
     }
     else if (!opts.base.incrementalSolving)
     {
       // if not incremental, we rely on ackermann to eliminate other theories.
-      opts.writeSmt().ackermann = true;
+      SET_AND_NOTIFY(smt, ackermann, true, "bit-blast eager");
     }
     else if (logic.isQuantified() || !logic.isPure(THEORY_BV))
     {
@@ -279,13 +422,15 @@ void SetDefaults::finalizeLogic(LogicInfo& logic, Options& opts) const
   {
     if (opts.bv.boolToBitvector != options::BoolToBVMode::OFF)
     {
-      throw OptionException(
-          "solving bitvectors as integers is incompatible with --bool-to-bv.");
+      std::stringstream ss;
+      ss << "solving bitvectors as integers is incompatible with --"
+         << options::bv::longName::boolToBitvector << ".";
+      throw OptionException(ss.str());
     }
     if (logic.isTheoryEnabled(THEORY_BV))
     {
       logic = logic.getUnlockedCopy();
-      logic.enableTheory(THEORY_ARITH);
+      logic.enableIntegers();
       logic.arithNonLinear();
       logic.lock();
     }
@@ -301,8 +446,7 @@ void SetDefaults::finalizeLogic(LogicInfo& logic, Options& opts) const
       throw OptionException(std::string(
           "Ackermannization currently does not support model generation."));
     }
-    notifyModifyOption("ackermann", "false", "model generation");
-    opts.writeSmt().ackermann = false;
+    SET_AND_NOTIFY(smt, ackermann, false, "model generation");
     // we are not relying on ackermann to eliminate theories in this case
     Assert(opts.bv.bitblastMode != options::BitblastMode::EAGER);
   }
@@ -325,8 +469,7 @@ void SetDefaults::finalizeLogic(LogicInfo& logic, Options& opts) const
   if (logic.isTheoryEnabled(THEORY_STRINGS)
       && !options().strings.stringExpWasSetByUser)
   {
-    opts.writeStrings().stringExp = true;
-    Trace("smt") << "Turning stringExp on since strings are enabled\n";
+    SET_AND_NOTIFY(strings, stringExp, true, "logic including strings");
   }
   // If strings-exp is enabled, we require quantifiers. We also enable them
   // if we are using eager string preprocessing or aggressive regular expression
@@ -399,11 +542,7 @@ void SetDefaults::finalizeLogic(LogicInfo& logic, Options& opts) const
 
 void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
 {
-  if (!opts.smt.produceAssertions)
-  {
-    verbose(1) << "SolverEngine: turning on produce-assertions." << std::endl;
-    opts.writeSmt().produceAssertions = true;
-  }
+  SET_AND_NOTIFY(smt, produceAssertions, true, "always enabled");
 
   if (opts.smt.solveBVAsInt != options::SolveBVAsIntMode::OFF)
   {
@@ -413,7 +552,7 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
      * Therefore, we enable bv-to-bool, which runs before
      * the translation to integers.
      */
-    opts.writeBv().bitvectorToBool = true;
+    SET_AND_NOTIFY(bv, bitvectorToBool, true, "solve-bv-as-int");
   }
 
   // Disable options incompatible with incremental solving, or output an error
@@ -458,24 +597,30 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
                      && logic.isTheoryEnabled(THEORY_ARRAYS)
                      && logic.isTheoryEnabled(THEORY_BV)
                      && !logic.isTheoryEnabled(THEORY_ARITH);
-      Trace("smt") << "setting unconstrained simplification to " << uncSimp
-                   << std::endl;
-      opts.writeSmt().unconstrainedSimp = uncSimp;
+      SET_AND_NOTIFY_VAL_SYM(
+          smt, unconstrainedSimp, uncSimp, "logic and options");
     }
 
     // by default, nonclausal simplification is off for QF_SAT
     if (!opts.smt.simplificationModeWasSetByUser)
     {
       bool qf_sat = logic.isPure(THEORY_BOOL) && !logic.isQuantified();
-      Trace("smt") << "setting simplification mode to <"
-                   << logic.getLogicString() << "> " << (!qf_sat) << std::endl;
       // simplification=none works better for SMT LIB benchmarks with
-      // quantifiers, not others opts.set(options::simplificationMode, qf_sat ||
-      // quantifiers ? options::SimplificationMode::NONE :
-      // options::SimplificationMode::BATCH);
-      opts.writeSmt().simplificationMode =
-          qf_sat ? options::SimplificationMode::NONE
-                 : options::SimplificationMode::BATCH;
+      // quantifiers, not others
+      if (qf_sat)
+      {
+        SET_AND_NOTIFY_VAL_SYM(smt,
+                               simplificationMode,
+                               options::SimplificationMode::NONE,
+                               "logic");
+      }
+      else
+      {
+        SET_AND_NOTIFY_VAL_SYM(smt,
+                               simplificationMode,
+                               options::SimplificationMode::BATCH,
+                               "logic");
+      }
     }
   }
 
@@ -486,22 +631,18 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
       if (opts.bv.boolToBitvectorWasSetByUser)
       {
         throw OptionException(
-            "bool-to-bv != off not supported with CBQI BV for quantified "
+            "bool-to-bv != off not supported with CEGQI BV for quantified "
             "logics");
       }
-      verbose(1)
-          << "SolverEngine: turning off bool-to-bitvector to support CBQI BV"
-          << std::endl;
-      opts.writeBv().boolToBitvector = options::BoolToBVMode::OFF;
+      SET_AND_NOTIFY_VAL_SYM(
+          bv, boolToBitvector, options::BoolToBVMode::OFF, "cegqiBv");
     }
   }
 
   // cases where we need produce models
-  if (!opts.smt.produceModels
-      && (opts.smt.produceAssignments || usesSygus(opts)))
+  if (opts.smt.produceAssignments || usesSygus(opts))
   {
-    verbose(1) << "SolverEngine: turning on produce-models" << std::endl;
-    opts.writeSmt().produceModels = true;
+    SET_AND_NOTIFY(smt, produceModels, true, "produce assignments or sygus");
   }
 
   // --ite-simp is an experimental option designed for QF_LIA/nec. This
@@ -510,10 +651,7 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
   // this by default.
   if (opts.smt.doITESimp)
   {
-    if (!opts.smt.earlyIteRemovalWasSetByUser)
-    {
-      opts.writeSmt().earlyIteRemoval = true;
-    }
+    SET_AND_NOTIFY_IF_NOT_USER(smt, earlyIteRemoval, true, "doITESimp");
   }
 
   // Set the options for the theoryOf
@@ -526,21 +664,27 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
         && !(logic.isTheoryEnabled(THEORY_ARITH) && !logic.isLinear()
              && !logic.isQuantified()))
     {
-      Trace("smt") << "setting theoryof-mode to term-based" << std::endl;
-      opts.writeTheory().theoryOfMode =
-          options::TheoryOfMode::THEORY_OF_TERM_BASED;
+      SET_AND_NOTIFY_VAL_SYM(theory,
+                             theoryOfMode,
+                             options::TheoryOfMode::THEORY_OF_TERM_BASED,
+                             "logic");
     }
   }
 
   // by default, symmetry breaker is on only for non-incremental QF_UF
   if (!opts.uf.ufSymmetryBreakerWasSetByUser)
   {
+    // Only applies to non-incremental QF_UF.
     bool qf_uf_noinc = logic.isPure(THEORY_UF) && !logic.isQuantified()
-                       && !opts.base.incrementalSolving
-                       && !safeUnsatCores(opts);
-    Trace("smt") << "setting uf symmetry breaker to " << qf_uf_noinc
-                 << std::endl;
-    opts.writeUf().ufSymmetryBreaker = qf_uf_noinc;
+                       && !opts.base.incrementalSolving;
+    // We disable this technique when using unsat core production, since it
+    // uses a non-standard implementation that sends (unsound) lemmas during
+    // presolve.
+    // We also disable it by default if safe unsat cores are enabled, or if
+    // the proof mode is FULL_STRICT.
+    bool val = qf_uf_noinc && !safeUnsatCores(opts)
+               && opts.smt.proofMode != options::ProofMode::FULL_STRICT;
+    SET_AND_NOTIFY_VAL_SYM(uf, ufSymmetryBreaker, val, "logic and options");
   }
 
   // If in arrays, set the UF handler to arrays
@@ -561,22 +705,16 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
     bool qf_aufbv =
         !logic.isQuantified() && logic.isTheoryEnabled(THEORY_ARRAYS)
         && logic.isTheoryEnabled(THEORY_UF) && logic.isTheoryEnabled(THEORY_BV);
-
-    bool withCare = qf_aufbv;
-    Trace("smt") << "setting ite simplify with care to " << withCare
-                 << std::endl;
-    opts.writeSmt().simplifyWithCareEnabled = withCare;
+    SET_AND_NOTIFY_VAL_SYM(smt, simplifyWithCareEnabled, qf_aufbv, "logic");
   }
   // Turn off array eager index splitting for QF_AUFLIA
   if (!opts.arrays.arraysEagerIndexSplittingWasSetByUser)
   {
-    if (not logic.isQuantified() && logic.isTheoryEnabled(THEORY_ARRAYS)
+    if (!logic.isQuantified() && logic.isTheoryEnabled(THEORY_ARRAYS)
         && logic.isTheoryEnabled(THEORY_UF)
         && logic.isTheoryEnabled(THEORY_ARITH))
     {
-      Trace("smt") << "setting array eager index splitting to false"
-                   << std::endl;
-      opts.writeArrays().arraysEagerIndexSplitting = false;
+      SET_AND_NOTIFY(arrays, arraysEagerIndexSplitting, false, "logic");
     }
   }
   // Turn on multiple-pass non-clausal simplification for QF_AUFBV
@@ -587,15 +725,13 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
                           && logic.isTheoryEnabled(THEORY_UF)
                           && logic.isTheoryEnabled(THEORY_BV))
                       && !safeUnsatCores(opts);
-    Trace("smt") << "setting repeat simplification to " << repeatSimp
-                 << std::endl;
-    opts.writeSmt().repeatSimp = repeatSimp;
+    SET_AND_NOTIFY_VAL_SYM(smt, repeatSimp, repeatSimp, "logic");
   }
 
   /* Disable bit-level propagation by default for the BITBLAST solver. */
   if (opts.bv.bvSolver == options::BVSolver::BITBLAST)
   {
-    opts.writeBv().bitvectorPropagate = false;
+    SET_AND_NOTIFY(bv, bitvectorPropagate, false, "bitblast solver");
   }
 
   if (opts.bv.boolToBitvector == options::BoolToBVMode::ALL
@@ -606,9 +742,8 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
       throw OptionException(
           "bool-to-bv=all not supported for non-bitvector logics.");
     }
-    verbose(1) << "SolverEngine: turning off bool-to-bv for non-bv logic: "
-               << logic.getLogicString() << std::endl;
-    opts.writeBv().boolToBitvector = options::BoolToBVMode::OFF;
+    SET_AND_NOTIFY_VAL_SYM(
+        bv, boolToBitvector, options::BoolToBVMode::OFF, "non-BV logic");
   }
 
   // Turn on arith rewrite equalities only for pure arithmetic
@@ -616,9 +751,7 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
   {
     bool arithRewriteEq =
         logic.isPure(THEORY_ARITH) && logic.isLinear() && !logic.isQuantified();
-    Trace("smt") << "setting arith rewrite equalities " << arithRewriteEq
-                 << std::endl;
-    opts.writeArith().arithRewriteEq = arithRewriteEq;
+    SET_AND_NOTIFY_VAL_SYM(arith, arithRewriteEq, arithRewriteEq, "logic");
   }
   if (!opts.arith.arithHeuristicPivotsWasSetByUser)
   {
@@ -634,9 +767,8 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
         heuristicPivots = 0;
       }
     }
-    Trace("smt") << "setting arithHeuristicPivots  " << heuristicPivots
-                 << std::endl;
-    opts.writeArith().arithHeuristicPivots = heuristicPivots;
+    SET_AND_NOTIFY_VAL_SYM(
+        arith, arithHeuristicPivots, heuristicPivots, "logic");
   }
   if (!opts.arith.arithPivotThresholdWasSetByUser)
   {
@@ -648,9 +780,7 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
         pivotThreshold = 16;
       }
     }
-    Trace("smt") << "setting arith arithPivotThreshold  " << pivotThreshold
-                 << std::endl;
-    opts.writeArith().arithPivotThreshold = pivotThreshold;
+    SET_AND_NOTIFY_VAL_SYM(arith, arithPivotThreshold, pivotThreshold, "logic");
   }
   if (!opts.arith.arithStandardCheckVarOrderPivotsWasSetByUser)
   {
@@ -659,24 +789,21 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
     {
       varOrderPivots = 200;
     }
-    Trace("smt") << "setting arithStandardCheckVarOrderPivots  "
-                 << varOrderPivots << std::endl;
-    opts.writeArith().arithStandardCheckVarOrderPivots = varOrderPivots;
+    SET_AND_NOTIFY_VAL_SYM(
+        arith, arithStandardCheckVarOrderPivots, varOrderPivots, "logic");
   }
   if (logic.isPure(THEORY_ARITH) && !logic.areRealsUsed())
   {
-    if (!opts.arith.nlExtTangentPlanesInterleaveWasSetByUser)
-    {
-      Trace("smt") << "setting nlExtTangentPlanesInterleave to true"
-                   << std::endl;
-      opts.writeArith().nlExtTangentPlanesInterleave = true;
-    }
+    SET_AND_NOTIFY(
+        arith, nlExtTangentPlanesInterleave, true, "pure integer logic");
   }
   if (!opts.arith.nlRlvAssertBoundsWasSetByUser)
   {
+    bool val = !logic.isQuantified();
     // use bound inference to determine when bounds are irrelevant only when
     // the logic is quantifier-free
-    opts.writeArith().nlRlvAssertBounds = !logic.isQuantified();
+    SET_AND_NOTIFY_VAL_SYM(
+        arith, nlRlvAssertBounds, val, "non-quantified logic");
   }
 
   // set the default decision mode
@@ -685,20 +812,14 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
   // set up of central equality engine
   if (opts.theory.eeMode == options::EqEngineMode::CENTRAL)
   {
-    if (!opts.arith.arithEqSolverWasSetByUser)
-    {
-      // use the arithmetic equality solver by default
-      opts.writeArith().arithEqSolver = true;
-    }
+    // use the arithmetic equality solver by default
+    SET_AND_NOTIFY_IF_NOT_USER(
+        arith, arithEqSolver, true, "central equality engine");
   }
 
   if (logic.isHigherOrder())
   {
-    if (!opts.theory.assignFunctionValues)
-    {
-      // must assign function values
-      opts.writeTheory().assignFunctionValues = true;
-    }
+    SET_AND_NOTIFY(theory, assignFunctionValues, true, "higher-order logic");
   }
 
   // set all defaults in the quantifiers theory, which includes sygus
@@ -706,19 +827,13 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
 
   // shared selectors are generally not good to combine with standard
   // quantifier techniques e.g. E-matching
-  if (!opts.datatypes.dtSharedSelectorsWasSetByUser)
+  if (logic.isQuantified() && !usesSygus(opts))
   {
-    if (logic.isQuantified() && !usesSygus(opts))
-    {
-      Trace("smt")
-          << "Disabling shared selectors for quantified logic without SyGuS"
-          << std::endl;
-      opts.writeDatatypes().dtSharedSelectors = false;
-    }
+    SET_AND_NOTIFY_IF_NOT_USER(
+        datatypes, dtSharedSelectors, false, "quantified logic without SyGuS");
   }
 
-  if (!opts.prop.minisatSimpModeWasSetByUser
-      && opts.prop.minisatSimpMode == options::MinisatSimpMode::ALL)
+  if (opts.prop.minisatSimpMode == options::MinisatSimpMode::ALL)
   {
     // cannot use minisat variable elimination for logics where a theory solver
     // introduces new literals into the search, or for parametric theories
@@ -733,40 +848,32 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
         || opts.smt.checkModels
         || (logic.isTheoryEnabled(THEORY_ARITH) && !logic.isLinear()))
     {
-      opts.writeProp().minisatSimpMode = options::MinisatSimpMode::CLAUSE_ELIM;
+      SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(prop,
+                                         minisatSimpMode,
+                                         options::MinisatSimpMode::CLAUSE_ELIM,
+                                         "non-basic logic");
     }
   }
 
   if (logic.isTheoryEnabled(THEORY_ARITH) && !logic.isLinear()
       && opts.arith.nlRlvMode != options::NlRlvMode::NONE)
   {
-    if (!opts.theory.relevanceFilter)
-    {
-      if (opts.theory.relevanceFilterWasSetByUser)
-      {
-        Trace("smt") << "SolverEngine: turning on relevance filtering to support "
-                     "--nl-ext-rlv="
-                  << opts.arith.nlRlvMode << std::endl;
-      }
-      // must use relevance filtering techniques
-      opts.writeTheory().relevanceFilter = true;
-    }
+    SET_AND_NOTIFY(theory, relevanceFilter, true, "nl relevance mode");
   }
 
   // For now, these array theory optimizations do not support model-building
   if (opts.smt.produceModels || opts.smt.produceAssignments
       || opts.smt.checkModels)
   {
-    opts.writeArrays().arraysOptimizeLinear = false;
+    SET_AND_NOTIFY(arrays, arraysOptimizeLinear, false, "models");
   }
 
-  if (opts.strings.stringFMF && !opts.strings.stringProcessLoopModeWasSetByUser)
+  if (opts.strings.stringFMF)
   {
-    Trace("smt") << "settting stringProcessLoopMode to 'simple' since "
-                    "--strings-fmf enabled"
-                 << std::endl;
-    opts.writeStrings().stringProcessLoopMode =
-        options::ProcessLoopMode::SIMPLE;
+    SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(strings,
+                                       stringProcessLoopMode,
+                                       options::ProcessLoopMode::SIMPLE,
+                                       "strings-fmf");
   }
 
   // !!! All options that require disabling models go here
@@ -782,9 +889,7 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
         ss << "Cannot use " << sOptNoModel << " with model generation.";
         throw OptionException(ss.str());
       }
-      verbose(1) << "SolverEngine: turning off produce-models to support "
-                 << sOptNoModel << std::endl;
-      opts.writeSmt().produceModels = false;
+      SET_AND_NOTIFY(smt, produceModels, false, sOptNoModel);
     }
     if (opts.smt.produceAssignments)
     {
@@ -795,9 +900,7 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
            << " with model generation (produce-assignments).";
         throw OptionException(ss.str());
       }
-      verbose(1) << "SolverEngine: turning off produce-assignments to support "
-                 << sOptNoModel << std::endl;
-      opts.writeSmt().produceAssignments = false;
+      SET_AND_NOTIFY(smt, produceAssignments, false, sOptNoModel);
     }
     if (opts.smt.checkModels)
     {
@@ -808,9 +911,7 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
            << " with model generation (check-models).";
         throw OptionException(ss.str());
       }
-      verbose(1) << "SolverEngine: turning off check-models to support "
-                 << sOptNoModel << std::endl;
-      opts.writeSmt().checkModels = false;
+      SET_AND_NOTIFY(smt, checkModels, false, sOptNoModel);
     }
   }
 
@@ -819,10 +920,7 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
   {
     throw OptionException(
         "Eager bit-blasting does not currently support theory combination with "
-        "any theory other than UF. "
-        "Note that in a QF_BV problem UF symbols can be introduced for "
-        "division. "
-        "Try --bv-div-zero-const to interpret division by zero as a constant.");
+        "any theory other than UF. ");
   }
 
 #ifdef CVC5_USE_POLY
@@ -830,15 +928,9 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
   {
     if (!opts.arith.nlCov && !opts.arith.nlCovWasSetByUser)
     {
-      opts.writeArith().nlCov = true;
-      if (!opts.arith.nlExtWasSetByUser)
-      {
-        opts.writeArith().nlExt = options::NlExtMode::LIGHT;
-      }
-      if (!opts.arith.nlRlvModeWasSetByUser)
-      {
-        opts.writeArith().nlRlvMode = options::NlRlvMode::INTERLEAVE;
-      }
+      SET_AND_NOTIFY(arith, nlCov, true, "QF_UFNRA");
+      SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(
+          arith, nlExt, options::NlExtMode::LIGHT, "QF_UFNRA");
     }
   }
   else if (logic.isQuantified() && logic.isTheoryEnabled(theory::THEORY_ARITH)
@@ -847,11 +939,9 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
   {
     if (!opts.arith.nlCov && !opts.arith.nlCovWasSetByUser)
     {
-      opts.writeArith().nlCov = true;
-      if (!opts.arith.nlExtWasSetByUser)
-      {
-        opts.writeArith().nlExt = options::NlExtMode::LIGHT;
-      }
+      SET_AND_NOTIFY(arith, nlCov, true, "logic with reals");
+      SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(
+          arith, nlExt, options::NlExtMode::LIGHT, "logic with reals");
     }
   }
 #else
@@ -859,24 +949,23 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
   {
     if (opts.arith.nlCovWasSetByUser)
     {
-      throw OptionException(
-          "Cannot use --nl-cov without configuring with --poly.");
+      std::stringstream ss;
+      ss << "Cannot use --" << options::arith::longName::nlCov
+         << " without configuring with --poly.";
+      throw OptionException(ss.str());
     }
     else
     {
-      verbose(1) << "Cannot use --nl-cov without configuring with --poly."
-                 << std::endl;
-      opts.writeArith().nlCov = false;
-      opts.writeArith().nlExt = options::NlExtMode::FULL;
+      SET_AND_NOTIFY(arith, nlCov, false, "no support for libpoly");
+      SET_AND_NOTIFY_VAL_SYM(
+          arith, nlExt, options::NlExtMode::FULL, "no support for libpoly");
     }
   }
 #endif
   if (logic.isTheoryEnabled(theory::THEORY_ARITH) && logic.areTranscendentalsUsed())
   {
-      if (!opts.arith.nlExtWasSetByUser)
-      {
-        opts.writeArith().nlExt = options::NlExtMode::FULL;
-      }
+    SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(
+        arith, nlExt, options::NlExtMode::FULL, "logic with transcendentals");
   }
 }
 
@@ -889,7 +978,7 @@ bool SetDefaults::isSygus(const Options& opts) const
   if (!d_isInternalSubsolver)
   {
     if (opts.smt.produceAbducts || opts.smt.produceInterpolants
-        || opts.quantifiers.sygusInference)
+        || opts.quantifiers.sygusInference != options::SygusInferenceMode::OFF)
     {
       // since we are trying to recast as sygus, we assume the input is sygus
       return true;
@@ -936,6 +1025,12 @@ bool SetDefaults::usesInputConversion(const Options& opts,
 bool SetDefaults::incompatibleWithProofs(Options& opts,
                                          std::ostream& reason) const
 {
+  if (opts.parser.freshBinders)
+  {
+    // When fresh-binders is true, we do not support proof output.
+    reason << "fresh-binders";
+    return true;
+  }
   if (opts.quantifiers.globalNegate)
   {
     // When global negate answers "unsat", it is not due to showing a set of
@@ -943,6 +1038,8 @@ bool SetDefaults::incompatibleWithProofs(Options& opts,
     reason << "global-negate";
     return true;
   }
+  bool isFullPf = (opts.smt.proofMode == options::ProofMode::FULL
+                   || opts.smt.proofMode == options::ProofMode::FULL_STRICT);
   if (isSygus(opts))
   {
     // we don't support proofs with SyGuS. One issue is that SyGuS evaluation
@@ -950,7 +1047,7 @@ bool SetDefaults::incompatibleWithProofs(Options& opts,
     // proofs for sygus (sub)solvers is irrelevant, since they are not given
     // check-sat queries. Note however that we allow proofs in non-full modes
     // (e.g. unsat cores).
-    if (opts.smt.proofMode == options::ProofMode::FULL)
+    if (isFullPf)
     {
       reason << "sygus";
       return true;
@@ -959,31 +1056,45 @@ bool SetDefaults::incompatibleWithProofs(Options& opts,
   // options that are automatically set to support proofs
   if (opts.bv.bvAssertInput)
   {
-    verbose(1)
-        << "Disabling bv-assert-input since it is incompatible with proofs."
-        << std::endl;
-    opts.writeBv().bvAssertInput = false;
+    SET_AND_NOTIFY_VAL_SYM(bv, bvAssertInput, false, "proofs");
   }
   // If proofs are required and the user did not specify a specific BV solver,
   // we make sure to use the proof producing BITBLAST_INTERNAL solver.
-  if (opts.smt.proofMode == options::ProofMode::FULL
-      && opts.bv.bvSolver != options::BVSolver::BITBLAST_INTERNAL
-      && !opts.bv.bvSolverWasSetByUser)
+  if (isFullPf)
   {
-    verbose(1) << "Forcing internal bit-vector solver due to proof production."
-               << std::endl;
-    opts.writeBv().bvSolver = options::BVSolver::BITBLAST_INTERNAL;
+    SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(
+        bv, bvSolver, options::BVSolver::BITBLAST_INTERNAL, "proofs");
   }
-  if (opts.arith.nlCovVarElim && !opts.arith.nlCovVarElimWasSetByUser)
-  {
-    verbose(1)
-        << "Disabling nl-cov-var-elim since it is incompatible with proofs."
-        << std::endl;
-    opts.writeArith().nlCovVarElim = false;
-  }
+  SET_AND_NOTIFY_IF_NOT_USER(arith, nlCovVarElim, false, "proofs");
   if (opts.smt.deepRestartMode != options::DeepRestartMode::NONE)
   {
     reason << "deep restarts";
+    return true;
+  }
+  // specific to SAT solver
+  if (opts.prop.satSolver == options::SatSolverMode::CADICAL)
+  {
+    if (opts.proof.propProofMode == options::PropProofMode::PROOF)
+    {
+      reason << "(resolution) proofs in CaDiCaL";
+      return true;
+    }
+    if (opts.smt.proofMode!=options::ProofMode::PP_ONLY)
+    {
+      reason << "CaDiCaL";
+      return true;
+    }
+  }
+  else if (opts.prop.satSolver == options::SatSolverMode::MINISAT)
+  {
+    // TODO (wishue #154): throw logic exception for modes e.g. DRAT or LRAT
+    // not supported by Minisat.
+  }
+  if (options().theory.lemmaInprocess != options::LemmaInprocessMode::NONE)
+  {
+    // lemma inprocessing introduces depencencies from learned unit literals
+    // that are not tracked.
+    reason << "lemma inprocessing";
     return true;
   }
   return false;
@@ -1042,25 +1153,27 @@ bool SetDefaults::incompatibleWithIncremental(const LogicInfo& logic,
       reason << "unconstrained simplification";
       return true;
     }
-    notifyModifyOption("unconstrainedSimp", "false", "incremental solving");
-    opts.writeSmt().unconstrainedSimp = false;
+    SET_AND_NOTIFY(smt, unconstrainedSimp, false, "incremental solving");
   }
   if (opts.bv.bitblastMode == options::BitblastMode::EAGER
       && !logic.isPure(THEORY_BV))
   {
     reason << "eager bit-blasting in non-QF_BV logic";
-    suggest << "Try --bitblast=lazy.";
+    suggest << "Try --" << options::bv::longName::bitblastMode << "="
+            << options::BitblastMode::LAZY << ".";
     return true;
   }
-  if (opts.quantifiers.sygusInference)
+  if (opts.quantifiers.sygusInference != options::SygusInferenceMode::OFF)
   {
     if (opts.quantifiers.sygusInferenceWasSetByUser)
     {
       reason << "sygus inference";
       return true;
     }
-    notifyModifyOption("sygusInference", "false", "incremental solving");
-    opts.writeQuantifiers().sygusInference = false;
+    SET_AND_NOTIFY_VAL_SYM(quantifiers,
+                           sygusInference,
+                           options::SygusInferenceMode::OFF,
+                           "incremental solving");
   }
   if (opts.quantifiers.sygusInst)
   {
@@ -1069,8 +1182,7 @@ bool SetDefaults::incompatibleWithIncremental(const LogicInfo& logic,
       reason << "sygus inst";
       return true;
     }
-    notifyModifyOption("sygusInst", "false", "incremental solving");
-    opts.writeQuantifiers().sygusInst = false;
+    SET_AND_NOTIFY(quantifiers, sygusInst, false, "incremental solving");
   }
   if (opts.smt.solveIntAsBV > 0)
   {
@@ -1089,14 +1201,11 @@ bool SetDefaults::incompatibleWithIncremental(const LogicInfo& logic,
   }
 
   // disable modes not supported by incremental
-  notifyModifyOption("sortInference", "false", "incremental solving");
-  opts.writeSmt().sortInference = false;
-  opts.writeUf().ufssFairnessMonotone = false;
-  notifyModifyOption("globalNegate", "false", "incremental solving");
-  opts.writeQuantifiers().globalNegate = false;
-  notifyModifyOption("cegqiNestedQE", "false", "incremental solving");
-  opts.writeQuantifiers().cegqiNestedQE = false;
-  opts.writeArith().arithMLTrick = false;
+  SET_AND_NOTIFY(smt, sortInference, false, "incremental solving");
+  SET_AND_NOTIFY(uf, ufssFairnessMonotone, false, "incremental solving");
+  SET_AND_NOTIFY(quantifiers, globalNegate, false, "incremental solving");
+  SET_AND_NOTIFY(quantifiers, cegqiNestedQE, false, "incremental solving");
+  SET_AND_NOTIFY(arith, arithMLTrick, false, "incremental solving");
   return false;
 }
 
@@ -1116,10 +1225,8 @@ bool SetDefaults::incompatibleWithUnsatCores(Options& opts,
       reason << "deep restarts";
       return true;
     }
-    verbose(1) << "SolverEngine: turning off deep restart to support unsat "
-                  "cores"
-               << std::endl;
-    opts.writeSmt().deepRestartMode = options::DeepRestartMode::NONE;
+    SET_AND_NOTIFY_VAL_SYM(
+        smt, deepRestartMode, options::DeepRestartMode::NONE, "unsat cores");
   }
   if (opts.smt.learnedRewrite)
   {
@@ -1128,8 +1235,7 @@ bool SetDefaults::incompatibleWithUnsatCores(Options& opts,
       reason << "learned rewrites";
       return true;
     }
-    notifyModifyOption("learnedRewrite", "false", "unsat cores");
-    opts.writeSmt().learnedRewrite = false;
+    SET_AND_NOTIFY(smt, learnedRewrite, false, "unsat cores");
   }
   // most static learning techniques are local, although arithmetic static
   // learning is not.
@@ -1140,8 +1246,7 @@ bool SetDefaults::incompatibleWithUnsatCores(Options& opts,
       reason << "arith static learning";
       return true;
     }
-    notifyModifyOption("arithStaticLearning", "false", "proofs");
-    opts.writeArith().arithStaticLearning = false;
+    SET_AND_NOTIFY(arith, arithStaticLearning, false, "unsat cores");
   }
 
   if (opts.arith.pbRewrites)
@@ -1151,8 +1256,7 @@ bool SetDefaults::incompatibleWithUnsatCores(Options& opts,
       reason << "pseudoboolean rewrites";
       return true;
     }
-    notifyModifyOption("pbRewrites", "false", "unsat cores");
-    opts.writeArith().pbRewrites = false;
+    SET_AND_NOTIFY(arith, pbRewrites, false, "unsat cores");
   }
 
   if (opts.quantifiers.globalNegate)
@@ -1162,8 +1266,7 @@ bool SetDefaults::incompatibleWithUnsatCores(Options& opts,
       reason << "global-negate";
       return true;
     }
-    notifyModifyOption("globalNegate", "false", "unsat cores");
-    opts.writeQuantifiers().globalNegate = false;
+    SET_AND_NOTIFY(quantifiers, globalNegate, false, "unsat cores");
   }
 
   if (opts.smt.doITESimp)
@@ -1217,7 +1320,7 @@ bool SetDefaults::incompatibleWithQuantifiers(const Options& opts,
     // appropriate policy for the relevance of counterexample lemmas (when their
     // guard is entailed to be false, the entire lemma is relevant, not just the
     // guard). Hence, we throw an option exception if quantifiers are enabled.
-    reason << "--nl-ext-rlv";
+    reason << "--" << options::arith::longName::nlRlvMode;
     return true;
   }
   return false;
@@ -1226,16 +1329,12 @@ bool SetDefaults::incompatibleWithQuantifiers(const Options& opts,
 bool SetDefaults::incompatibleWithSeparationLogic(Options& opts,
                                                   std::ostream& reason) const
 {
-  if (opts.smt.simplificationBoolConstProp)
-  {
-    // Spatial formulas in separation logic have a semantics that depends on
-    // their position in the AST (e.g. their nesting beneath separation
-    // conjunctions). Thus, we cannot apply BCP as a substitution for spatial
-    // predicates to the input formula. We disable this option altogether to
-    // ensure this is the case
-    notifyModifyOption("simplification-bcp", "false", "separation logic");
-    opts.writeSmt().simplificationBoolConstProp = false;
-  }
+  // Spatial formulas in separation logic have a semantics that depends on
+  // their position in the AST (e.g. their nesting beneath separation
+  // conjunctions). Thus, we cannot apply BCP as a substitution for spatial
+  // predicates to the input formula. We disable this option altogether to
+  // ensure this is the case
+  SET_AND_NOTIFY(smt, simplificationBoolConstProp, false, "separation logic");
   return false;
 }
 
@@ -1300,7 +1399,7 @@ void SetDefaults::widenLogic(LogicInfo& logic, const Options& opts) const
       || (logic.isTheoryEnabled(THEORY_ARITH)
           && logic.isTheoryEnabled(THEORY_BV))
       // FP requires UF since there are multiple operators that are partially
-      // defined (see http://smtlib.cs.uiowa.edu/papers/BTRW15.pdf for more
+      // defined (see http://smt-lib.org/papers/BTRW15.pdf for more
       // details).
       || logic.isTheoryEnabled(THEORY_FP))
   {
@@ -1337,99 +1436,77 @@ void SetDefaults::setDefaultsQuantifiers(const LogicInfo& logic,
 {
   if (opts.quantifiers.fullSaturateQuant)
   {
-    Trace("smt") << "enabling enum-inst for full-saturate-quant" << std::endl;
-    opts.writeQuantifiers().enumInst = true;
+    SET_AND_NOTIFY(quantifiers, enumInst, true, "full-saturate-quant");
   }
   if (opts.arrays.arraysExp)
   {
     // Allows to answer sat more often by default.
-    if (!opts.quantifiers.fmfBoundWasSetByUser)
-    {
-      notifyModifyOption("fmfBound", "true", "arrays-exp");
-      opts.writeQuantifiers().fmfBound = true;
-    }
+    SET_AND_NOTIFY_IF_NOT_USER(quantifiers, fmfBound, true, "arrays-exp");
   }
   if (logic.hasCardinalityConstraints())
   {
     // must have finite model finding on
-    opts.writeQuantifiers().finiteModelFind = true;
+    SET_AND_NOTIFY(quantifiers,
+                   finiteModelFind,
+                   true,
+                   "logic with cardinality constraints");
   }
   if (opts.quantifiers.instMaxLevel != -1)
   {
-    notifyModifyOption("cegqi", "false", "instMaxLevel");
-    opts.writeQuantifiers().cegqi = false;
+    SET_AND_NOTIFY(quantifiers, cegqi, false, "instMaxLevel");
+  }
+  // enable MBQI if --mbqi-fast-sygus is provided
+  if (opts.quantifiers.mbqiFastSygus)
+  {
+    SET_AND_NOTIFY_IF_NOT_USER(quantifiers, mbqi, true, "mbqiFastSygus");
   }
   if (opts.quantifiers.mbqi)
   {
     // MBQI is an alternative to CEGQI/SyQI
-    if (!opts.quantifiers.cegqiWasSetByUser)
-    {
-      notifyModifyOption("cegqi", "false", "mbqi");
-      opts.writeQuantifiers().cegqi = false;
-    }
-    if (!opts.quantifiers.sygusInstWasSetByUser)
-    {
-      notifyModifyOption("sygusInst", "false", "mbqi");
-      opts.writeQuantifiers().sygusInst = false;
-    }
+    SET_AND_NOTIFY_IF_NOT_USER(quantifiers, cegqi, false, "mbqi");
+    SET_AND_NOTIFY_IF_NOT_USER(quantifiers, sygusInst, false, "mbqi");
   }
 
-  if (opts.quantifiers.fmfBoundLazyWasSetByUser
-       && opts.quantifiers.fmfBoundLazy)
+  if (opts.quantifiers.fmfBoundLazy)
   {
-    opts.writeQuantifiers().fmfBound = true;
-    Trace("smt")
-        << "turning on fmf-bound, for fmf-bound-int or fmf-bound-lazy\n";
+    SET_AND_NOTIFY_IF_NOT_USER(quantifiers, fmfBound, true, "fmfBoundLazy");
   }
   // now have determined whether fmfBound is on/off
   // apply fmfBound options
   if (opts.quantifiers.fmfBound)
   {
-    if (!opts.quantifiers.fmfMbqiModeWasSetByUser
-        || (opts.quantifiers.fmfMbqiMode != options::FmfMbqiMode::NONE
-            && opts.quantifiers.fmfMbqiMode != options::FmfMbqiMode::FMC))
-    {
-      // if bounded integers are set, use no MBQI by default
-      opts.writeQuantifiers().fmfMbqiMode = options::FmfMbqiMode::NONE;
-    }
-    if (!opts.quantifiers.prenexQuantUserWasSetByUser)
-    {
-      opts.writeQuantifiers().prenexQuant = options::PrenexQuantMode::NONE;
-    }
+    // if bounded integers are set, use no MBQI by default
+    SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(
+        quantifiers, fmfMbqiMode, options::FmfMbqiMode::NONE, "fmfBound");
+    SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(
+        quantifiers, prenexQuant, options::PrenexQuantMode::NONE, "fmfBound");
   }
   if (logic.isHigherOrder())
   {
     // if higher-order, then current variants of model-based instantiation
     // cannot be used
-    if (opts.quantifiers.fmfMbqiMode != options::FmfMbqiMode::NONE)
-    {
-      opts.writeQuantifiers().fmfMbqiMode = options::FmfMbqiMode::NONE;
-    }
-    if (!opts.quantifiers.hoElimStoreAxWasSetByUser)
-    {
-      // by default, use store axioms only if --ho-elim is set
-      opts.writeQuantifiers().hoElimStoreAx = opts.quantifiers.hoElim;
-    }
+    SET_AND_NOTIFY_VAL_SYM(quantifiers,
+                           fmfMbqiMode,
+                           options::FmfMbqiMode::NONE,
+                           "higher-order logic");
+    // by default, use store axioms only if --ho-elim is set
+    SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(quantifiers,
+                                       hoElimStoreAx,
+                                       opts.quantifiers.hoElim,
+                                       "higher-order logic");
     // Cannot use macros, since lambda lifting and macro elimination are inverse
     // operations.
-    if (opts.quantifiers.macrosQuant)
-    {
-      opts.writeQuantifiers().macrosQuant = false;
-    }
+    SET_AND_NOTIFY(quantifiers, macrosQuant, false, "higher-order logic");
   }
   if (opts.quantifiers.fmfFunWellDefinedRelevant)
   {
-    if (!opts.quantifiers.fmfFunWellDefinedWasSetByUser)
-    {
-      opts.writeQuantifiers().fmfFunWellDefined = true;
-    }
+    SET_AND_NOTIFY_IF_NOT_USER(
+        quantifiers, fmfFunWellDefined, true, "fmfFunWellDefinedRelevant");
   }
   if (opts.quantifiers.fmfFunWellDefined)
   {
-    if (!opts.quantifiers.finiteModelFindWasSetByUser)
-    {
-      opts.writeQuantifiers().finiteModelFind = true;
-    }
+    SET_AND_NOTIFY_IF_NOT_USER(
+        quantifiers, finiteModelFind, true, "fmfFunWellDefined");
   }
 
   // now, have determined whether finite model find is on/off
@@ -1437,24 +1514,21 @@ void SetDefaults::setDefaultsQuantifiers(const LogicInfo& logic,
   if (opts.quantifiers.finiteModelFind)
   {
     // apply conservative quantifiers splitting
-    if (!opts.quantifiers.quantDynamicSplitWasSetByUser)
+    SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(quantifiers,
+                                       quantDynamicSplit,
+                                       options::QuantDSplitMode::DEFAULT,
+                                       "finiteModelFind");
+    // do not use E-matching by default. For E-matching + FMF, the user should
+    // specify --finite-model-find --e-matching.
+    SET_AND_NOTIFY_IF_NOT_USER(
+        quantifiers, eMatching, false, "finiteModelFind");
+    // instantiate only on last call
+    if (opts.quantifiers.eMatching)
     {
-      opts.writeQuantifiers().quantDynamicSplit =
-          options::QuantDSplitMode::DEFAULT;
-    }
-    if (!opts.quantifiers.eMatchingWasSetByUser)
-    {
-      // do not use E-matching by default. For E-matching + FMF, the user should
-      // specify --finite-model-find --e-matching.
-      opts.writeQuantifiers().eMatching = false;
-    }
-    if (!opts.quantifiers.instWhenModeWasSetByUser)
-    {
-      // instantiate only on last call
-      if (opts.quantifiers.eMatching)
-      {
-        opts.writeQuantifiers().instWhenMode = options::InstWhenMode::LAST_CALL;
-      }
+      SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(quantifiers,
+                                         instWhenMode,
+                                         options::InstWhenMode::LAST_CALL,
+                                         "finiteModelFind");
     }
   }
 
@@ -1481,181 +1555,142 @@ void SetDefaults::setDefaultsQuantifiers(const LogicInfo& logic,
            || logic.isTheoryEnabled(THEORY_FP)))
       || opts.quantifiers.cegqiAll)
   {
-    if (!opts.quantifiers.cegqiWasSetByUser)
-    {
-      opts.writeQuantifiers().cegqi = true;
-    }
+    SET_AND_NOTIFY_IF_NOT_USER(quantifiers, cegqi, true, "logic");
     // check whether we should apply full cbqi
     if (logic.isPure(THEORY_BV))
     {
-      if (!opts.quantifiers.cegqiFullEffortWasSetByUser)
-      {
-        opts.writeQuantifiers().cegqiFullEffort = true;
-      }
+      SET_AND_NOTIFY_IF_NOT_USER(
+          quantifiers, cegqiFullEffort, true, "pure BV logic");
     }
   }
   if (opts.quantifiers.cegqi)
   {
     if (logic.isPure(THEORY_ARITH) || logic.isPure(THEORY_BV))
     {
-      if (!opts.quantifiers.conflictBasedInstWasSetByUser)
-      {
-        opts.writeQuantifiers().conflictBasedInst = false;
-      }
-      if (!opts.quantifiers.instNoEntailWasSetByUser)
-      {
-        opts.writeQuantifiers().instNoEntail = false;
-      }
-      if (!opts.quantifiers.instWhenModeWasSetByUser)
-      {
-        // only instantiation should happen at last call when model is avaiable
-        opts.writeQuantifiers().instWhenMode = options::InstWhenMode::LAST_CALL;
-      }
+      SET_AND_NOTIFY_IF_NOT_USER(
+          quantifiers, conflictBasedInst, false, "cegqi pure logic");
+      SET_AND_NOTIFY_IF_NOT_USER(
+          quantifiers, instNoEntail, false, "cegqi pure logic");
+      // only instantiation should happen at last call when model is avaiable
+      SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(quantifiers,
+                                         instWhenMode,
+                                         options::InstWhenMode::LAST_CALL,
+                                         "cegqi pure logic");
     }
     else
     {
       // only supported in pure arithmetic or pure BV
-      opts.writeQuantifiers().cegqiNestedQE = false;
+      SET_AND_NOTIFY(quantifiers, cegqiNestedQE, false, "cegqi non-pure logic");
     }
     if (opts.quantifiers.globalNegate)
     {
-      if (!opts.quantifiers.prenexQuantWasSetByUser)
-      {
-        opts.writeQuantifiers().prenexQuant = options::PrenexQuantMode::NONE;
-      }
+      SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(quantifiers,
+                                         prenexQuant,
+                                         options::PrenexQuantMode::NONE,
+                                         "globalNegate");
     }
   }
   // implied options...
   if (opts.quantifiers.cbqiModeWasSetByUser || opts.quantifiers.cbqiTConstraint)
   {
-    opts.writeQuantifiers().conflictBasedInst = true;
+    SET_AND_NOTIFY(quantifiers, conflictBasedInst, true, "cbqi option");
   }
   if (opts.quantifiers.cegqiNestedQE)
   {
-    opts.writeQuantifiers().prenexQuantUser = true;
-    if (!opts.quantifiers.preSkolemQuantWasSetByUser)
-    {
-      opts.writeQuantifiers().preSkolemQuant = options::PreSkolemQuantMode::ON;
-    }
+    SET_AND_NOTIFY(quantifiers, prenexQuantUser, true, "cegqiNestedQE");
+    SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(quantifiers,
+                                       preSkolemQuant,
+                                       options::PreSkolemQuantMode::ON,
+                                       "cegqiNestedQE");
   }
   // for induction techniques
   if (opts.quantifiers.quantInduction)
   {
-    if (!opts.quantifiers.dtStcInductionWasSetByUser)
-    {
-      opts.writeQuantifiers().dtStcInduction = true;
-    }
-    if (!opts.quantifiers.intWfInductionWasSetByUser)
-    {
-      opts.writeQuantifiers().intWfInduction = true;
-    }
+    SET_AND_NOTIFY_IF_NOT_USER(
+        quantifiers, dtStcInduction, true, "quantInduction");
+    SET_AND_NOTIFY_IF_NOT_USER(
+        quantifiers, intWfInduction, true, "quantInduction");
   }
   if (opts.quantifiers.dtStcInduction)
   {
     // try to remove ITEs from quantified formulas
-    if (!opts.quantifiers.iteDtTesterSplitQuantWasSetByUser)
-    {
-      opts.writeQuantifiers().iteDtTesterSplitQuant = true;
-    }
-    if (!opts.quantifiers.iteLiftQuantWasSetByUser)
-    {
-      opts.writeQuantifiers().iteLiftQuant = options::IteLiftQuantMode::ALL;
-    }
+    SET_AND_NOTIFY_IF_NOT_USER(
+        quantifiers, iteDtTesterSplitQuant, true, "dtStcInduction");
+    SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(quantifiers,
+                                       iteLiftQuant,
+                                       options::IteLiftQuantMode::ALL,
+                                       "dtStcInduction");
   }
   if (opts.quantifiers.intWfInduction)
   {
-    if (!opts.quantifiers.purifyTriggersWasSetByUser)
-    {
-      opts.writeQuantifiers().purifyTriggers = true;
-    }
+    SET_AND_NOTIFY_IF_NOT_USER(
+        quantifiers, purifyTriggers, true, "intWfInduction");
   }
   if (opts.quantifiers.conjectureGenPerRoundWasSetByUser)
   {
-    if (opts.quantifiers.conjectureGenPerRound > 0)
-    {
-      opts.writeQuantifiers().conjectureGen = true;
-    }
-    else
-    {
-      opts.writeQuantifiers().conjectureGen = false;
-    }
+    bool conjNZero = (opts.quantifiers.conjectureGenPerRound > 0);
+    SET_AND_NOTIFY_VAL_SYM(
+        quantifiers, conjectureGen, conjNZero, "conjectureGenPerRound");
   }
   // can't pre-skolemize nested quantifiers without UF theory
   if (!logic.isTheoryEnabled(THEORY_UF)
       && opts.quantifiers.preSkolemQuant != options::PreSkolemQuantMode::OFF)
   {
-    if (!opts.quantifiers.preSkolemQuantNestedWasSetByUser)
-    {
-      opts.writeQuantifiers().preSkolemQuantNested = false;
-    }
+    SET_AND_NOTIFY_IF_NOT_USER(
+        quantifiers, preSkolemQuantNested, false, "preSkolemQuant");
   }
   if (!logic.isTheoryEnabled(THEORY_DATATYPES))
   {
-    opts.writeQuantifiers().quantDynamicSplit = options::QuantDSplitMode::NONE;
+    SET_AND_NOTIFY_VAL_SYM(quantifiers,
+                           quantDynamicSplit,
+                           options::QuantDSplitMode::NONE,
+                           "non-datatypes logic");
   }
   if (opts.quantifiers.globalNegate)
   {
-    notifyModifyOption("deep-restart", "false", "global-negate");
-    opts.writeSmt().deepRestartMode = options::DeepRestartMode::NONE;
+    SET_AND_NOTIFY_VAL_SYM(
+        smt, deepRestartMode, options::DeepRestartMode::NONE, "globalNegate");
   }
 }
 
 void SetDefaults::setDefaultsSygus(Options& opts) const
 {
-  if (!opts.quantifiers.sygus)
+  SET_AND_NOTIFY(quantifiers, sygus, true, "enabling sygus");
+  // full verify mode enables options to ensure full effort on candidates
+  if (opts.quantifiers.fullSygusVerify)
   {
-    notifyModifyOption("sygus", "true", "");
-    opts.writeQuantifiers().sygus = true;
+    SET_AND_NOTIFY(
+        quantifiers, sygusVerifyInstMaxRounds, -1, "full sygus verify");
+    SET_AND_NOTIFY(quantifiers, fullSaturateQuant, true, "full sygus verify");
   }
   // must use Ferrante/Rackoff for real arithmetic
-  if (!opts.quantifiers.cegqiMidpointWasSetByUser)
-  {
-    opts.writeQuantifiers().cegqiMidpoint = true;
-  }
+  SET_AND_NOTIFY(quantifiers, cegqiMidpoint, true, "sygus");
   // must disable cegqi-bv since it may introduce witness terms, which
   // cannot appear in synthesis solutions
-  if (!opts.quantifiers.cegqiBvWasSetByUser)
-  {
-    opts.writeQuantifiers().cegqiBv = false;
-  }
+  SET_AND_NOTIFY_IF_NOT_USER(quantifiers, cegqiBv, false, "sygus");
   if (opts.quantifiers.sygusRepairConst)
   {
-    if (!opts.quantifiers.cegqiWasSetByUser)
-    {
-      opts.writeQuantifiers().cegqi = true;
-    }
+    SET_AND_NOTIFY_IF_NOT_USER(quantifiers, cegqi, true, "sygusRepairConst");
   }
-  if (opts.quantifiers.sygusInference)
+  if (opts.quantifiers.sygusInference != options::SygusInferenceMode::OFF)
   {
     // optimization: apply preskolemization, makes it succeed more often
-    if (!opts.quantifiers.preSkolemQuantWasSetByUser)
-    {
-      opts.writeQuantifiers().preSkolemQuant = options::PreSkolemQuantMode::ON;
-    }
-    if (!opts.quantifiers.preSkolemQuantNestedWasSetByUser)
-    {
-      opts.writeQuantifiers().preSkolemQuantNested = true;
-    }
+    SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(quantifiers,
+                                       preSkolemQuant,
+                                       options::PreSkolemQuantMode::ON,
+                                       "sygusInference");
+    SET_AND_NOTIFY_IF_NOT_USER(
+        quantifiers, preSkolemQuantNested, true, "sygusInference");
   }
   // counterexample-guided instantiation for sygus
-  if (!opts.quantifiers.cegqiSingleInvModeWasSetByUser)
-  {
-    opts.writeQuantifiers().cegqiSingleInvMode =
-        options::CegqiSingleInvMode::USE;
-  }
-  if (!opts.quantifiers.conflictBasedInstWasSetByUser)
-  {
-    opts.writeQuantifiers().conflictBasedInst = false;
-  }
-  if (!opts.quantifiers.instNoEntailWasSetByUser)
-  {
-    opts.writeQuantifiers().instNoEntail = false;
-  }
-  if (!opts.quantifiers.cegqiFullEffortWasSetByUser)
-  {
-    // should use full effort cbqi for single invocation and repair const
-    opts.writeQuantifiers().cegqiFullEffort = true;
-  }
+  SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(quantifiers,
+                                     cegqiSingleInvMode,
+                                     options::CegqiSingleInvMode::USE,
+                                     "sygus");
+  SET_AND_NOTIFY_IF_NOT_USER(quantifiers, conflictBasedInst, false, "sygus");
+  SET_AND_NOTIFY_IF_NOT_USER(quantifiers, instNoEntail, false, "sygus");
+  // should use full effort cbqi for single invocation and repair const
+  SET_AND_NOTIFY_IF_NOT_USER(quantifiers, cegqiFullEffort, true, "sygus");
   // Whether we must use "basic" sygus algorithms. A non-basic sygus algorithm
   // is one that is specialized for returning a single solution. Non-basic
   // sygus algorithms currently include the PBE solver, UNIF+PI, static
@@ -1665,20 +1700,13 @@ void SetDefaults::setDefaultsSygus(Options& opts) const
   if (opts.smt.produceAbducts)
   {
     // if doing abduction, we should filter strong solutions
-    if (!opts.quantifiers.sygusFilterSolModeWasSetByUser)
-    {
-      opts.writeQuantifiers().sygusFilterSolMode =
-          options::SygusFilterSolMode::STRONG;
-    }
+    SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(quantifiers,
+                                       sygusFilterSolMode,
+                                       options::SygusFilterSolMode::STRONG,
+                                       "produceAbducts");
     // we must use basic sygus algorithms, since e.g. we require checking
     // a sygus side condition for consistency with axioms.
     reqBasicSygus = true;
-  }
-  if (opts.quantifiers.sygusRewSynth || opts.quantifiers.sygusRewVerify
-      || opts.quantifiers.sygusQueryGen != options::SygusQueryGenMode::NONE)
-  {
-    // rewrite rule synthesis implies that sygus stream must be true
-    opts.writeQuantifiers().sygusStream = true;
   }
   if (opts.quantifiers.sygusStream || opts.base.incrementalSolving)
   {
@@ -1689,35 +1717,25 @@ void SetDefaults::setDefaultsSygus(Options& opts) const
   // Now, disable options for non-basic sygus algorithms, if necessary.
   if (reqBasicSygus)
   {
-    if (!opts.quantifiers.sygusUnifPbeWasSetByUser)
-    {
-      opts.writeQuantifiers().sygusUnifPbe = false;
-    }
-    if (opts.quantifiers.sygusUnifPiWasSetByUser)
-    {
-      opts.writeQuantifiers().sygusUnifPi = options::SygusUnifPiMode::NONE;
-    }
-    if (!opts.quantifiers.sygusInvTemplModeWasSetByUser)
-    {
-      opts.writeQuantifiers().sygusInvTemplMode =
-          options::SygusInvTemplMode::NONE;
-    }
-    if (!opts.quantifiers.cegqiSingleInvModeWasSetByUser)
-    {
-      opts.writeQuantifiers().cegqiSingleInvMode =
-          options::CegqiSingleInvMode::NONE;
-    }
+    SET_AND_NOTIFY_IF_NOT_USER(quantifiers, sygusUnifPbe, false, "basic sygus");
+    SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(quantifiers,
+                                       sygusUnifPi,
+                                       options::SygusUnifPiMode::NONE,
+                                       "basic sygus");
+    SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(quantifiers,
+                                       sygusInvTemplMode,
+                                       options::SygusInvTemplMode::NONE,
+                                       "basic sygus");
+    SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(quantifiers,
+                                       cegqiSingleInvMode,
+                                       options::CegqiSingleInvMode::NONE,
+                                       "basic sygus");
   }
   // do not miniscope
-  if (!opts.quantifiers.miniscopeQuantWasSetByUser)
-  {
-    opts.writeQuantifiers().miniscopeQuant = options::MiniscopeQuantMode::OFF;
-  }
+  SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(
+      quantifiers, miniscopeQuant, options::MiniscopeQuantMode::OFF, "sygus");
   // do not do macros
-  if (!opts.quantifiers.macrosQuantWasSetByUser)
-  {
-    opts.writeQuantifiers().macrosQuant = false;
-  }
+  SET_AND_NOTIFY_IF_NOT_USER(quantifiers, macrosQuant, false, "sygus");
 }
 void SetDefaults::setDefaultDecisionMode(const LogicInfo& logic,
                                          Options& opts) const
@@ -1732,66 +1750,62 @@ void SetDefaults::setDefaultDecisionMode(const LogicInfo& logic,
       usesSygus(opts) ? options::DecisionMode::INTERNAL :
                       // ALL or its supersets
           logic.hasEverything()
-              ? options::DecisionMode::JUSTIFICATION
-              : (  // QF_BV
-                    (not logic.isQuantified() && logic.isPure(THEORY_BV)) ||
-                            // QF_AUFBV or QF_ABV or QF_UFBV
-                            (not logic.isQuantified()
-                             && (logic.isTheoryEnabled(THEORY_ARRAYS)
-                                 || logic.isTheoryEnabled(THEORY_UF))
-                             && logic.isTheoryEnabled(THEORY_BV))
-                            ||
-                            // QF_AUFLIA (and may be ends up enabling
-                            // QF_AUFLRA?)
-                            (not logic.isQuantified()
-                             && logic.isTheoryEnabled(THEORY_ARRAYS)
-                             && logic.isTheoryEnabled(THEORY_UF)
-                             && logic.isTheoryEnabled(THEORY_ARITH))
-                            ||
-                            // QF_LRA
-                            (not logic.isQuantified()
-                             && logic.isPure(THEORY_ARITH) && logic.isLinear()
-                             && !logic.isDifferenceLogic()
-                             && !logic.areIntegersUsed())
-                            ||
-                            // Quantifiers
-                            logic.isQuantified() ||
-                            // Strings
-                            logic.isTheoryEnabled(THEORY_STRINGS)
-                        ? options::DecisionMode::JUSTIFICATION
-                        : options::DecisionMode::INTERNAL);
+          ? options::DecisionMode::JUSTIFICATION
+          : (  // QF_BV
+              (!logic.isQuantified() && logic.isPure(THEORY_BV)) ||
+                      // QF_AUFBV or QF_ABV or QF_UFBV
+                      (!logic.isQuantified()
+                       && (logic.isTheoryEnabled(THEORY_ARRAYS)
+                           || logic.isTheoryEnabled(THEORY_UF))
+                       && logic.isTheoryEnabled(THEORY_BV))
+                      ||
+                      // QF_AUFLIA (and may be ends up enabling
+                      // QF_AUFLRA?)
+                      (!logic.isQuantified()
+                       && logic.isTheoryEnabled(THEORY_ARRAYS)
+                       && logic.isTheoryEnabled(THEORY_UF)
+                       && logic.isTheoryEnabled(THEORY_ARITH))
+                      ||
+                      // QF_LRA
+                      (!logic.isQuantified() && logic.isPure(THEORY_ARITH)
+                       && logic.isLinear() && !logic.isDifferenceLogic()
+                       && !logic.areIntegersUsed())
+                      ||
+                      // Quantifiers
+                      logic.isQuantified() ||
+                      // Strings
+                      logic.isTheoryEnabled(THEORY_STRINGS)
+                  ? options::DecisionMode::JUSTIFICATION
+                  : options::DecisionMode::INTERNAL);
 
   bool stoponly =
       // ALL or its supersets
       logic.hasEverything() || logic.isTheoryEnabled(THEORY_STRINGS)
           ? false
           : (  // QF_AUFLIA
-                (not logic.isQuantified()
-                 && logic.isTheoryEnabled(THEORY_ARRAYS)
-                 && logic.isTheoryEnabled(THEORY_UF)
-                 && logic.isTheoryEnabled(THEORY_ARITH))
-                        ||
-                        // QF_LRA
-                        (not logic.isQuantified() && logic.isPure(THEORY_ARITH)
-                         && logic.isLinear() && !logic.isDifferenceLogic()
-                         && !logic.areIntegersUsed())
-                    ? true
-                    : false);
+              (!logic.isQuantified() && logic.isTheoryEnabled(THEORY_ARRAYS)
+               && logic.isTheoryEnabled(THEORY_UF)
+               && logic.isTheoryEnabled(THEORY_ARITH))
+                      ||
+                      // QF_LRA
+                      (!logic.isQuantified() && logic.isPure(THEORY_ARITH)
+                       && logic.isLinear() && !logic.isDifferenceLogic()
+                       && !logic.areIntegersUsed())
+                  ? true
+                  : false);
 
-  opts.writeDecision().decisionMode = decMode;
   if (stoponly)
   {
-    if (opts.decision.decisionMode == options::DecisionMode::JUSTIFICATION)
+    if (decMode == options::DecisionMode::JUSTIFICATION)
     {
-      opts.writeDecision().decisionMode = options::DecisionMode::STOPONLY;
+      decMode = options::DecisionMode::STOPONLY;
     }
     else
     {
-      Assert(opts.decision.decisionMode == options::DecisionMode::INTERNAL);
+      Assert(decMode == options::DecisionMode::INTERNAL);
     }
   }
-  Trace("smt") << "setting decision mode to " << opts.decision.decisionMode
-               << std::endl;
+  SET_AND_NOTIFY_VAL_SYM(decision, decisionMode, decMode, "logic");
 }
 
 void SetDefaults::notifyModifyOption(const std::string& x,
@@ -1804,16 +1818,31 @@ void SetDefaults::notifyModifyOption(const std::string& x,
     verbose(1) << " due to " << reason;
   }
   verbose(1) << std::endl;
+  // don't print -o options-auto for internal subsolvers
+  if (!d_isInternalSubsolver)
+  {
+    if (isOutputOn(OutputTag::OPTIONS_AUTO))
+    {
+      output(OutputTag::OPTIONS_AUTO) << "(options-auto";
+      output(OutputTag::OPTIONS_AUTO) << " " << x;
+      output(OutputTag::OPTIONS_AUTO) << " " << val;
+      if (!reason.empty())
+      {
+        output(OutputTag::OPTIONS_AUTO) << " :reason \"" << reason << "\"";
+      }
+      output(OutputTag::OPTIONS_AUTO) << ")" << std::endl;
+    }
+  }
 }
 
 void SetDefaults::disableChecking(Options& opts)
 {
-  opts.writeSmt().checkUnsatCores = false;
-  opts.writeSmt().produceProofs = false;
-  opts.writeSmt().checkProofs = false;
-  opts.writeSmt().debugCheckModels = false;
-  opts.writeSmt().checkModels = false;
-  opts.writeProof().checkProofSteps = false;
+  opts.write_smt().checkUnsatCores = false;
+  opts.write_smt().produceProofs = false;
+  opts.write_smt().checkProofs = false;
+  opts.write_smt().debugCheckModels = false;
+  opts.write_smt().checkModels = false;
+  opts.write_proof().checkProofSteps = false;
 }
 
 }  // namespace smt

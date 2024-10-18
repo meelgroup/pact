@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -41,9 +41,11 @@ CandidateGenerator::CandidateGenerator(Env& env,
 {
 }
 
-bool CandidateGenerator::isLegalCandidate( Node n ){
-  return d_treg.getTermDatabase()->isTermActive(n)
-         && !quantifiers::TermUtil::hasInstConstAttr(n);
+bool CandidateGenerator::isLegalCandidate(const Node& n)
+{
+  // Note that all terms with instantiation constants should be marked inactive,
+  // so we do only a single check here.
+  return d_treg.getTermDatabase()->isTermActive(n);
 }
 
 CandidateGeneratorQE::CandidateGeneratorQE(Env& env,
@@ -92,11 +94,12 @@ void CandidateGeneratorQE::resetForOperator(Node eqc, Node op)
     }
   }
 }
-bool CandidateGeneratorQE::isLegalOpCandidate( Node n ) {
-  if( n.hasOperator() ){
-    if( isLegalCandidate( n ) ){
-      return d_treg.getTermDatabase()->getMatchOperator(n) == d_op;
-    }
+bool CandidateGeneratorQE::isLegalOpCandidate(const Node& n)
+{
+  const Node opm = d_treg.getTermDatabase()->getMatchOperator(n);
+  if (opm == d_op)
+  {
+    return isLegalCandidate(n);
   }
   return false;
 }
@@ -165,13 +168,13 @@ CandidateGeneratorQELitDeq::CandidateGeneratorQELitDeq(Env& env,
                                                        Node mpat)
     : CandidateGenerator(env, qs, tr), d_match_pattern(mpat)
 {
-  Assert(d_match_pattern.getKind() == EQUAL);
+  Assert(d_match_pattern.getKind() == Kind::EQUAL);
   d_match_pattern_type = d_match_pattern[0].getType();
 }
 
 void CandidateGeneratorQELitDeq::reset( Node eqc ){
   eq::EqualityEngine* ee = d_qs.getEqualityEngine();
-  Node falset = NodeManager::currentNM()->mkConst(false);
+  Node falset = nodeManager()->mkConst(false);
   d_eqc_false = eq::EqClassIterator(falset, ee);
 }
 
@@ -200,7 +203,7 @@ CandidateGeneratorQEAll::CandidateGeneratorQEAll(Env& env,
     : CandidateGenerator(env, qs, tr), d_match_pattern(mpat)
 {
   d_match_pattern_type = mpat.getType();
-  Assert(mpat.getKind() == INST_CONSTANT);
+  Assert(mpat.getKind() == Kind::INST_CONSTANT);
   d_f = quantifiers::TermUtil::getInstConstAttr( mpat );
   d_index = mpat.getAttribute(InstVarNumAttribute());
   d_firstTime = false;
@@ -251,7 +254,7 @@ CandidateGeneratorConsExpand::CandidateGeneratorConsExpand(Env& env,
                                                            Node mpat)
     : CandidateGeneratorQE(env, qs, tr, mpat)
 {
-  Assert(mpat.getKind() == APPLY_CONSTRUCTOR);
+  Assert(mpat.getKind() == Kind::APPLY_CONSTRUCTOR);
   d_mpat_type = mpat.getType();
 }
 
@@ -296,7 +299,7 @@ Node CandidateGeneratorConsExpand::getNextCandidate()
       curr, dt, 0, options().datatypes.dtSharedSelectors);
 }
 
-bool CandidateGeneratorConsExpand::isLegalOpCandidate(Node n)
+bool CandidateGeneratorConsExpand::isLegalOpCandidate(const Node& n)
 {
   return isLegalCandidate(n);
 }
@@ -308,13 +311,13 @@ CandidateGeneratorSelector::CandidateGeneratorSelector(Env& env,
     : CandidateGeneratorQE(env, qs, tr, mpat)
 {
   Trace("sel-trigger") << "Selector trigger: " << mpat << std::endl;
-  Assert(mpat.getKind() == APPLY_SELECTOR);
+  Assert(mpat.getKind() == Kind::APPLY_SELECTOR);
   // Get the expanded form of the selector, meaning that we will match on
   // the shared selector if shared selectors are enabled.
   Node mpatExp = datatypes::DatatypesRewriter::expandApplySelector(
       mpat, options().datatypes.dtSharedSelectors);
   Trace("sel-trigger") << "Expands to: " << mpatExp << std::endl;
-  Assert (mpatExp.getKind() == APPLY_SELECTOR);
+  Assert(mpatExp.getKind() == Kind::APPLY_SELECTOR);
   d_selOp = d_treg.getTermDatabase()->getMatchOperator(mpatExp);
 }
 

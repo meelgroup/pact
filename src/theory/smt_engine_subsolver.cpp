@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -177,7 +177,7 @@ void assertToSubsolver(SolverEngine& subsolver,
     // check if it is an ordinary function definition
     if (defs.find(f) != defs.end())
     {
-      if (f.getKind() == kind::EQUAL && f[0].isVar())
+      if (f.getKind() == Kind::EQUAL && f[0].isVar())
       {
         subsolver.defineFunction(f[0], f[1]);
         continue;

@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Gereon Kremer, Andres Noetzli
+ *   Gereon Kremer, Andres Noetzli, Andrew Reynolds
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -33,7 +33,7 @@ class TestEnv : public TestInternal
   {
     d_options.reset(new Options());
     d_nodeManager = NodeManager::currentNM();
-    d_env.reset(new Env(d_options.get()));
+    d_env.reset(new Env(d_nodeManager, d_options.get()));
   }
 
   std::unique_ptr<Options> d_options;

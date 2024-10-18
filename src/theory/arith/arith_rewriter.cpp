@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Gereon Kremer, Tim King
+ *   Andrew Reynolds, Gereon Kremer, Aina Niemetz
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "expr/algorithm/flatten.h"
+#include "expr/node_algorithm.h"
 #include "smt/logic_exception.h"
 #include "theory/arith/arith_msum.h"
 #include "theory/arith/arith_utilities.h"
@@ -33,6 +34,8 @@
 #include "theory/arith/rewriter/node_utils.h"
 #include "theory/arith/rewriter/ordering.h"
 #include "theory/arith/rewriter/rewrite_atom.h"
+#include "theory/rewriter.h"
+#include "theory/strings/arith_entail.h"
 #include "theory/theory.h"
 #include "util/bitvector.h"
 #include "util/divisible.h"
@@ -45,7 +48,103 @@ namespace cvc5::internal {
 namespace theory {
 namespace arith {
 
-ArithRewriter::ArithRewriter(OperatorElim& oe) : d_opElim(oe) {}
+ArithRewriter::ArithRewriter(NodeManager* nm, OperatorElim& oe)
+    : TheoryRewriter(nm), d_opElim(oe)
+{
+  registerProofRewriteRule(ProofRewriteRule::ARITH_DIV_BY_CONST_ELIM,
+                           TheoryRewriteCtx::PRE_DSL);
+  registerProofRewriteRule(ProofRewriteRule::MACRO_ARITH_STRING_PRED_ENTAIL,
+                           TheoryRewriteCtx::DSL_SUBCALL);
+  // we don't register ARITH_STRING_PRED_ENTAIL or
+  // ARITH_STRING_PRED_SAFE_APPROX, as these are subsumed by
+  // MACRO_ARITH_STRING_PRED_ENTAIL.
+}
+
+Node ArithRewriter::rewriteViaRule(ProofRewriteRule id, const Node& n)
+{
+  switch (id)
+  {
+    case ProofRewriteRule::ARITH_DIV_BY_CONST_ELIM:
+    {
+      if (n.getKind() == Kind::DIVISION && n[1].isConst())
+      {
+        Rational r = n[1].getConst<Rational>();
+        if (r.sgn() != 0)
+        {
+          Rational rinv = Rational(1) / r;
+          NodeManager* nm = nodeManager();
+          return nm->mkNode(Kind::MULT, n[0], nm->mkConstReal(rinv));
+        }
+      }
+    }
+    break;
+    case ProofRewriteRule::MACRO_ARITH_STRING_PRED_ENTAIL:
+    {
+      // only matters if n contains strings
+      if (!expr::hasSubtermKinds({Kind::STRING_LENGTH}, n))
+      {
+        return Node::null();
+      }
+      // Note that we do *not* pass a rewriter here, since the proof rule
+      // cannot depend on the rewriter. This makes this rule capture most
+      // but not all cases of this kind of reasoning.
+      theory::strings::ArithEntail ae(nullptr);
+      Node tgt;
+      if (n.getKind() == Kind::EQUAL)
+      {
+        tgt = n;
+      }
+      else
+      {
+        tgt = ae.normalizeGeq(n);
+      }
+      if (tgt.isNull() || !tgt[0].getType().isInteger())
+      {
+        return Node::null();
+      }
+      // first do basic length intro, which rewrites (str.len (str.++ x y))
+      // to (+ (str.len x) (str.len y))
+      Node nexp = ae.rewriteLengthIntro(tgt);
+      // Also must make this a "simple" check (isSimple = true).
+      Node ret = ae.rewritePredViaEntailment(nexp, true);
+      return ret;
+    }
+    break;
+    case ProofRewriteRule::ARITH_STRING_PRED_ENTAIL:
+    case ProofRewriteRule::ARITH_STRING_PRED_SAFE_APPROX:
+    {
+      if (n.getKind() != Kind::GEQ || !n[1].isConst()
+          || n[1].getConst<Rational>().sgn() != 0)
+      {
+        return Node::null();
+      }
+      if (id == ProofRewriteRule::ARITH_STRING_PRED_ENTAIL)
+      {
+        if (theory::strings::ArithEntail::checkSimple(n[0]))
+        {
+          return nodeManager()->mkConst(true);
+        }
+      }
+      else if (id == ProofRewriteRule::ARITH_STRING_PRED_SAFE_APPROX)
+      {
+        // Note that we do *not* pass a rewriter here, since the proof rule
+        // cannot depend on the rewriter.
+        theory::strings::ArithEntail ae(nullptr);
+        // must only use simple checks when computing the approximations
+        Node approx = ae.findApprox(n[0], true);
+        if (approx != n[0])
+        {
+          Trace("arith-rewriter-proof")
+              << n[0] << " --> " << approx << " by safe approx" << std::endl;
+          return nodeManager()->mkNode(Kind::GEQ, approx, n[1]);
+        }
+      }
+    }
+    break;
+    default: break;
+  }
+  return Node::null();
+}
 
 RewriteResponse ArithRewriter::preRewrite(TNode t)
 {
@@ -97,11 +196,11 @@ RewriteResponse ArithRewriter::preRewriteAtom(TNode atom)
     case Kind::GT:
       return RewriteResponse(
           REWRITE_DONE,
-          rewriter::buildRelation(kind::LEQ, atom[0], atom[1], true));
+          rewriter::buildRelation(Kind::LEQ, atom[0], atom[1], true));
     case Kind::LT:
       return RewriteResponse(
           REWRITE_DONE,
-          rewriter::buildRelation(kind::GEQ, atom[0], atom[1], true));
+          rewriter::buildRelation(Kind::GEQ, atom[0], atom[1], true));
     case Kind::IS_INTEGER:
       if (atom[0].getType().isInteger())
       {
@@ -125,11 +224,11 @@ RewriteResponse ArithRewriter::postRewriteAtom(TNode atom)
   Assert(rewriter::isAtom(atom));
   Trace("arith-rewriter") << "postRewriteAtom: " << atom << std::endl;
 
-  if (atom.getKind() == kind::IS_INTEGER)
+  if (atom.getKind() == Kind::IS_INTEGER)
   {
     return rewriteExtIntegerOp(atom);
   }
-  else if (atom.getKind() == kind::DIVISIBLE)
+  else if (atom.getKind() == Kind::DIVISIBLE)
   {
     const Integer& k = atom.getOperator().getConst<Divisible>().k;
     if (atom[0].isConst())
@@ -142,12 +241,12 @@ RewriteResponse ArithRewriter::postRewriteAtom(TNode atom)
     {
       return RewriteResponse(REWRITE_DONE, rewriter::mkConst(true));
     }
-    NodeManager* nm = NodeManager::currentNM();
+    NodeManager* nm = nodeManager();
     return RewriteResponse(
         REWRITE_AGAIN,
         nm->mkNode(
-            kind::EQUAL,
-            nm->mkNode(kind::INTS_MODULUS_TOTAL, atom[0], rewriter::mkConst(k)),
+            Kind::EQUAL,
+            nm->mkNode(Kind::INTS_MODULUS_TOTAL, atom[0], rewriter::mkConst(k)),
             rewriter::mkConst(Integer(0))));
   }
   // left |><| right
@@ -188,16 +287,6 @@ RewriteResponse ArithRewriter::postRewriteAtom(TNode atom)
   rewriter::addToSum(sum, left, negate);
   rewriter::addToSum(sum, right, !negate);
 
-  if (kind != Kind::EQUAL)
-  {
-    // see if we should convert the inequality to a bitvector inequality
-    RewriteResponse rineqBv = rewriteIneqToBv(kind, sum, atom);
-    if (rineqBv.d_node != atom)
-    {
-      return rineqBv;
-    }
-  }
-
   // Now we have (sum <kind> 0)
   if (rewriter::isIntegral(sum))
   {
@@ -228,40 +317,42 @@ RewriteResponse ArithRewriter::preRewriteTerm(TNode t){
     return rewriteVariable(t);
   }else{
     switch(Kind k = t.getKind()){
-      case kind::REAL_ALGEBRAIC_NUMBER: return rewriteRAN(t);
-      case kind::SUB: return rewriteSub(t);
-      case kind::NEG: return rewriteNeg(t, true);
-      case kind::DIVISION:
-      case kind::DIVISION_TOTAL: return rewriteDiv(t, true);
-      case kind::ADD: return preRewritePlus(t);
-      case kind::MULT:
-      case kind::NONLINEAR_MULT: return preRewriteMult(t);
-      case kind::IAND: return RewriteResponse(REWRITE_DONE, t);
-      case kind::POW2: return RewriteResponse(REWRITE_DONE, t);
-      case kind::EXPONENTIAL:
-      case kind::SINE:
-      case kind::COSINE:
-      case kind::TANGENT:
-      case kind::COSECANT:
-      case kind::SECANT:
-      case kind::COTANGENT:
-      case kind::ARCSINE:
-      case kind::ARCCOSINE:
-      case kind::ARCTANGENT:
-      case kind::ARCCOSECANT:
-      case kind::ARCSECANT:
-      case kind::ARCCOTANGENT:
-      case kind::SQRT: return preRewriteTranscendental(t);
-      case kind::INTS_DIVISION:
-      case kind::INTS_MODULUS: return rewriteIntsDivMod(t, true);
-      case kind::INTS_DIVISION_TOTAL:
-      case kind::INTS_MODULUS_TOTAL: return rewriteIntsDivModTotal(t, true);
-      case kind::ABS: return rewriteAbs(t);
-      case kind::IS_INTEGER:
-      case kind::TO_INTEGER:
-      case kind::TO_REAL:
-      case kind::POW:
-      case kind::PI: return RewriteResponse(REWRITE_DONE, t);
+      case Kind::REAL_ALGEBRAIC_NUMBER: return rewriteRAN(t);
+      case Kind::SUB: return rewriteSub(t);
+      case Kind::NEG: return rewriteNeg(t, true);
+      case Kind::DIVISION:
+      case Kind::DIVISION_TOTAL: return rewriteDiv(t, true);
+      case Kind::ADD: return preRewritePlus(t);
+      case Kind::MULT:
+      case Kind::NONLINEAR_MULT: return preRewriteMult(t);
+      case Kind::IAND: return RewriteResponse(REWRITE_DONE, t);
+      case Kind::POW2: return RewriteResponse(REWRITE_DONE, t);
+      case Kind::INTS_ISPOW2: return RewriteResponse(REWRITE_DONE, t);
+      case Kind::INTS_LOG2: return RewriteResponse(REWRITE_DONE, t);
+      case Kind::EXPONENTIAL:
+      case Kind::SINE:
+      case Kind::COSINE:
+      case Kind::TANGENT:
+      case Kind::COSECANT:
+      case Kind::SECANT:
+      case Kind::COTANGENT:
+      case Kind::ARCSINE:
+      case Kind::ARCCOSINE:
+      case Kind::ARCTANGENT:
+      case Kind::ARCCOSECANT:
+      case Kind::ARCSECANT:
+      case Kind::ARCCOTANGENT:
+      case Kind::SQRT: return preRewriteTranscendental(t);
+      case Kind::INTS_DIVISION:
+      case Kind::INTS_MODULUS: return rewriteIntsDivMod(t, true);
+      case Kind::INTS_DIVISION_TOTAL:
+      case Kind::INTS_MODULUS_TOTAL: return rewriteIntsDivModTotal(t, true);
+      case Kind::ABS: return rewriteAbs(t);
+      case Kind::IS_INTEGER:
+      case Kind::TO_INTEGER:
+      case Kind::TO_REAL:
+      case Kind::POW:
+      case Kind::PI: return RewriteResponse(REWRITE_DONE, t);
       default: Unhandled() << k;
     }
   }
@@ -277,85 +368,77 @@ RewriteResponse ArithRewriter::postRewriteTerm(TNode t){
   {
     Trace("arith-rewriter") << "postRewriteTerm: " << t << std::endl;
     switch(t.getKind()){
-      case kind::REAL_ALGEBRAIC_NUMBER: return rewriteRAN(t);
-      case kind::SUB: return rewriteSub(t);
-      case kind::NEG: return rewriteNeg(t, false);
-      case kind::DIVISION:
-      case kind::DIVISION_TOTAL: return rewriteDiv(t, false);
-      case kind::ADD: return postRewritePlus(t);
-      case kind::MULT:
-      case kind::NONLINEAR_MULT: return postRewriteMult(t);
-      case kind::IAND: return postRewriteIAnd(t);
-      case kind::POW2: return postRewritePow2(t);
-      case kind::EXPONENTIAL:
-      case kind::SINE:
-      case kind::COSINE:
-      case kind::TANGENT:
-      case kind::COSECANT:
-      case kind::SECANT:
-      case kind::COTANGENT:
-      case kind::ARCSINE:
-      case kind::ARCCOSINE:
-      case kind::ARCTANGENT:
-      case kind::ARCCOSECANT:
-      case kind::ARCSECANT:
-      case kind::ARCCOTANGENT:
-      case kind::SQRT: return postRewriteTranscendental(t);
-      case kind::INTS_DIVISION:
-      case kind::INTS_MODULUS: return rewriteIntsDivMod(t, false);
-      case kind::INTS_DIVISION_TOTAL:
-      case kind::INTS_MODULUS_TOTAL: return rewriteIntsDivModTotal(t, false);
-      case kind::ABS: return rewriteAbs(t);
-      case kind::TO_REAL: return rewriteToReal(t);
-      case kind::TO_INTEGER: return rewriteExtIntegerOp(t);
-      case kind::POW:
+      case Kind::REAL_ALGEBRAIC_NUMBER: return rewriteRAN(t);
+      case Kind::SUB: return rewriteSub(t);
+      case Kind::NEG: return rewriteNeg(t, false);
+      case Kind::DIVISION:
+      case Kind::DIVISION_TOTAL: return rewriteDiv(t, false);
+      case Kind::ADD: return postRewritePlus(t);
+      case Kind::MULT:
+      case Kind::NONLINEAR_MULT: return postRewriteMult(t);
+      case Kind::IAND: return postRewriteIAnd(t);
+      case Kind::POW2: return postRewritePow2(t);
+      case Kind::INTS_ISPOW2: return postRewriteIntsIsPow2(t);
+      case Kind::INTS_LOG2: return postRewriteIntsLog2(t);
+      case Kind::EXPONENTIAL:
+      case Kind::SINE:
+      case Kind::COSINE:
+      case Kind::TANGENT:
+      case Kind::COSECANT:
+      case Kind::SECANT:
+      case Kind::COTANGENT:
+      case Kind::ARCSINE:
+      case Kind::ARCCOSINE:
+      case Kind::ARCTANGENT:
+      case Kind::ARCCOSECANT:
+      case Kind::ARCSECANT:
+      case Kind::ARCCOTANGENT:
+      case Kind::SQRT: return postRewriteTranscendental(t);
+      case Kind::INTS_DIVISION:
+      case Kind::INTS_MODULUS: return rewriteIntsDivMod(t, false);
+      case Kind::INTS_DIVISION_TOTAL:
+      case Kind::INTS_MODULUS_TOTAL: return rewriteIntsDivModTotal(t, false);
+      case Kind::ABS: return rewriteAbs(t);
+      case Kind::TO_REAL: return rewriteToReal(t);
+      case Kind::TO_INTEGER: return rewriteExtIntegerOp(t);
+      case Kind::POW:
       {
         if (t[1].isConst())
         {
           const Rational& exp = t[1].getConst<Rational>();
           TNode base = t[0];
           if(exp.sgn() == 0){
-            return RewriteResponse(REWRITE_DONE,
-                                   NodeManager::currentNM()->mkConstRealOrInt(
-                                       t.getType(), Rational(1)));
+            return RewriteResponse(
+                REWRITE_DONE,
+                nodeManager()->mkConstRealOrInt(t.getType(), Rational(1)));
           }else if(exp.sgn() > 0 && exp.isIntegral()){
             cvc5::internal::Rational r(expr::NodeValue::MAX_CHILDREN);
             if (exp <= r)
             {
               unsigned num = exp.getNumerator().toUnsignedInt();
+              Node ret;
               if( num==1 ){
-                return RewriteResponse(REWRITE_AGAIN, base);
+                ret = base;
               }else{
-                NodeBuilder nb(kind::MULT);
+                NodeBuilder nb(Kind::MULT);
                 for(unsigned i=0; i < num; ++i){
                   nb << base;
                 }
                 Assert(nb.getNumChildren() > 0);
-                Node mult = nb;
-                return RewriteResponse(REWRITE_AGAIN, mult);
+                ret = nb;
               }
+              // ensure type is preserved
+              if (t.getType().isReal())
+              {
+                ret = rewriter::ensureReal(ret);
+              }
+              return RewriteResponse(REWRITE_AGAIN_FULL, ret);
             }
           }
         }
-        else if (t[0].isConst()
-                 && t[0].getConst<Rational>().getNumerator().toUnsignedInt()
-                        == 2
-                 && t[1].getType().isInteger())
-        {
-          return RewriteResponse(
-              REWRITE_DONE, NodeManager::currentNM()->mkNode(kind::POW2, t[1]));
-        }
-
-        // Todo improve the exception thrown
-        std::stringstream ss;
-        ss << "The exponent of the POW(^) operator can only be a positive "
-              "integral constant below "
-           << (expr::NodeValue::MAX_CHILDREN + 1) << ". ";
-        ss << "Exception occurred in:" << std::endl;
-        ss << "  " << t;
-        throw LogicException(ss.str());
+        return RewriteResponse(REWRITE_DONE, t);
       }
-      case kind::PI: return RewriteResponse(REWRITE_DONE, t);
+      case Kind::PI: return RewriteResponse(REWRITE_DONE, t);
       default: Unreachable();
     }
   }
@@ -382,9 +465,9 @@ RewriteResponse ArithRewriter::rewriteVariable(TNode t)
 
 RewriteResponse ArithRewriter::rewriteNeg(TNode t, bool pre)
 {
-  Assert(t.getKind() == kind::NEG);
+  Assert(t.getKind() == Kind::NEG);
 
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   if (t[0].isConst())
   {
     Rational neg = -(t[0].getConst<Rational>());
@@ -397,7 +480,7 @@ RewriteResponse ArithRewriter::rewriteNeg(TNode t, bool pre)
                            rewriter::mkConst(-rewriter::getRAN(t[0])));
   }
 
-  Node noUminus = nm->mkNode(kind::MULT, rewriter::mkConst(Rational(-1)), t[0]);
+  Node noUminus = nm->mkNode(Kind::MULT, rewriter::mkConst(Rational(-1)), t[0]);
   if (pre)
   {
     return RewriteResponse(REWRITE_DONE, noUminus);
@@ -410,10 +493,10 @@ RewriteResponse ArithRewriter::rewriteNeg(TNode t, bool pre)
 
 RewriteResponse ArithRewriter::rewriteSub(TNode t)
 {
-  Assert(t.getKind() == kind::SUB);
+  Assert(t.getKind() == Kind::SUB);
   Assert(t.getNumChildren() == 2);
 
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   if (t[0] == t[1])
   {
     return RewriteResponse(REWRITE_DONE,
@@ -423,20 +506,20 @@ RewriteResponse ArithRewriter::rewriteSub(TNode t)
       REWRITE_AGAIN_FULL,
       nm->mkNode(Kind::ADD,
                  t[0],
-                 nm->mkNode(kind::MULT,
+                 nm->mkNode(Kind::MULT,
                             nm->mkConstRealOrInt(t[1].getType(), Rational(-1)),
                             t[1])));
 }
 
 RewriteResponse ArithRewriter::preRewritePlus(TNode t)
 {
-  Assert(t.getKind() == kind::ADD);
+  Assert(t.getKind() == Kind::ADD);
   return RewriteResponse(REWRITE_DONE, expr::algorithm::flatten(t));
 }
 
 RewriteResponse ArithRewriter::postRewritePlus(TNode t)
 {
-  Assert(t.getKind() == kind::ADD);
+  Assert(t.getKind() == Kind::ADD);
   Assert(t.getNumChildren() > 1);
 
   std::vector<TNode> children;
@@ -454,8 +537,8 @@ RewriteResponse ArithRewriter::postRewritePlus(TNode t)
 
 RewriteResponse ArithRewriter::preRewriteMult(TNode node)
 {
-  Assert(node.getKind() == kind::MULT
-         || node.getKind() == kind::NONLINEAR_MULT);
+  Assert(node.getKind() == Kind::MULT
+         || node.getKind() == Kind::NONLINEAR_MULT);
 
   if (auto res = rewriter::getZeroChild(node); res)
   {
@@ -466,7 +549,7 @@ RewriteResponse ArithRewriter::preRewriteMult(TNode node)
 }
 
 RewriteResponse ArithRewriter::postRewriteMult(TNode t){
-  Assert(t.getKind() == kind::MULT || t.getKind() == kind::NONLINEAR_MULT);
+  Assert(t.getKind() == Kind::MULT || t.getKind() == Kind::NONLINEAR_MULT);
   Assert(t.getNumChildren() >= 2);
 
   std::vector<TNode> children;
@@ -519,19 +602,19 @@ RewriteResponse ArithRewriter::postRewriteMult(TNode t){
 
 RewriteResponse ArithRewriter::rewriteDiv(TNode t, bool pre)
 {
-  Assert(t.getKind() == kind::DIVISION_TOTAL || t.getKind() == kind::DIVISION);
+  Assert(t.getKind() == Kind::DIVISION_TOTAL || t.getKind() == Kind::DIVISION);
   Assert(t.getNumChildren() == 2);
 
   Node left = rewriter::removeToReal(t[0]);
   Node right = rewriter::removeToReal(t[1]);
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   if (right.isConst())
   {
     const Rational& den = right.getConst<Rational>();
 
     if (den.isZero())
     {
-      if (t.getKind() == kind::DIVISION_TOTAL)
+      if (t.getKind() == Kind::DIVISION_TOTAL)
       {
         Node ret = nm->mkConstReal(0);
         return RewriteResponse(REWRITE_DONE, ret);
@@ -551,14 +634,14 @@ RewriteResponse ArithRewriter::rewriteDiv(TNode t, bool pre)
     }
     if (rewriter::isRAN(left))
     {
-      return RewriteResponse(
-          REWRITE_DONE,
-          nm->mkRealAlgebraicNumber(rewriter::getRAN(left) / den));
+      return RewriteResponse(REWRITE_DONE,
+                             rewriter::ensureReal(nm->mkRealAlgebraicNumber(
+                                 rewriter::getRAN(left) / den)));
     }
 
     Node result = nm->mkConstReal(den.inverse());
-    Node mult = rewriter::ensureReal(
-        NodeManager::currentNM()->mkNode(kind::MULT, left, result));
+    Node mult =
+        rewriter::ensureReal(nodeManager()->mkNode(Kind::MULT, left, result));
     if (pre)
     {
       return RewriteResponse(REWRITE_DONE, mult);
@@ -572,9 +655,10 @@ RewriteResponse ArithRewriter::rewriteDiv(TNode t, bool pre)
     // mkConst is applied to RAN in this block, which are always Real
     if (left.isConst())
     {
-      return RewriteResponse(REWRITE_DONE,
-                             rewriter::ensureReal(rewriter::mkConst(
-                                 left.getConst<Rational>() / den)));
+      return RewriteResponse(
+          REWRITE_DONE,
+          rewriter::ensureReal(rewriter::mkConst(
+              RealAlgebraicNumber(left.getConst<Rational>()) / den)));
     }
     if (rewriter::isRAN(left))
     {
@@ -583,9 +667,9 @@ RewriteResponse ArithRewriter::rewriteDiv(TNode t, bool pre)
                                  rewriter::getRAN(left) / den)));
     }
 
-    Node result = rewriter::mkConst(inverse(den));
-    Node mult = rewriter::ensureReal(
-        NodeManager::currentNM()->mkNode(kind::MULT, left, result));
+    Node result = rewriter::mkConst(den.inverse());
+    Node mult =
+        rewriter::ensureReal(nodeManager()->mkNode(Kind::MULT, left, result));
     if (pre)
     {
       return RewriteResponse(REWRITE_DONE, mult);
@@ -593,24 +677,34 @@ RewriteResponse ArithRewriter::rewriteDiv(TNode t, bool pre)
     // requires again full since ensureReal may have added a to_real
     return RewriteResponse(REWRITE_AGAIN_FULL, mult);
   }
-  Node ret = nm->mkNode(t.getKind(), left, right);
-  return RewriteResponse(REWRITE_DONE, ret);
+  // may have changed due to removing to_real
+  if (left!=t[0] || right!=t[1])
+  {
+    Node ret = nm->mkNode(t.getKind(), left, right);
+    return RewriteResponse(REWRITE_AGAIN_FULL, ret);
+  }
+  return RewriteResponse(REWRITE_DONE, t);
 }
 
 RewriteResponse ArithRewriter::rewriteToReal(TNode t)
 {
-  Assert(t.getKind() == kind::TO_REAL);
+  Assert(t.getKind() == Kind::TO_REAL);
   if (!t[0].getType().isInteger())
   {
     // if it is already real type, then just return the argument
     return RewriteResponse(REWRITE_DONE, t[0]);
   }
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   if (t[0].isConst())
   {
     // If the argument is constant, return a real constant.
     const Rational& rat = t[0].getConst<Rational>();
     return RewriteResponse(REWRITE_DONE, nm->mkConstReal(rat));
+  }
+  if (t[0].getKind() == Kind::TO_REAL)
+  {
+    // (to_real (to_real t)) ---> (to_real t)
+    return RewriteResponse(REWRITE_DONE, t[0]);
   }
   return RewriteResponse(REWRITE_DONE, t);
 }
@@ -628,8 +722,7 @@ RewriteResponse ArithRewriter::rewriteAbs(TNode t)
       return RewriteResponse(REWRITE_DONE, t[0]);
     }
     return RewriteResponse(
-        REWRITE_DONE,
-        NodeManager::currentNM()->mkConstRealOrInt(t[0].getType(), -rat));
+        REWRITE_DONE, nodeManager()->mkConstRealOrInt(t[0].getType(), -rat));
   }
   if (rewriter::isRAN(t[0]))
   {
@@ -638,31 +731,31 @@ RewriteResponse ArithRewriter::rewriteAbs(TNode t)
     {
       return RewriteResponse(REWRITE_DONE, t[0]);
     }
-    return RewriteResponse(
-        REWRITE_DONE, NodeManager::currentNM()->mkRealAlgebraicNumber(-ran));
+    return RewriteResponse(REWRITE_DONE,
+                           nodeManager()->mkRealAlgebraicNumber(-ran));
   }
   return RewriteResponse(REWRITE_DONE, t);
 }
 
 RewriteResponse ArithRewriter::rewriteIntsDivMod(TNode t, bool pre)
 {
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   Kind k = t.getKind();
-  if (k == kind::INTS_MODULUS)
+  if (k == Kind::INTS_MODULUS)
   {
     if (t[1].isConst() && !t[1].getConst<Rational>().isZero())
     {
       // can immediately replace by INTS_MODULUS_TOTAL
-      Node ret = nm->mkNode(kind::INTS_MODULUS_TOTAL, t[0], t[1]);
+      Node ret = nm->mkNode(Kind::INTS_MODULUS_TOTAL, t[0], t[1]);
       return returnRewrite(t, ret, Rewrite::MOD_TOTAL_BY_CONST);
     }
   }
-  if (k == kind::INTS_DIVISION)
+  if (k == Kind::INTS_DIVISION)
   {
     if (t[1].isConst() && !t[1].getConst<Rational>().isZero())
     {
       // can immediately replace by INTS_DIVISION_TOTAL
-      Node ret = nm->mkNode(kind::INTS_DIVISION_TOTAL, t[0], t[1]);
+      Node ret = nm->mkNode(Kind::INTS_DIVISION_TOTAL, t[0], t[1]);
       return returnRewrite(t, ret, Rewrite::DIV_TOTAL_BY_CONST);
     }
   }
@@ -676,36 +769,37 @@ RewriteResponse ArithRewriter::rewriteIntsDivModTotal(TNode t, bool pre)
     // do not rewrite at prewrite.
     return RewriteResponse(REWRITE_DONE, t);
   }
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   Kind k = t.getKind();
-  Assert(k == kind::INTS_MODULUS_TOTAL || k == kind::INTS_DIVISION_TOTAL);
+  Assert(k == Kind::INTS_MODULUS_TOTAL || k == Kind::INTS_DIVISION_TOTAL);
   TNode n = t[0];
   TNode d = t[1];
   bool dIsConstant = d.isConst();
   if (dIsConstant && d.getConst<Rational>().isZero())
   {
-    // (div x 0) ---> 0 or (mod x 0) ---> 0
-    return returnRewrite(t, nm->mkConstInt(0), Rewrite::DIV_MOD_BY_ZERO);
+    // (div_total x 0) ---> 0 or (mod_total x 0) ---> x
+    Node ret = k == Kind::INTS_MODULUS_TOTAL ? Node(t[0]) : nm->mkConstInt(0);
+    return returnRewrite(t, ret, Rewrite::DIV_MOD_BY_ZERO);
   }
   else if (dIsConstant && d.getConst<Rational>().isOne())
   {
-    if (k == kind::INTS_MODULUS_TOTAL)
+    if (k == Kind::INTS_MODULUS_TOTAL)
     {
-      // (mod x 1) --> 0
+      // (mod_total x 1) --> 0
       return returnRewrite(t, nm->mkConstInt(0), Rewrite::MOD_BY_ONE);
     }
-    Assert(k == kind::INTS_DIVISION_TOTAL);
-    // (div x 1) --> x
+    Assert(k == Kind::INTS_DIVISION_TOTAL);
+    // (div_total x 1) --> x
     return returnRewrite(t, n, Rewrite::DIV_BY_ONE);
   }
   else if (dIsConstant && d.getConst<Rational>().sgn() < 0)
   {
     // pull negation
-    // (div x (- c)) ---> (- (div x c))
-    // (mod x (- c)) ---> (mod x c)
+    // (div_total x (- c)) ---> (- (div_total x c))
+    // (mod_total x (- c)) ---> (mod_total x c)
     Node nn = nm->mkNode(k, t[0], nm->mkConstInt(-t[1].getConst<Rational>()));
-    Node ret = (k == kind::INTS_DIVISION || k == kind::INTS_DIVISION_TOTAL)
-                   ? nm->mkNode(kind::NEG, nn)
+    Node ret = k == Kind::INTS_DIVISION_TOTAL
+                   ? nm->mkNode(Kind::NEG, nn)
                    : nn;
     return returnRewrite(t, ret, Rewrite::DIV_MOD_PULL_NEG_DEN);
   }
@@ -717,34 +811,34 @@ RewriteResponse ArithRewriter::rewriteIntsDivModTotal(TNode t, bool pre)
     Integer di = d.getConst<Rational>().getNumerator();
     Integer ni = n.getConst<Rational>().getNumerator();
 
-    bool isDiv = (k == kind::INTS_DIVISION || k == kind::INTS_DIVISION_TOTAL);
+    bool isDiv = (k == Kind::INTS_DIVISION_TOTAL);
 
     Integer result = isDiv ? ni.euclidianDivideQuotient(di)
                            : ni.euclidianDivideRemainder(di);
 
     // constant evaluation
-    // (mod c1 c2) ---> c3 or (div c1 c2) ---> c3
+    // (mod_total c1 c2) ---> c3 or (div_total c1 c2) ---> c3
     Node resultNode = nm->mkConstInt(Rational(result));
     return returnRewrite(t, resultNode, Rewrite::CONST_EVAL);
   }
-  if (k == kind::INTS_MODULUS_TOTAL)
+  if (k == Kind::INTS_MODULUS_TOTAL)
   {
     // Note these rewrites do not need to account for modulus by zero as being
     // a UF, which is handled by the reduction of INTS_MODULUS.
     Kind k0 = t[0].getKind();
-    if (k0 == kind::INTS_MODULUS_TOTAL && t[0][1] == t[1])
+    if (k0 == Kind::INTS_MODULUS_TOTAL && t[0][1] == t[1])
     {
-      // (mod (mod x c) c) --> (mod x c)
+      // (mod_total (mod_total x c) c) --> (mod x c)
       return returnRewrite(t, t[0], Rewrite::MOD_OVER_MOD);
     }
-    else if (k0 == kind::NONLINEAR_MULT || k0 == kind::MULT || k0 == kind::ADD)
+    else if (k0 == Kind::NONLINEAR_MULT || k0 == Kind::MULT || k0 == Kind::ADD)
     {
       // can drop all
       std::vector<Node> newChildren;
       bool childChanged = false;
       for (const Node& tc : t[0])
       {
-        if (tc.getKind() == kind::INTS_MODULUS_TOTAL && tc[1] == t[1])
+        if (tc.getKind() == Kind::INTS_MODULUS_TOTAL && tc[1] == t[1])
         {
           newChildren.push_back(tc[0]);
           childChanged = true;
@@ -754,22 +848,23 @@ RewriteResponse ArithRewriter::rewriteIntsDivModTotal(TNode t, bool pre)
       }
       if (childChanged)
       {
-        // (mod (op ... (mod x c) ...) c) ---> (mod (op ... x ...) c) where
+        // (mod_total (op ... (mod_total x c) ...) c) ---> 
+        // (mod_total (op ... x ...) c) where
         // op is one of { NONLINEAR_MULT, MULT, ADD }.
         Node ret = nm->mkNode(k0, newChildren);
-        ret = nm->mkNode(kind::INTS_MODULUS_TOTAL, ret, t[1]);
+        ret = nm->mkNode(Kind::INTS_MODULUS_TOTAL, ret, t[1]);
         return returnRewrite(t, ret, Rewrite::MOD_CHILD_MOD);
       }
     }
   }
   else
   {
-    Assert(k == kind::INTS_DIVISION_TOTAL);
+    Assert(k == Kind::INTS_DIVISION_TOTAL);
     // Note these rewrites do not need to account for division by zero as being
     // a UF, which is handled by the reduction of INTS_DIVISION.
-    if (t[0].getKind() == kind::INTS_MODULUS_TOTAL && t[0][1] == t[1])
+    if (t[0].getKind() == Kind::INTS_MODULUS_TOTAL && t[0][1] == t[1])
     {
-      // (div (mod x c) c) --> 0
+      // (div_total (mod_total x c) c) --> 0
       Node ret = nm->mkConstInt(0);
       return returnRewrite(t, ret, Rewrite::DIV_OVER_MOD);
     }
@@ -779,9 +874,9 @@ RewriteResponse ArithRewriter::rewriteIntsDivModTotal(TNode t, bool pre)
 
 RewriteResponse ArithRewriter::rewriteExtIntegerOp(TNode t)
 {
-  Assert(t.getKind() == kind::TO_INTEGER || t.getKind() == kind::IS_INTEGER);
-  bool isPred = t.getKind() == kind::IS_INTEGER;
-  NodeManager* nm = NodeManager::currentNM();
+  Assert(t.getKind() == Kind::TO_INTEGER || t.getKind() == Kind::IS_INTEGER);
+  bool isPred = t.getKind() == Kind::IS_INTEGER;
+  NodeManager* nm = nodeManager();
   if (t[0].isConst())
   {
     Node ret;
@@ -800,12 +895,12 @@ RewriteResponse ArithRewriter::rewriteExtIntegerOp(TNode t)
     Node ret = isPred ? nm->mkConst(true) : Node(t[0]);
     return returnRewrite(t, ret, Rewrite::INT_EXT_INT);
   }
-  if (t[0].getKind() == kind::PI)
+  if (t[0].getKind() == Kind::PI)
   {
     Node ret = isPred ? nm->mkConst(false) : nm->mkConstInt(Rational(3));
     return returnRewrite(t, ret, Rewrite::INT_EXT_PI);
   }
-  else if (t[0].getKind() == kind::TO_REAL)
+  else if (t[0].getKind() == Kind::TO_REAL)
   {
     Node ret = nm->mkNode(t.getKind(), t[0][0]);
     return returnRewrite(t, ret, Rewrite::INT_EXT_TO_REAL);
@@ -815,30 +910,30 @@ RewriteResponse ArithRewriter::rewriteExtIntegerOp(TNode t)
 
 RewriteResponse ArithRewriter::postRewriteIAnd(TNode t)
 {
-  Assert(t.getKind() == kind::IAND);
+  Assert(t.getKind() == Kind::IAND);
   uint32_t bsize = t.getOperator().getConst<IntAnd>().d_size;
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   // if constant, we eliminate
   if (t[0].isConst() && t[1].isConst())
   {
     Node iToBvop = nm->mkConst(IntToBitVector(bsize));
-    Node arg1 = nm->mkNode(kind::INT_TO_BITVECTOR, iToBvop, t[0]);
-    Node arg2 = nm->mkNode(kind::INT_TO_BITVECTOR, iToBvop, t[1]);
-    Node bvand = nm->mkNode(kind::BITVECTOR_AND, arg1, arg2);
-    Node ret = nm->mkNode(kind::BITVECTOR_TO_NAT, bvand);
+    Node arg1 = nm->mkNode(Kind::INT_TO_BITVECTOR, iToBvop, t[0]);
+    Node arg2 = nm->mkNode(Kind::INT_TO_BITVECTOR, iToBvop, t[1]);
+    Node bvand = nm->mkNode(Kind::BITVECTOR_AND, arg1, arg2);
+    Node ret = nm->mkNode(Kind::BITVECTOR_TO_NAT, bvand);
     return RewriteResponse(REWRITE_AGAIN_FULL, ret);
   }
   else if (t[0] > t[1])
   {
     // ((_ iand k) x y) ---> ((_ iand k) y x) if x > y by node ordering
-    Node ret = nm->mkNode(kind::IAND, t.getOperator(), t[1], t[0]);
+    Node ret = nm->mkNode(Kind::IAND, t.getOperator(), t[1], t[0]);
     return RewriteResponse(REWRITE_AGAIN, ret);
   }
   else if (t[0] == t[1])
   {
     // ((_ iand k) x x) ---> (mod x 2^k)
     Node twok = nm->mkConstInt(Rational(Integer(2).pow(bsize)));
-    Node ret = nm->mkNode(kind::INTS_MODULUS, t[0], twok);
+    Node ret = nm->mkNode(Kind::INTS_MODULUS, t[0], twok);
     return RewriteResponse(REWRITE_AGAIN, ret);
   }
   // simplifications involving constants
@@ -857,7 +952,7 @@ RewriteResponse ArithRewriter::postRewriteIAnd(TNode t)
     {
       // ((_ iand k) 111...1 y) ---> (mod y 2^k)
       Node twok = nm->mkConstInt(Rational(Integer(2).pow(bsize)));
-      Node ret = nm->mkNode(kind::INTS_MODULUS, t[1 - i], twok);
+      Node ret = nm->mkNode(Kind::INTS_MODULUS, t[1 - i], twok);
       return RewriteResponse(REWRITE_AGAIN, ret);
     }
   }
@@ -866,8 +961,8 @@ RewriteResponse ArithRewriter::postRewriteIAnd(TNode t)
 
 RewriteResponse ArithRewriter::postRewritePow2(TNode t)
 {
-  Assert(t.getKind() == kind::POW2);
-  NodeManager* nm = NodeManager::currentNM();
+  Assert(t.getKind() == Kind::POW2);
+  NodeManager* nm = nodeManager();
   // if constant, we eliminate
   if (t[0].isConst())
   {
@@ -880,8 +975,43 @@ RewriteResponse ArithRewriter::postRewritePow2(TNode t)
     }
     // (pow2 t) ---> (pow 2 t) and continue rewriting to eliminate pow
     Node two = rewriter::mkConst(Integer(2));
-    Node ret = nm->mkNode(kind::POW, two, t[0]);
+    Node ret = nm->mkNode(Kind::POW, two, t[0]);
     return RewriteResponse(REWRITE_AGAIN, ret);
+  }
+  return RewriteResponse(REWRITE_DONE, t);
+}
+
+RewriteResponse ArithRewriter::postRewriteIntsIsPow2(TNode t)
+{
+  Assert(t.getKind() == Kind::INTS_ISPOW2);
+  // if constant, we eliminate
+  if (t[0].isConst())
+  {
+    // pow2 is only supported for integers
+    Assert(t[0].getType().isInteger());
+    Integer i = t[0].getConst<Rational>().getNumerator();
+
+    return RewriteResponse(REWRITE_DONE, rewriter::mkConst(i.isPow2()));
+  }
+  return RewriteResponse(REWRITE_DONE, t);
+}
+RewriteResponse ArithRewriter::postRewriteIntsLog2(TNode t)
+{
+  Assert(t.getKind() == Kind::INTS_LOG2);
+  // if constant, we eliminate
+  if (t[0].isConst())
+  {
+    // pow2 is only supported for integers
+    Assert(t[0].getType().isInteger());
+    const Rational& r = t[0].getConst<Rational>();
+    if (r.sgn() < 0)
+    {
+      return RewriteResponse(REWRITE_DONE, rewriter::mkConst(Integer(0)));
+    }
+    Integer i = r.getNumerator();
+    size_t const length = i.length();
+    return RewriteResponse(REWRITE_DONE,
+                           rewriter::mkConst(Integer(length - 1)));
   }
   return RewriteResponse(REWRITE_DONE, t);
 }
@@ -895,47 +1025,42 @@ RewriteResponse ArithRewriter::postRewriteTranscendental(TNode t)
 {
   Trace("arith-tf-rewrite")
       << "Rewrite transcendental function : " << t << std::endl;
-  NodeManager* nm = NodeManager::currentNM();
-  if (t[0].getKind() == TO_REAL)
-  {
-    // always strip TO_REAL from argument.
-    Node ret = nm->mkNode(t.getKind(), t[0][0]);
-    return RewriteResponse(REWRITE_AGAIN, ret);
-  }
+  Assert(t.getTypeOrNull(true).isReal());
+  NodeManager* nm = nodeManager();
   switch (t.getKind())
   {
-    case kind::EXPONENTIAL:
+    case Kind::EXPONENTIAL:
     {
       if (t[0].isConst())
       {
-        Node one = rewriter::mkConst(Integer(1));
-        if (t[0].getConst<Rational>().sgn() >= 0 && t[0].getType().isInteger()
-            && t[0] != one)
+        Rational r = t[0].getConst<Rational>();
+        if (r.sgn() == 0)
         {
-          return RewriteResponse(
-              REWRITE_AGAIN,
-              nm->mkNode(kind::POW, nm->mkNode(kind::EXPONENTIAL, one), t[0]));
+          Node one = nm->mkConstReal(Rational(1));
+          // (= (exp 0.0) 1.0)
+          return RewriteResponse(REWRITE_DONE, one);
         }
         else
         {
           return RewriteResponse(REWRITE_DONE, t);
         }
       }
-      else if (t[0].getKind() == kind::ADD)
+      else if (t[0].getKind() == Kind::ADD)
       {
         std::vector<Node> product;
         for (const Node tc : t[0])
         {
-          product.push_back(nm->mkNode(kind::EXPONENTIAL, tc));
+          Node tcr = rewriter::ensureReal(tc);
+          product.push_back(nm->mkNode(Kind::EXPONENTIAL, tcr));
         }
         // We need to do a full rewrite here, since we can get exponentials of
         // constants, e.g. when we are rewriting exp(2 + x)
         return RewriteResponse(REWRITE_AGAIN_FULL,
-                               nm->mkNode(kind::MULT, product));
+                               nm->mkNode(Kind::MULT, product));
       }
     }
     break;
-    case kind::SINE:
+    case Kind::SINE:
       if (t[0].isConst())
       {
         const Rational& rat = t[0].getConst<Rational>();
@@ -945,20 +1070,21 @@ RewriteResponse ArithRewriter::postRewriteTranscendental(TNode t)
         }
         else if (rat.sgn() == -1)
         {
-          Node ret = nm->mkNode(kind::NEG,
-                                nm->mkNode(kind::SINE, nm->mkConstReal(-rat)));
+          Node ret = nm->mkNode(Kind::NEG,
+                                nm->mkNode(Kind::SINE, nm->mkConstReal(-rat)));
           return RewriteResponse(REWRITE_AGAIN_FULL, ret);
         }
       }
-      else if ((t[0].getKind() == MULT || t[0].getKind() == NONLINEAR_MULT)
+      else if ((t[0].getKind() == Kind::MULT
+                || t[0].getKind() == Kind::NONLINEAR_MULT)
                && t[0][0].isConst() && t[0][0].getConst<Rational>().sgn() == -1)
       {
         // sin(-n*x) ---> -sin(n*x)
         std::vector<Node> mchildren(t[0].begin(), t[0].end());
         mchildren[0] = nm->mkConstReal(-t[0][0].getConst<Rational>());
         Node ret = nm->mkNode(
-            kind::NEG,
-            nm->mkNode(kind::SINE, nm->mkNode(t[0].getKind(), mchildren)));
+            Kind::NEG,
+            nm->mkNode(Kind::SINE, nm->mkNode(t[0].getKind(), mchildren)));
         return RewriteResponse(REWRITE_AGAIN_FULL, ret);
       }
       else
@@ -1017,14 +1143,15 @@ RewriteResponse ArithRewriter::postRewriteTranscendental(TNode t)
               Assert(r.sgn() == -1);
               new_pi_factor = nm->mkConstReal(r + rtwo * ra_div_two.floor());
             }
-            Node new_arg = nm->mkNode(kind::MULT, new_pi_factor, pi);
+            Node new_arg = nm->mkNode(Kind::MULT, new_pi_factor, pi);
             if (!rem.isNull())
             {
-              new_arg = nm->mkNode(kind::ADD, new_arg, rem);
+              new_arg = nm->mkNode(Kind::ADD, new_arg, rem);
             }
+            new_arg = rewriter::ensureReal(new_arg);
             // sin( 2*n*PI + x ) = sin( x )
             return RewriteResponse(REWRITE_AGAIN_FULL,
-                                   nm->mkNode(kind::SINE, new_arg));
+                                   nm->mkNode(Kind::SINE, new_arg));
           }
           else if (r_abs == rone)
           {
@@ -1036,9 +1163,10 @@ RewriteResponse ArithRewriter::postRewriteTranscendental(TNode t)
             }
             else
             {
+              rem = rewriter::ensureReal(rem);
               return RewriteResponse(
                   REWRITE_AGAIN_FULL,
-                  nm->mkNode(kind::NEG, nm->mkNode(kind::SINE, rem)));
+                  nm->mkNode(Kind::NEG, nm->mkNode(Kind::SINE, rem)));
             }
           }
           else if (rem.isNull())
@@ -1068,49 +1196,49 @@ RewriteResponse ArithRewriter::postRewriteTranscendental(TNode t)
         }
       }
       break;
-    case kind::COSINE:
+    case Kind::COSINE:
     {
       return RewriteResponse(
           REWRITE_AGAIN_FULL,
           nm->mkNode(
-              kind::SINE,
-              nm->mkNode(kind::SUB,
-                         nm->mkNode(kind::MULT,
+              Kind::SINE,
+              nm->mkNode(Kind::SUB,
+                         nm->mkNode(Kind::MULT,
                                     nm->mkConstReal(Rational(1) / Rational(2)),
                                     mkPi()),
                          t[0])));
     }
     break;
-    case kind::TANGENT:
+    case Kind::TANGENT:
     {
       return RewriteResponse(REWRITE_AGAIN_FULL,
-                             nm->mkNode(kind::DIVISION,
-                                        nm->mkNode(kind::SINE, t[0]),
-                                        nm->mkNode(kind::COSINE, t[0])));
+                             nm->mkNode(Kind::DIVISION,
+                                        nm->mkNode(Kind::SINE, t[0]),
+                                        nm->mkNode(Kind::COSINE, t[0])));
     }
     break;
-    case kind::COSECANT:
+    case Kind::COSECANT:
     {
       return RewriteResponse(REWRITE_AGAIN_FULL,
-                             nm->mkNode(kind::DIVISION,
+                             nm->mkNode(Kind::DIVISION,
                                         nm->mkConstReal(Rational(1)),
-                                        nm->mkNode(kind::SINE, t[0])));
+                                        nm->mkNode(Kind::SINE, t[0])));
     }
     break;
-    case kind::SECANT:
+    case Kind::SECANT:
     {
       return RewriteResponse(REWRITE_AGAIN_FULL,
-                             nm->mkNode(kind::DIVISION,
+                             nm->mkNode(Kind::DIVISION,
                                         nm->mkConstReal(Rational(1)),
-                                        nm->mkNode(kind::COSINE, t[0])));
+                                        nm->mkNode(Kind::COSINE, t[0])));
     }
     break;
-    case kind::COTANGENT:
+    case Kind::COTANGENT:
     {
       return RewriteResponse(REWRITE_AGAIN_FULL,
-                             nm->mkNode(kind::DIVISION,
-                                        nm->mkNode(kind::COSINE, t[0]),
-                                        nm->mkNode(kind::SINE, t[0])));
+                             nm->mkNode(Kind::DIVISION,
+                                        nm->mkNode(Kind::COSINE, t[0]),
+                                        nm->mkNode(Kind::SINE, t[0])));
     }
     break;
     default: break;
@@ -1134,9 +1262,23 @@ RewriteResponse ArithRewriter::returnRewrite(TNode t, Node ret, Rewrite r)
   return RewriteResponse(REWRITE_AGAIN_FULL, ret);
 }
 
-RewriteResponse ArithRewriter::rewriteIneqToBv(Kind kind,
-                                               const rewriter::Sum& sum,
-                                               const Node& ineq)
+Node ArithRewriter::rewriteIneqToBv(const Node& ineq)
+{
+  Assert(ineq.getKind() == Kind::GEQ);
+
+  Node left = rewriter::removeToReal(ineq[0]);
+  Node right = rewriter::removeToReal(ineq[1]);
+
+  rewriter::Sum sum;
+  rewriter::addToSum(sum, left, false);
+  rewriter::addToSum(sum, right, true);
+
+  return rewriteIneqToBv(Kind::GEQ, sum, ineq);
+}
+
+Node ArithRewriter::rewriteIneqToBv(Kind kind,
+                                    const rewriter::Sum& sum,
+                                    const Node& ineq)
 {
   bool convertible = true;
   // the (single) bv2nat term in the sum
@@ -1145,14 +1287,14 @@ RewriteResponse ArithRewriter::rewriteIneqToBv(Kind kind,
   bool bv2natPol = false;
   // the remaining sum (constant)
   std::vector<Node> otherSum;
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   for (const std::pair<const Node, RealAlgebraicNumber>& m : sum)
   {
     if (m.second.isRational())
     {
       const Rational& r = m.second.toRational();
       Kind mk = m.first.getKind();
-      if (mk == BITVECTOR_TO_NAT)
+      if (mk == Kind::BITVECTOR_TO_NAT)
       {
         // We currently only eliminate sums involving exactly one
         // (bv2nat x) monomial whose coefficient is +- 1, although more
@@ -1172,7 +1314,7 @@ RewriteResponse ArithRewriter::rewriteIneqToBv(Kind kind,
           break;
         }
       }
-      else if (mk == CONST_INTEGER && m.second.isRational())
+      else if (mk == Kind::CONST_INTEGER && m.second.isRational())
       {
         if (r.isIntegral())
         {
@@ -1188,37 +1330,44 @@ RewriteResponse ArithRewriter::rewriteIneqToBv(Kind kind,
   if (convertible && !bv2natTerm.isNull())
   {
     Node zero = nm->mkConstInt(Rational(0));
-    Kind bvKind = (kind == GT ? (bv2natPol ? BITVECTOR_UGT : BITVECTOR_ULT)
-                              : (bv2natPol ? BITVECTOR_UGE : BITVECTOR_ULE));
+    Kind bvKind =
+        (kind == Kind::GT
+             ? (bv2natPol ? Kind::BITVECTOR_UGT : Kind::BITVECTOR_ULT)
+             : (bv2natPol ? Kind::BITVECTOR_UGE : Kind::BITVECTOR_ULE));
     Node bvt = bv2natTerm[0];
     size_t bvsize = bvt.getType().getBitVectorSize();
     Node w = nm->mkConstInt(Rational(Integer(2).pow(bvsize)));
-    Node osum =
-        otherSum.empty()
-            ? zero
-            : (otherSum.size() == 1 ? otherSum[0] : nm->mkNode(ADD, otherSum));
-    Node o = bv2natPol ? nm->mkNode(NEG, osum) : osum;
-    Node ub = nm->mkNode(GEQ, o, w);
-    Node lb = nm->mkNode(LT, o, zero);
+    Node osum = otherSum.empty()
+                    ? zero
+                    : (otherSum.size() == 1 ? otherSum[0]
+                                            : nm->mkNode(Kind::ADD, otherSum));
+    // possibly negate the sum
+    Node o = bv2natPol
+                 ? (osum.getKind() == Kind::NEG ? osum[0]
+                                                : nm->mkNode(Kind::NEG, osum))
+                 : osum;
+    Node ub = nm->mkNode(Kind::GEQ, o, w);
+    Node lb = nm->mkNode(Kind::LT, o, zero);
     Node iToBvop = nm->mkConst(IntToBitVector(bvsize));
     Node ret = nm->mkNode(
-        ITE,
+        Kind::ITE,
         ub,
         nm->mkConst(!bv2natPol),
         nm->mkNode(
-            ITE,
+            Kind::ITE,
             lb,
             nm->mkConst(bv2natPol),
-            nm->mkNode(bvKind, bvt, nm->mkNode(INT_TO_BITVECTOR, iToBvop, o))));
+            nm->mkNode(
+                bvKind, bvt, nm->mkNode(Kind::INT_TO_BITVECTOR, iToBvop, o))));
     // E.g. (<= (bv2nat x) N) -->
     //      (ite (>= N 2^w) true (ite (< N 0) false (bvule x ((_ int2bv w) N))
     // or   (<= N (bv2nat x)) -->
     //      (ite (>= N 2^w) false (ite (< N 0) true (bvuge x ((_ int2bv w) N))
     // where N is a constant. Note that ((_ int2bv w) N) will subsequently
     // be rewritten to the appropriate bitvector constant.
-    return returnRewrite(ineq, ret, Rewrite::INEQ_BV_TO_NAT_ELIM);
+    return ret;
   }
-  return RewriteResponse(REWRITE_DONE, ineq);
+  return ineq;
 }
 
 }  // namespace arith

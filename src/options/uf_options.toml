@@ -6,7 +6,7 @@ name   = "Uninterpreted Functions Theory"
   category   = "expert"
   long       = "symmetry-breaker"
   type       = "bool"
-  default    = "true"
+  default    = "false"
   help       = "use UF symmetry breaker (Deharbe et al., CADE 2011)"
 
 [[option]]
@@ -64,8 +64,16 @@ name   = "Uninterpreted Functions Theory"
   category   = "regular"
   long       = "uf-lazy-ll"
   type       = "bool"
-  default    = "false"
+  default    = "true"
   help       = "do lambda lifting lazily"
+
+[[option]]
+  name       = "ufHoLambdaQe"
+  category   = "expert"
+  long       = "uf-lambda-qe"
+  type       = "bool"
+  default    = "false"
+  help       = "apply quantifier elimination eagerly when two lambdas are equated"
 
 [[option]]
   name       = "eagerArithBvConv"
@@ -74,3 +82,27 @@ name   = "Uninterpreted Functions Theory"
   type       = "bool"
   default    = "false"
   help       = "eagerly expand bit-vector to arithmetic conversions during preprocessing"
+
+[[option]]
+  name       = "modelBasedArithBvConv"
+  category   = "expert"
+  long       = "model-based-arith-bv-conv"
+  type       = "bool"
+  default    = "false"
+  help       = "model-based inferences for bit-vector to arithmetic conversions"
+
+[[option]]
+  name       = "hoExp"
+  category   = "expert"
+  long       = "ho-exp"
+  type       = "bool"
+  default    = "true"
+  help       = "enables the higher-order logic solver"
+
+[[option]]
+  name       = "cardExp"
+  category   = "expert"
+  long       = "uf-card-exp"
+  type       = "bool"
+  default    = "true"
+  help       = "allows logics with UF+cardinality"

@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -26,10 +26,12 @@
 #include "expr/node.h"
 #include "options/theory_options.h"
 #include "proof/trust_node.h"
+#include "prop/sat_solver_types.h"
 #include "smt/env_obj.h"
 #include "theory/atom_requests.h"
-#include "theory/engine_output_channel.h"
+#include "theory/inference_id.h"
 #include "theory/interrupted.h"
+#include "theory/output_channel.h"
 #include "theory/partition_generator.h"
 #include "theory/rewriter.h"
 #include "theory/sort_inference.h"
@@ -48,6 +50,7 @@ namespace cvc5::internal {
 class Env;
 class ResourceManager;
 class TheoryEngineProofGenerator;
+class Plugin;
 class ProofChecker;
 
 /**
@@ -84,10 +87,12 @@ namespace theory {
 
 class CombinationEngine;
 class DecisionManager;
+class PluginModule;
 class RelevanceManager;
 class Rewriter;
 class SharedSolver;
 class TheoryModel;
+class ConflictProcessor;
 
 }  // namespace theory
 
@@ -105,7 +110,7 @@ class TheoryEngine : protected EnvObj
 {
   /** Shared terms database can use the internals notify the theories */
   friend class SharedTermsDatabase;
-  friend class theory::EngineOutputChannel;
+  friend class theory::OutputChannel;
   friend class theory::CombinationEngine;
   friend class theory::SharedSolver;
 
@@ -130,7 +135,7 @@ class TheoryEngine : protected EnvObj
   {
     Assert(d_theoryTable[theoryId] == NULL && d_theoryOut[theoryId] == NULL);
     d_theoryOut[theoryId] =
-        new theory::EngineOutputChannel(statisticsRegistry(), this, theoryId);
+        new theory::OutputChannel(statisticsRegistry(), this, theoryId);
     d_theoryTable[theoryId] =
         new TheoryClass(d_env, *d_theoryOut[theoryId], theory::Valuation(this));
     getRewriter()->registerTheoryRewriter(
@@ -184,6 +189,10 @@ class TheoryEngine : protected EnvObj
    * lemmas to lems, for details see Theory::ppRewrite.
    */
   TrustNode ppRewrite(TNode term, std::vector<theory::SkolemLemma>& lems);
+  /**
+   * Same as above, but applied only at preprocess time.
+   */
+  TrustNode ppStaticRewrite(TNode term);
   /** Notify (preprocessed) assertions. */
   void notifyPreprocessedAssertions(const std::vector<Node>& assertions);
 
@@ -220,6 +229,23 @@ class TheoryEngine : protected EnvObj
    * or during LAST_CALL effort.
    */
   bool isRelevant(Node lit) const;
+  /** is legal elimination
+   *
+   * Returns true if x -> val is a legal elimination of variable x. This is
+   * useful for ppAssert, when x = val is an entailed equality. This function
+   * determines whether indeed x can be eliminated from the problem via the
+   * substitution x -> val.
+   *
+   * The following criteria imply that x -> val is *not* a legal elimination:
+   * (1) If x is contained in val,
+   * (2) If the type of val is not the same as the type of x,
+   * (3) If val contains an operator that cannot be evaluated, and
+   * produceModels is true. For example, x -> sqrt(2) is not a legal
+   * elimination if we are producing models. This is because we care about the
+   * value of x, and its value must be computed (approximated) by the
+   * non-linear solver.
+   */
+  bool isLegalElimination(TNode x, TNode val);
   /**
    * Returns true if the node has a current SAT assignment. If yes, the
    * argument "value" is set to its value.
@@ -274,7 +300,7 @@ class TheoryEngine : protected EnvObj
   /**
    * Resets the internal state.
    */
-  void postsolve();
+  void postsolve(prop::SatValue result);
 
   /**
    * Calls notifyRestart() on all active theories.
@@ -415,6 +441,11 @@ class TheoryEngine : protected EnvObj
    */
   void checkTheoryAssertionsWithModel(bool hardFailure);
 
+  /** Called externally to notify that the current branch is incomplete. */
+  void setModelUnsound(theory::IncompleteId id);
+  /** Called externally that we are unsound (user-context). */
+  void setRefutationUnsound(theory::IncompleteId id);
+
  private:
   typedef context::
       CDHashMap<NodeTheoryPair, NodeTheoryPair, NodeTheoryPairHashFunction>
@@ -425,9 +456,12 @@ class TheoryEngine : protected EnvObj
    *
    * @param conflict The trust node containing the conflict and its proof
    * generator (if it exists),
+   * @param id The inference identifier for the conflict.
    * @param theoryId The theory that sent the conflict
    */
-  void conflict(TrustNode conflict, theory::TheoryId theoryId);
+  void conflict(TrustNode conflict,
+                theory::InferenceId id,
+                theory::TheoryId theoryId);
 
   /** set in conflict */
   void markInConflict();
@@ -498,12 +532,14 @@ class TheoryEngine : protected EnvObj
 
   /**
    * Adds a new lemma, returning its status.
-   * @param node the lemma
-   * @param p the properties of the lemma.
-   * @param atomsTo the theory that atoms of the lemma should be sent to
-   * @param from the theory that sent the lemma
+   * @param node The lemma
+   * @param id The inference identifier for the lemma
+   * @param p The properties of the lemma.
+   * @param atomsTo The theory that atoms of the lemma should be sent to
+   * @param from The theory that sent the lemma.
    */
   void lemma(TrustNode node,
+             theory::InferenceId id,
              theory::LemmaProperty p,
              theory::TheoryId from = theory::THEORY_LAST);
 
@@ -547,7 +583,7 @@ class TheoryEngine : protected EnvObj
   /**
    * Output channels for individual theories.
    */
-  theory::EngineOutputChannel* d_theoryOut[theory::THEORY_LAST];
+  theory::OutputChannel* d_theoryOut[theory::THEORY_LAST];
 
   /**
    * Are we in conflict.
@@ -645,6 +681,10 @@ class TheoryEngine : protected EnvObj
   std::unique_ptr<theory::PartitionGenerator> d_partitionGen;
   /** The list of modules */
   std::vector<theory::TheoryEngineModule*> d_modules;
+  /** Conflict processor */
+  std::unique_ptr<theory::ConflictProcessor> d_cp;
+  /** User plugin modules */
+  std::vector<std::unique_ptr<theory::PluginModule>> d_userPlugins;
 
 }; /* class TheoryEngine */
 

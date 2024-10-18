@@ -1,10 +1,10 @@
 ###############################################################################
 # Top contributors (to current version):
-#   Mathias Preiner, Abdalrhman Mohamed, Mudathir Mohamed
+#   Mathias Preiner, Abdalrhman Mohamed, Aina Niemetz
 #
 # This file is part of the cvc5 project.
 #
-# Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+# Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
 # in the top-level source directory and their institutional affiliations.
 # All rights reserved.  See the file COPYING in the top-level source
 # directory for licensing information.
@@ -13,7 +13,7 @@
 # The build system configuration.
 ##
 
-set(CVC5_EXAMPLES_API
+set(CVC5_EXAMPLES_API_CPP
   bags
   bitvectors
   bitvectors_and_arrays
@@ -29,22 +29,24 @@ set(CVC5_EXAMPLES_API
   sets
   strings
   transcendentals
+  parser
+  parser_sym_manager
+  uf
 )
 
-foreach(example ${CVC5_EXAMPLES_API})
+foreach(example ${CVC5_EXAMPLES_API_CPP})
   cvc5_add_example(${example} "" "api/cpp")
 endforeach()
 
-if(USE_COCOA)
+if(CVC5_USE_COCOA)
   cvc5_add_example(finite_field "" "api/cpp")
 endif()
 
-set(SYGUS_EXAMPLES_API
+set(SYGUS_EXAMPLES_API_CPP
   sygus-fun
-  sygus-grammar
   sygus-inv
 )
 
-foreach(example ${SYGUS_EXAMPLES_API})
+foreach(example ${SYGUS_EXAMPLES_API_CPP})
   cvc5_add_example(${example} "${example}.cpp utils.h utils.cpp" "api/cpp")
 endforeach()

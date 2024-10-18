@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Dejan Jovanovic, Mathias Preiner
+ *   Andrew Reynolds, Dejan Jovanovic, Tim King
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -22,6 +22,7 @@
 
 #include "base/check.h"
 #include "expr/node_algorithm.h"
+#include "expr/skolem_manager.h"
 #include "options/arith_options.h"
 #include "options/smt_options.h"
 #include "options/theory_options.h"
@@ -66,7 +67,6 @@ Theory::Theory(TheoryId id,
                                                      + "checkTime")),
       d_computeCareGraphTime(statisticsRegistry().registerTimer(
           getStatsPrefix(id) + name + "computeCareGraphTime")),
-      d_sharedTerms(d_env.getContext()),
       d_out(&out),
       d_valuation(valuation),
       d_equalityEngine(nullptr),
@@ -79,7 +79,6 @@ Theory::Theory(TheoryId id,
       d_id(id),
       d_facts(d_env.getContext()),
       d_factsHead(d_env.getContext(), 0),
-      d_sharedTermsIndex(d_env.getContext(), 0),
       d_careGraph(nullptr)
 {
 }
@@ -150,16 +149,9 @@ TheoryId Theory::theoryOf(TNode node,
       // Constants, variables, 0-ary constructors
       if (node.isVar())
       {
-        if (node.getKind() == kind::BOOLEAN_TERM_VARIABLE)
-        {
-          tid = THEORY_UF;
-        }
-        else
-        {
-          tid = theoryOf(node.getType(), usortOwner);
-        }
+        tid = theoryOf(node.getType(), usortOwner);
       }
-      else if (node.getKind() == kind::EQUAL)
+      else if (node.getKind() == Kind::EQUAL)
       {
         // Equality is owned by the theory that owns the domain
         tid = theoryOf(node[0].getType(), usortOwner);
@@ -183,19 +175,11 @@ TheoryId Theory::theoryOf(TNode node,
         }
         else
         {
-          if (node.getKind() == kind::BOOLEAN_TERM_VARIABLE)
-          {
-            // Boolean vars go to UF
-            tid = THEORY_UF;
-          }
-          else
-          {
-            // Except for the Boolean ones
-            tid = THEORY_BOOL;
-          }
+          // Other Boolean variables are Bool
+          tid = THEORY_BOOL;
         }
       }
-      else if (node.getKind() == kind::EQUAL)
+      else if (node.getKind() == Kind::EQUAL)
       {  // Equality
         TNode l = node[0];
         TNode r = node[1];
@@ -268,14 +252,21 @@ void Theory::notifyInConflict()
   }
 }
 
-void Theory::computeCareGraph() {
+void Theory::computeCareGraph()
+{
+  Assert(d_theoryState != nullptr);
   Trace("sharing") << "Theory::computeCareGraph<" << getId() << ">()" << endl;
-  for (unsigned i = 0; i < d_sharedTerms.size(); ++ i) {
-    TNode a = d_sharedTerms[i];
+  const context::CDList<TNode>& sharedTerms = d_theoryState->getSharedTerms();
+  size_t ssize = sharedTerms.size();
+  for (size_t i = 0; i < ssize; ++i)
+  {
+    TNode a = sharedTerms[i];
     TypeNode aType = a.getType();
-    for (unsigned j = i + 1; j < d_sharedTerms.size(); ++ j) {
-      TNode b = d_sharedTerms[j];
-      if (b.getType() != aType) {
+    for (size_t j = i + 1; j < ssize; ++j)
+    {
+      TNode b = sharedTerms[j];
+      if (b.getType() != aType)
+      {
         // We don't care about the terms of different types
         continue;
       }
@@ -309,50 +300,7 @@ void Theory::debugPrintFacts() const{
 
 bool Theory::isLegalElimination(TNode x, TNode val)
 {
-  Assert(x.isVar());
-  if (x.getKind() == kind::BOOLEAN_TERM_VARIABLE
-      || val.getKind() == kind::BOOLEAN_TERM_VARIABLE)
-  {
-    return false;
-  }
-  if (expr::hasSubterm(val, x))
-  {
-    return false;
-  }
-  if (val.getType() != x.getType())
-  {
-    return false;
-  }
-  if (!options().smt.produceModels || options().smt.modelVarElimUneval)
-  {
-    // Don't care about the model, or we allow variables to be eliminated by
-    // unevaluatable terms, we can eliminate. Notice that when
-    // options().smt.modelVarElimUneval is true, val may contain unevaluatable
-    // kinds. This means that e.g. a Boolean variable may be eliminated based on
-    // an equality (= b (forall ((x)) (P x))), where its model value is (forall
-    // ((x)) (P x)).
-    return true;
-  }
-  // If models are enabled, then it depends on whether the term contains any
-  // unevaluable operators like FORALL, SINE, etc. Having such operators makes
-  // model construction contain non-constant values for variables, which is
-  // not ideal from a user perspective.
-  // We also insist on this check since the term to eliminate should never
-  // contain quantifiers, or else variable shadowing issues may arise.
-  // there should be a model object
-  TheoryModel* tm = d_valuation.getModel();
-  Assert(tm != nullptr);
-  return tm->isLegalElimination(x, val);
-}
-
-std::unordered_set<TNode> Theory::currentlySharedTerms() const
-{
-  std::unordered_set<TNode> currentlyShared;
-  for (shared_terms_iterator i = shared_terms_begin(),
-           i_end = shared_terms_end(); i != i_end; ++i) {
-    currentlyShared.insert (*i);
-  }
-  return currentlyShared;
+  return d_valuation.isLegalElimination(x, val);
 }
 
 bool Theory::collectModelInfo(TheoryModel* m, const std::set<Node>& termSet)
@@ -391,9 +339,11 @@ void Theory::collectAssertedTerms(std::set<Node>& termSet,
 
   if (includeShared)
   {
+    Assert(d_theoryState != nullptr);
     // Add terms that are shared terms
-    context::CDList<TNode>::const_iterator shared_it = shared_terms_begin(),
-                                           shared_it_end = shared_terms_end();
+    context::CDList<TNode>::const_iterator
+        shared_it = d_theoryState->shared_terms_begin(),
+        shared_it_end = d_theoryState->shared_terms_end();
     for (; shared_it != shared_it_end; ++shared_it)
     {
       collectTerms(*shared_it, termSet, irrKinds);
@@ -432,7 +382,7 @@ void Theory::collectTerms(TNode n,
       termSet.insert(cur);
     }
     // traverse owned terms, don't go under quantifiers
-    if ((k == kind::NOT || k == kind::EQUAL || d_env.theoryOf(cur) == d_id)
+    if ((k == Kind::NOT || k == Kind::EQUAL || d_env.theoryOf(cur) == d_id)
         && !cur.isClosure())
     {
       visit.insert(visit.end(), cur.begin(), cur.end());
@@ -450,20 +400,18 @@ Theory::PPAssertStatus Theory::ppAssert(TrustNode tin,
 {
   Assert(tin.getKind() == TrustNodeKind::LEMMA);
   TNode in = tin.getNode();
-  if (in.getKind() == kind::EQUAL)
+  if (in.getKind() == Kind::EQUAL)
   {
     // (and (= x t) phi) can be replaced by phi[x/t] if
     // 1) x is a variable
     // 2) x is not in the term t
     // 3) x : T and t : S, then S <: T
-    if (in[0].isVar() && isLegalElimination(in[0], in[1])
-        && in[0].getKind() != kind::BOOLEAN_TERM_VARIABLE)
+    if (in[0].isVar() && isLegalElimination(in[0], in[1]))
     {
       outSubstitutions.addSubstitutionSolved(in[0], in[1], tin);
       return PP_ASSERT_STATUS_SOLVED;
     }
-    if (in[1].isVar() && isLegalElimination(in[1], in[0])
-        && in[1].getKind() != kind::BOOLEAN_TERM_VARIABLE)
+    if (in[1].isVar() && isLegalElimination(in[1], in[0]))
     {
       outSubstitutions.addSubstitutionSolved(in[1], in[0], tin);
       return PP_ASSERT_STATUS_SOLVED;
@@ -524,14 +472,8 @@ bool Theory::areCareDisequal(TNode x, TNode y)
   Assert(d_equalityEngine != nullptr);
   Assert(d_equalityEngine->hasTerm(x));
   Assert(d_equalityEngine->hasTerm(y));
-  if (x == y)
-  {
-    return false;
-  }
-  if (x.isConst() && y.isConst())
-  {
-    return true;
-  }
+  Assert(x != y);
+  Assert(!x.isConst() || !y.isConst());
   // first just check if they are disequal, which is sufficient for
   // non-shared terms.
   if (d_equalityEngine->areDisequal(x, y, false))
@@ -620,7 +562,6 @@ void Theory::check(Effort level)
     // check aborted for a theory-specific reason
     return;
   }
-  Assert(d_theoryState != nullptr);
   Trace("theory-check") << "Theory::process fact queue " << d_id << std::endl;
   // process the pending fact queue
   while (!done() && !d_theoryState->isInConflict())
@@ -630,7 +571,7 @@ void Theory::check(Effort level)
     TNode fact = assertion.d_assertion;
     Trace("theory-check") << "Theory::preNotifyFact " << fact << " " << d_id
                           << std::endl;
-    bool polarity = fact.getKind() != kind::NOT;
+    bool polarity = fact.getKind() != Kind::NOT;
     TNode atom = polarity ? fact : fact[0];
     // call the pre-notify method
     if (preNotifyFact(atom, polarity, fact, assertion.d_isPreregistered, false))
@@ -644,7 +585,7 @@ void Theory::check(Effort level)
     // for preNotifyFact
     Assert(d_equalityEngine != nullptr);
     // assert to the equality engine
-    if (atom.getKind() == kind::EQUAL)
+    if (atom.getKind() == Kind::EQUAL)
     {
       d_equalityEngine->assertEquality(atom, polarity, fact);
     }
@@ -685,7 +626,10 @@ void Theory::addSharedTerm(TNode n)
                    << std::endl;
   Trace("theory::assertions")
       << "Theory::addSharedTerm<" << getId() << ">(" << n << ")" << std::endl;
-  d_sharedTerms.push_back(n);
+  if (d_theoryState != nullptr)
+  {
+    d_theoryState->addSharedTerm(n);
+  }
   // now call theory-specific method notifySharedTerm
   notifySharedTerm(n);
   // if we have an equality engine, add the trigger term

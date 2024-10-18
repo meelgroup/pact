@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Mathias Preiner, Gereon Kremer
+ *   Andrew Reynolds, Mathias Preiner, Aina Niemetz
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -33,7 +33,9 @@ QuantDSplit::QuantDSplit(Env& env,
                          QuantifiersInferenceManager& qim,
                          QuantifiersRegistry& qr,
                          TermRegistry& tr)
-    : QuantifiersModule(env, qs, qim, qr, tr), d_added_split(userContext())
+    : QuantifiersModule(env, qs, qim, qr, tr),
+      d_quant_to_reduce(userContext()),
+      d_added_split(userContext())
 {
 }
 
@@ -44,6 +46,11 @@ void QuantDSplit::checkOwnership(Node q)
   QAttributes qa;
   QuantAttributes::computeQuantAttributes(q, qa);
   if (!qa.isStandard())
+  {
+    return;
+  }
+  // do not split if there is a trigger
+  if (qa.d_hasPattern)
   {
     return;
   }
@@ -136,17 +143,20 @@ void QuantDSplit::check(Theory::Effort e, QEffort quant_e)
     return;
   }
   Trace("quant-dsplit") << "QuantDSplit::check" << std::endl;
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   FirstOrderModel* m = d_treg.getModel();
   std::vector<Node> lemmas;
-  for (std::map<Node, int>::iterator it = d_quant_to_reduce.begin();
+  for (NodeIntMap::iterator it = d_quant_to_reduce.begin();
        it != d_quant_to_reduce.end();
        ++it)
   {
     Node q = it->first;
     Trace("quant-dsplit") << "- Split quantifier " << q << std::endl;
-    if (m->isQuantifierAsserted(q) && m->isQuantifierActive(q)
-        && d_added_split.find(q) == d_added_split.end())
+    if (d_added_split.find(q) != d_added_split.end())
+    {
+      continue;
+    }
+    if (m->isQuantifierAsserted(q) && m->isQuantifierActive(q))
     {
       d_added_split.insert(q);
       std::vector<Node> bvs;
@@ -183,7 +193,7 @@ void QuantDSplit::check(Theory::Effort e, QEffort quant_e)
         Node body = q[1].substitute(svar, ct);
         if (!bvs_cmb.empty())
         {
-          Node bvl = nm->mkNode(kind::BOUND_VAR_LIST, bvs_cmb);
+          Node bvl = nm->mkNode(Kind::BOUND_VAR_LIST, bvs_cmb);
           std::vector<Node> children;
           children.push_back(bvl);
           children.push_back(body);
@@ -192,13 +202,13 @@ void QuantDSplit::check(Theory::Effort e, QEffort quant_e)
             Node ipls = q[2].substitute(svar, ct);
             children.push_back(ipls);
           }
-          body = nm->mkNode(kind::FORALL, children);
+          body = nm->mkNode(Kind::FORALL, children);
         }
         cons.push_back(body);
       }
-      Node conc = cons.size() == 1 ? cons[0] : nm->mkNode(kind::AND, cons);
+      Node conc = cons.size() == 1 ? cons[0] : nm->mkNode(Kind::AND, cons);
       disj.push_back(conc);
-      lemmas.push_back(disj.size() == 1 ? disj[0] : nm->mkNode(kind::OR, disj));
+      lemmas.push_back(disj.size() == 1 ? disj[0] : nm->mkNode(Kind::OR, disj));
     }
   }
 

@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Gereon Kremer, Dejan Jovanovic, Liana Hadarean
+ *   Gereon Kremer, Liana Hadarean, Dejan Jovanovic
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -19,6 +19,7 @@
 
 #include "options/base_options.h"
 #include "options/decision_options.h"
+#include "options/proof_options.h"
 #include "options/prop_options.h"
 #include "options/smt_options.h"
 #include "proof/clause_id.h"
@@ -108,7 +109,7 @@ void MinisatSatSolver::toSatClause(const Minisat::Clause& clause,
 void MinisatSatSolver::initialize(context::Context* context,
                                   TheoryProxy* theoryProxy,
                                   context::UserContext* userContext,
-                                  ProofNodeManager* pnm)
+                                  PropPfManager* ppm)
 {
   d_context = context;
 
@@ -125,12 +126,25 @@ void MinisatSatSolver::initialize(context::Context* context,
                               theoryProxy,
                               d_context,
                               userContext,
-                              pnm,
+                              ppm,
                               options().base.incrementalSolving
                                   || options().decision.decisionMode
                                          != options::DecisionMode::INTERNAL);
 
   d_statistics.init(d_minisat);
+
+  // Since the prop engine asserts "true" to the CNF stream regardless of what
+  // is in the input (see PropEngine::finishInit), if a real "true" assertion is
+  // made to the SAT solver via the Proof CNF stream, that would be ignored,
+  // since there is already "true" in the CNF stream. Thus the SAT proof would
+  // not have True as an assumption, which can lead to issues when building its
+  // proof. To prevent this problem, we track it directly here.
+  SatProofManager* spfm = d_minisat->getProofManager();
+  if (spfm)
+  {
+    NodeManager* nm = nodeManager();
+    spfm->registerSatAssumptions({nm->mkConst(true)});
+  }
 }
 
 // Like initialize() above, but called just before each search when in
@@ -156,7 +170,8 @@ void MinisatSatSolver::setupOptions() {
   d_minisat->restart_inc = options().prop.satRestartInc;
 }
 
-ClauseId MinisatSatSolver::addClause(SatClause& clause, bool removable) {
+ClauseId MinisatSatSolver::addClause(SatClause& clause, bool removable)
+{
   Minisat::vec<Minisat::Lit> minisat_clause;
   toMinisatClause(clause, minisat_clause);
   ClauseId clause_id = ClauseIdError;
@@ -252,9 +267,12 @@ SatValue MinisatSatSolver::modelValue(SatLiteral l){
   return toSatLiteralValue(d_minisat->modelValue(toMinisatLit(l)));
 }
 
-void MinisatSatSolver::requirePhase(SatLiteral lit) {
+void MinisatSatSolver::preferPhase(SatLiteral lit)
+{
   Assert(!d_minisat->rnd_pol);
-  Trace("minisat") << "requirePhase(" << lit << ")" << " " <<  lit.getSatVariable() << " " << lit.isNegated() << std::endl;
+  Trace("minisat") << "preferPhase(" << lit << ")"
+                   << " " << lit.getSatVariable() << " " << lit.isNegated()
+                   << std::endl;
   SatVariable v = lit.getSatVariable();
   d_minisat->freezePolarity(v, lit.isNegated());
 }
@@ -273,10 +291,14 @@ std::vector<SatLiteral> MinisatSatSolver::getDecisions() const
 {
   std::vector<SatLiteral> decisions;
   const Minisat::vec<Minisat::Lit>& miniDecisions =
-      d_minisat->getMiniSatDecisions();
+      d_minisat->getMiniSatAssignmentTrail();
   for (size_t i = 0, ndec = miniDecisions.size(); i < ndec; ++i)
   {
-    decisions.push_back(toSatLiteral(miniDecisions[i]));
+    auto satLit = toSatLiteral(miniDecisions[i]);
+    if (isDecision(satLit.getSatVariable()))
+    {
+      decisions.push_back(satLit);
+    }
   }
   return decisions;
 }
@@ -286,13 +308,9 @@ std::vector<Node> MinisatSatSolver::getOrderHeap() const
   return d_minisat->getMiniSatOrderHeap();
 }
 
-SatProofManager* MinisatSatSolver::getProofManager()
-{
-  return d_minisat->getProofManager();
-}
-
 std::shared_ptr<ProofNode> MinisatSatSolver::getProof()
 {
+  Assert(d_env.isSatProofProducing());
   return d_minisat->getProof();
 }
 

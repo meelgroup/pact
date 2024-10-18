@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -43,9 +43,9 @@ TermRegistry::TermRegistry(Env& env,
 Node TermRegistry::getProxy(Node n)
 {
   Kind nk = n.getKind();
-  if (nk != SET_EMPTY && nk != SET_SINGLETON && nk != SET_INTER
-      && nk != SET_MINUS && nk != SET_UNION && nk != SET_UNIVERSE
-      && nk != SET_MAP)
+  if (nk != Kind::SET_EMPTY && nk != Kind::SET_SINGLETON
+      && nk != Kind::SET_INTER && nk != Kind::SET_MINUS && nk != Kind::SET_UNION
+      && nk != Kind::SET_UNIVERSE && nk != Kind::SET_MAP)
   {
     return n;
   }
@@ -54,7 +54,7 @@ Node TermRegistry::getProxy(Node n)
   {
     return (*it).second;
   }
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   Node k = d_skCache.mkTypedSkolemCached(
       n.getType(), n, SkolemCache::SK_PURIFY, "sp");
 
@@ -62,9 +62,9 @@ Node TermRegistry::getProxy(Node n)
   d_proxy_to_term[k] = n;
   Node eq = k.eqNode(n);
   sendSimpleLemmaInternal(eq, InferenceId::SETS_PROXY);
-  if (nk == SET_SINGLETON)
+  if (nk == Kind::SET_SINGLETON)
   {
-    Node slem = nm->mkNode(SET_MEMBER, n[0], k);
+    Node slem = nm->mkNode(Kind::SET_MEMBER, n[0], k);
     sendSimpleLemmaInternal(slem, InferenceId::SETS_PROXY_SINGLETON);
   }
   return k;
@@ -77,7 +77,7 @@ Node TermRegistry::getEmptySet(TypeNode tn)
   {
     return it->second;
   }
-  Node n = NodeManager::currentNM()->mkConst(EmptySet(tn));
+  Node n = nodeManager()->mkConst(EmptySet(tn));
   d_emptyset[tn] = n;
   return n;
 }
@@ -89,8 +89,8 @@ Node TermRegistry::getUnivSet(TypeNode tn)
   {
     return it->second;
   }
-  NodeManager* nm = NodeManager::currentNM();
-  Node n = nm->mkNullaryOperator(tn, SET_UNIVERSE);
+  NodeManager* nm = nodeManager();
+  Node n = nm->mkNullaryOperator(tn, Kind::SET_UNIVERSE);
   d_univset[tn] = n;
   return n;
 }
@@ -127,7 +127,7 @@ void TermRegistry::sendSimpleLemmaInternal(Node n, InferenceId id)
   if (d_epg.get() != nullptr)
   {
     TrustNode teq =
-        d_epg->mkTrustNode(n, PfRule::MACRO_SR_PRED_INTRO, {}, {n});
+        d_epg->mkTrustNode(n, ProofRule::MACRO_SR_PRED_INTRO, {}, {n});
     d_im.trustedLemma(teq, id);
   }
   else

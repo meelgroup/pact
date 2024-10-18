@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -17,6 +17,8 @@
 
 #include <iostream>
 
+#include "base/check.h"
+
 namespace cvc5::internal {
 namespace theory {
 namespace strings {
@@ -25,6 +27,7 @@ const char* toString(Rewrite r)
 {
   switch (r)
   {
+    case Rewrite::NONE: return "NONE";
     case Rewrite::CTN_COMPONENT: return "CTN_COMPONENT";
     case Rewrite::CTN_CONCAT_CHAR: return "CTN_CONCAT_CHAR";
     case Rewrite::CTN_CONST: return "CTN_CONST";
@@ -72,6 +75,7 @@ const char* toString(Rewrite r)
     case Rewrite::INDEXOF_RE_EVAL: return "INDEXOF_RE_EVAL";
     case Rewrite::INDEXOF_RE_INVALID_INDEX: return "INDEXOF_RE_INVALID_INDEX";
     case Rewrite::INDEXOF_RE_MAX_INDEX: return "INDEXOF_RE_MAX_INDEX";
+    case Rewrite::INDEXOF_RE_NONE: return "INDEXOF_RE_NONE";
     case Rewrite::ITOS_EVAL: return "ITOS_EVAL";
     case Rewrite::RE_ALL_ELIM: return "RE_ALL_ELIM";
     case Rewrite::RE_AND_EMPTY: return "RE_AND_EMPTY";
@@ -94,6 +98,7 @@ const char* toString(Rewrite r)
     case Rewrite::RE_IN_INCLUSION: return "RE_IN_INCLUSION";
     case Rewrite::RE_LOOP: return "RE_LOOP";
     case Rewrite::RE_LOOP_NONE: return "RE_LOOP_NONE";
+    case Rewrite::RE_LOOP_ZERO: return "RE_LOOP_ZERO";
     case Rewrite::RE_LOOP_STAR: return "RE_LOOP_STAR";
     case Rewrite::RE_OR_ALL: return "RE_OR_ALL";
     case Rewrite::RE_SIMPLE_CONSUME: return "RE_SIMPLE_CONSUME";
@@ -126,7 +131,9 @@ const char* toString(Rewrite r)
     case Rewrite::RPL_RPL_LEN_ID: return "RPL_RPL_LEN_ID";
     case Rewrite::RPL_X_Y_X_SIMP: return "RPL_X_Y_X_SIMP";
     case Rewrite::REPLACE_RE_EVAL: return "REPLACE_RE_EVAL";
+    case Rewrite::REPLACE_RE_NONE: return "REPLACE_RE_NONE";
     case Rewrite::REPLACE_RE_ALL_EVAL: return "REPLACE_RE_ALL_EVAL";
+    case Rewrite::REPLACE_RE_ALL_NONE: return "REPLACE_RE_ALL_NONE";
     case Rewrite::REPLACE_RE_EMP_RE: return "REPLACE_RE_EMP_RE";
     case Rewrite::SPLIT_EQ: return "SPLIT_EQ";
     case Rewrite::SPLIT_EQ_STRIP_L: return "SPLIT_EQ_STRIP_L";
@@ -232,7 +239,10 @@ const char* toString(Rewrite r)
     case Rewrite::SEQ_NTH_EVAL: return "SEQ_NTH_EVAL";
     case Rewrite::SEQ_NTH_EVAL_OOB: return "SEQ_NTH_EVAL_OOB";
     case Rewrite::SEQ_NTH_EVAL_SYM: return "SEQ_NTH_EVAL_SYM";
-    default: return "?";
+    case Rewrite::UNKNOWN: return "?";
+    default:
+      Assert(false) << "No print for rewrite " << static_cast<size_t>(r);
+      return "?Unhandled";
   }
 }
 

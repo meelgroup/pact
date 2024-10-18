@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -33,7 +33,7 @@ namespace theory {
 // (type-based) theoryOfMode. We expand and simplify it here for the sake of
 // efficiency.
 static TheoryId theoryOf(TNode node) {
-  if (node.getKind() == kind::EQUAL)
+  if (node.getKind() == Kind::EQUAL)
   {
     // Equality is owned by the theory that owns the domain
     return Theory::theoryOf(node[0].getType());
@@ -95,7 +95,7 @@ Node Rewriter::rewrite(TNode node) {
 
 Node Rewriter::extendedRewrite(TNode node, bool aggr)
 {
-  quantifiers::ExtendedRewriter er(*this, aggr);
+  quantifiers::ExtendedRewriter er(d_nm, *this, aggr);
   return er.extendedRewrite(node);
 }
 
@@ -133,7 +133,7 @@ void Rewriter::finishInit(Env& env)
 
 Node Rewriter::rewriteEqualityExt(TNode node)
 {
-  Assert(node.getKind() == kind::EQUAL);
+  Assert(node.getKind() == Kind::EQUAL);
   // note we don't force caching of this method currently
   return d_theoryRewriters[theoryOf(node)]->rewriteEqualityExt(node);
 }
@@ -149,12 +149,40 @@ TheoryRewriter* Rewriter::getTheoryRewriter(theory::TheoryId theoryId)
   return d_theoryRewriters[theoryId];
 }
 
+Node Rewriter::rewriteViaRule(ProofRewriteRule id, const Node& n)
+{
+  // dispatches to the appropriate theory
+  TheoryId tid = theoryOf(n);
+  TheoryRewriter* tr = getTheoryRewriter(tid);
+  if (tr != nullptr)
+  {
+    return tr->rewriteViaRule(id, n);
+  }
+  return Node::null();
+}
+
+ProofRewriteRule Rewriter::findRule(const Node& a,
+                                    const Node& b,
+                                    TheoryRewriteCtx ctx)
+{
+  // dispatches to the appropriate theory
+  TheoryId tid = theoryOf(a);
+  TheoryRewriter* tr = getTheoryRewriter(tid);
+  if (tr != nullptr)
+  {
+    return tr->findRule(a, b, ctx);
+  }
+  return ProofRewriteRule::NONE;
+}
+
 Node Rewriter::rewriteTo(theory::TheoryId theoryId,
                          Node node,
                          TConvProofGenerator* tcpg)
 {
 #ifdef CVC5_ASSERTIONS
-  bool isEquality = node.getKind() == kind::EQUAL && (!node[0].getType().isBoolean());
+  bool isEquality = node.getKind() == Kind::EQUAL
+                    && !node[0].getType().isBoolean()
+                    && !node[1].getType().isBoolean();
 
   if (d_rewriteStack == nullptr)
   {
@@ -208,10 +236,13 @@ Node Rewriter::rewriteTo(theory::TheoryId theoryId,
 
           // Put the rewritten node to the top of the stack
           TNode newNode = response.d_node;
+          Trace("rewriter-debug") << "Pre-Rewrite: " << rewriteStackTop.d_node
+                                  << " to " << newNode << std::endl;
           TheoryId newTheory = theoryOf(newNode);
           rewriteStackTop.d_node = newNode;
           rewriteStackTop.d_theoryId = newTheory;
-          Assert(newNode.getType() == rewriteStackTop.d_node.getType())
+          Assert(newNode.getType().isComparableTo(
+              rewriteStackTop.d_node.getType()))
               << "Pre-rewriting " << rewriteStackTop.d_node << " to " << newNode
               << " does not preserve type";
           // In the pre-rewrite, if changing theories, we just call the other
@@ -297,11 +328,13 @@ Node Rewriter::rewriteTo(theory::TheoryId theoryId,
         Kind originalKind = rewriteStackTop.d_node.getKind();
         RewriteResponse response = postRewrite(
             rewriteStackTop.getTheoryId(), rewriteStackTop.d_node, tcpg);
-
         // We continue with the response we got
         TNode newNode = response.d_node;
+        Trace("rewriter-debug") << "Post-Rewrite: " << rewriteStackTop.d_node
+                                << " to " << newNode << std::endl;
         TheoryId newTheoryId = theoryOf(newNode);
-        Assert(newNode.getType() == rewriteStackTop.d_node.getType())
+        Assert(
+            newNode.getType().isComparableTo(rewriteStackTop.d_node.getType()))
             << "Post-rewriting " << rewriteStackTop.d_node << " to " << newNode
             << " does not preserve type";
         if (newTheoryId != rewriteStackTop.getTheoryId()
@@ -368,11 +401,12 @@ Node Rewriter::rewriteTo(theory::TheoryId theoryId,
             Node eq = rewriteStackTop.d_node.eqNode(cached);
             // we make this a post-rewrite, since we are processing a node that
             // has finished post-rewriting above
+            Node trrid = mkTrustId(TrustId::REWRITE_NO_ELABORATE);
             tcpg->addRewriteStep(rewriteStackTop.d_node,
                                  cached,
-                                 PfRule::TRUST_REWRITE,
+                                 ProofRule::TRUST,
                                  {},
-                                 {eq},
+                                 {trrid, eq},
                                  false);
             // don't overwrite the cache, should be the same
             rewriteStackTop.d_node = cached;
@@ -392,9 +426,9 @@ Node Rewriter::rewriteTo(theory::TheoryId theoryId,
 
     // If this is the last node, just return
     if (rewriteStack.size() == 1) {
-      Assert(!isEquality || rewriteStackTop.d_node.getKind() == kind::EQUAL
+      Assert(!isEquality || rewriteStackTop.d_node.getKind() == Kind::EQUAL
              || rewriteStackTop.d_node.isConst());
-      Assert(rewriteStackTop.d_node.getType() == node.getType())
+      Assert(rewriteStackTop.d_node.getType().isComparableTo(node.getType()))
           << "Rewriting " << node << " to " << rewriteStackTop.d_node
           << " does not preserve type";
       return rewriteStackTop.d_node;
@@ -459,7 +493,7 @@ RewriteResponse Rewriter::processTrustRewriteResponse(
                                   : MethodId::RW_REWRITE_THEORY_POST);
       tcpg->addRewriteStep(proven[0],
                            proven[1],
-                           PfRule::THEORY_REWRITE,
+                           ProofRule::TRUST_THEORY_REWRITE,
                            {},
                            {proven, tidn, rid},
                            isPre);

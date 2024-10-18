@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Mathias Preiner
+ *   Andrew Reynolds, Aina Niemetz, Mathias Preiner
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -51,7 +51,7 @@ void DifficultyManager::notifyInputAssertions(
 void DifficultyManager::getDifficultyMap(std::map<Node, Node>& dmap,
                                          bool includeLemmas)
 {
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   for (const std::pair<const Node, uint64_t> p : d_dfmap)
   {
     if (!includeLemmas)
@@ -99,11 +99,11 @@ void DifficultyManager::notifyLemma(Node n, bool inFullEffortCheck)
   // for lemma (or a_1 ... a_n), if a_i is a literal that is not true in the
   // valuation, then we increment the difficulty of that assertion
   std::vector<Node> litsToCheck;
-  if (nk == kind::OR)
+  if (nk == Kind::OR)
   {
     litsToCheck.insert(litsToCheck.end(), n.begin(), n.end());
   }
-  else if (nk == kind::IMPLIES)
+  else if (nk == Kind::IMPLIES)
   {
     litsToCheck.push_back(n[0].negate());
     litsToCheck.push_back(n[1]);
@@ -134,12 +134,14 @@ void DifficultyManager::notifyLemma(Node n, bool inFullEffortCheck)
   }
 }
 
+bool DifficultyManager::needsCandidateModel() const
+{
+  return options().smt.difficultyMode == options::DifficultyMode::MODEL_CHECK;
+}
+
 void DifficultyManager::notifyCandidateModel(TheoryModel* m)
 {
-  if (options().smt.difficultyMode != options::DifficultyMode::MODEL_CHECK)
-  {
-    return;
-  }
+  Assert(needsCandidateModel());
   Trace("diff-man") << "DifficultyManager::notifyCandidateModel, #input="
                     << d_input.size() << " #lemma=" << d_lemma.size()
                     << std::endl;

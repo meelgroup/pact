@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -116,7 +116,7 @@ NodeManager::NodeManager()
 {
   poolInsert(&expr::NodeValue::null());
 
-  for (uint32_t i = 0; i < uint32_t (kind::LAST_KIND); ++i)
+  for (uint32_t i = 0; i < static_cast<uint32_t>(Kind::LAST_KIND); ++i)
   {
     Kind k = Kind(i);
 
@@ -140,77 +140,92 @@ bool NodeManager::isNAryKind(Kind k)
 
 TypeNode NodeManager::booleanType()
 {
-  return mkTypeConst<TypeConstant>(BOOLEAN_TYPE);
+  return mkConstInternal<TypeNode, TypeConstant>(Kind::TYPE_CONSTANT,
+                                                 BOOLEAN_TYPE);
 }
 
 TypeNode NodeManager::integerType()
 {
-  return mkTypeConst<TypeConstant>(INTEGER_TYPE);
+  return mkConstInternal<TypeNode, TypeConstant>(Kind::TYPE_CONSTANT,
+                                                 INTEGER_TYPE);
 }
 
 TypeNode NodeManager::realType()
 {
-  return mkTypeConst<TypeConstant>(REAL_TYPE);
+  return mkConstInternal<TypeNode, TypeConstant>(Kind::TYPE_CONSTANT,
+                                                 REAL_TYPE);
 }
 
 TypeNode NodeManager::stringType()
 {
-  return mkTypeConst<TypeConstant>(STRING_TYPE);
+  return mkConstInternal<TypeNode, TypeConstant>(Kind::TYPE_CONSTANT,
+                                                 STRING_TYPE);
 }
 
 TypeNode NodeManager::regExpType()
 {
-  return mkTypeConst<TypeConstant>(REGEXP_TYPE);
+  return mkConstInternal<TypeNode, TypeConstant>(Kind::TYPE_CONSTANT,
+                                                 REGEXP_TYPE);
 }
 
 TypeNode NodeManager::roundingModeType()
 {
-  return mkTypeConst<TypeConstant>(ROUNDINGMODE_TYPE);
+  return mkConstInternal<TypeNode, TypeConstant>(Kind::TYPE_CONSTANT,
+                                                 ROUNDINGMODE_TYPE);
 }
 
 TypeNode NodeManager::boundVarListType()
 {
-  return mkTypeConst<TypeConstant>(BOUND_VAR_LIST_TYPE);
+  return mkConstInternal<TypeNode, TypeConstant>(Kind::TYPE_CONSTANT,
+                                                 BOUND_VAR_LIST_TYPE);
 }
 
 TypeNode NodeManager::instPatternType()
 {
-  return mkTypeConst<TypeConstant>(INST_PATTERN_TYPE);
+  return mkConstInternal<TypeNode, TypeConstant>(Kind::TYPE_CONSTANT,
+                                                 INST_PATTERN_TYPE);
 }
 
 TypeNode NodeManager::instPatternListType()
 {
-  return mkTypeConst<TypeConstant>(INST_PATTERN_LIST_TYPE);
+  return mkConstInternal<TypeNode, TypeConstant>(Kind::TYPE_CONSTANT,
+                                                 INST_PATTERN_LIST_TYPE);
 }
 
 TypeNode NodeManager::builtinOperatorType()
 {
-  return mkTypeConst<TypeConstant>(BUILTIN_OPERATOR_TYPE);
+  return mkConstInternal<TypeNode, TypeConstant>(Kind::TYPE_CONSTANT,
+                                                 BUILTIN_OPERATOR_TYPE);
 }
 
 TypeNode NodeManager::mkBitVectorType(unsigned size)
 {
-  return mkTypeConst<BitVectorSize>(BitVectorSize(size));
+  return mkConstInternal<TypeNode, BitVectorSize>(Kind::BITVECTOR_TYPE,
+                                                  BitVectorSize(size));
 }
 
 TypeNode NodeManager::mkFiniteFieldType(const Integer& modulus)
 {
-  return mkTypeConst<FfSize>(FfSize(modulus));
+  return mkConstInternal<TypeNode, FfSize>(Kind::FINITE_FIELD_TYPE,
+                                           FfSize(modulus));
 }
 
 TypeNode NodeManager::sExprType()
 {
-  return mkTypeConst<TypeConstant>(SEXPR_TYPE);
+  return mkConstInternal<TypeNode, TypeConstant>(Kind::TYPE_CONSTANT,
+                                                 SEXPR_TYPE);
 }
 
 TypeNode NodeManager::mkFloatingPointType(unsigned exp, unsigned sig)
 {
-  return mkTypeConst<FloatingPointSize>(FloatingPointSize(exp, sig));
+  return mkConstInternal<TypeNode, FloatingPointSize>(
+      Kind::FLOATINGPOINT_TYPE, FloatingPointSize(exp, sig));
 }
 
 TypeNode NodeManager::mkFloatingPointType(FloatingPointSize fs)
 {
-  return mkTypeConst<FloatingPointSize>(fs);
+  return mkConstInternal<TypeNode, FloatingPointSize>(Kind::FLOATINGPOINT_TYPE,
+                                                      fs);
 }
 
 NodeManager::~NodeManager()
@@ -227,7 +242,7 @@ NodeManager::~NodeManager()
     d_attrManager->deleteAllAttributes();
   }
 
-  for (unsigned i = 0; i < unsigned(kind::LAST_KIND); ++i)
+  for (uint32_t i = 0; i < static_cast<uint32_t>(Kind::LAST_KIND); ++i)
   {
     d_operators[i] = Node::null();
   }
@@ -237,12 +252,15 @@ NodeManager::~NodeManager()
   TypeNode dummy;
   d_tt_cache.d_children.clear();
   d_tt_cache.d_data = dummy;
+  d_nt_cache.clear();
   d_rt_cache.d_children.clear();
   d_rt_cache.d_data = dummy;
 
-  // clear the datatypes and oracles
+  // clear the datatypes, oracles and declared sorts
   d_dtypes.clear();
   d_oracles.clear();
+  d_nfreshSorts.clear();
+  d_nfreshVars.clear();
 
   Assert(!d_attrManager->inGarbageCollection());
 
@@ -294,19 +312,26 @@ NodeManager::~NodeManager()
 const DType& NodeManager::getDTypeFor(TypeNode tn) const
 {
   Kind k = tn.getKind();
-  if (k == kind::DATATYPE_TYPE)
+  if (k == Kind::DATATYPE_TYPE)
   {
     size_t index = tn.getAttribute(DatatypeIndexAttr());
     return getDTypeForIndex(index);
   }
-  else if (k == kind::TUPLE_TYPE)
+  else if (k == Kind::TUPLE_TYPE)
   {
     // lookup its datatype encoding
     TypeNode dtt = getAttribute(tn, expr::TupleDatatypeAttr());
     Assert(!dtt.isNull());
     return getDTypeFor(dtt);
   }
-  Assert(k == kind::PARAMETRIC_DATATYPE);
+  else if (k == Kind::NULLABLE_TYPE)
+  {
+    // lookup its datatype encoding
+    TypeNode dtt = getAttribute(tn, expr::NullableDatatypeAttr());
+    Assert(!dtt.isNull());
+    return getDTypeFor(dtt);
+  }
+  Assert(k == Kind::PARAMETRIC_DATATYPE);
   return getDTypeFor(tn[0]);
 }
 
@@ -486,70 +511,71 @@ std::vector<NodeValue*> NodeManager::TopologicalSort(
 TypeNode NodeManager::getType(TNode n, bool check, std::ostream* errOut)
 {
   TypeNode typeNode;
-  bool hasType = getAttribute(n, TypeAttr(), typeNode);
-  bool needsCheck = check && !getAttribute(n, TypeCheckedAttr());
-
-  Trace("getType") << this << " getting type for " << &n << " " << n
-                   << ", check=" << check << ", needsCheck = " << needsCheck
-                   << ", hasType = " << hasType << endl;
-
-#ifdef CVC5_DEBUG
-  // already did type check eagerly upon creation in node builder
-  bool doTypeCheck = false;
-#else
-  bool doTypeCheck = true;
-#endif
-  if (needsCheck && doTypeCheck)
+  TypeAttr ta;
+  TypeCheckedAttr tca;
+  bool hasType = getAttribute(n, ta, typeNode);
+  bool needsCheck = check && !getAttribute(n, tca);
+  if (hasType && !needsCheck)
   {
-    /* Iterate and compute the children bottom up. This avoids stack
-       overflows in computeType() when the Node graph is really deep,
-       which should only affect us when we're type checking lazily. */
-    stack<TNode> worklist;
-    worklist.push(n);
-
-    while (!worklist.empty())
+    return typeNode;
+  }
+  std::unordered_map<TNode, bool> visited;
+  std::unordered_map<TNode, bool>::const_iterator it;
+  std::vector<TNode> visit;
+  TNode cur;
+  visit.push_back(n);
+  do
+  {
+    cur = visit.back();
+    visit.pop_back();
+    // already computed (and checked, if necessary) this type
+    if (!getAttribute(cur, ta).isNull() && (!check || getAttribute(cur, tca)))
     {
-      TNode m = worklist.top();
-
-      bool readyToCompute = true;
-
-      for (TNode::iterator it = m.begin(), end = m.end(); it != end; ++it)
+      continue;
+    }
+    it = visited.find(cur);
+    // we have yet to visit children
+    if (it == visited.end())
+    {
+      // See if it has a type inferrable at pre traversal. We only do this
+      // if we are not checking, since preComputeType by design does not
+      // check the children types.
+      if (!check)
       {
-        if (!hasAttribute(*it, TypeAttr())
-            || (check && !getAttribute(*it, TypeCheckedAttr())))
+        typeNode = TypeChecker::preComputeType(this, cur);
+        if (!typeNode.isNull())
         {
-          readyToCompute = false;
-          worklist.push(*it);
+          visited[cur] = true;
+          setAttribute(cur, ta, typeNode);
+          // note that the result of preComputeType is not cached
+          continue;
         }
       }
-
-      if (readyToCompute)
+      // we are checking, or pre-compute type is not available
+      visited[cur] = false;
+      visit.push_back(cur);
+      visit.insert(visit.end(), cur.begin(), cur.end());
+    }
+    else if (!it->second)
+    {
+      visited[cur] = true;
+      // children now have types assigned
+      typeNode = TypeChecker::computeType(this, cur, check, errOut);
+      // if null, immediately return without further caching
+      if (typeNode.isNull())
       {
-        Assert(check || m.getMetaKind() != kind::metakind::NULLARY_OPERATOR);
-        /* All the children have types, time to compute */
-        typeNode = TypeChecker::computeType(this, m, check, errOut);
-        worklist.pop();
+        return typeNode;
       }
-    }  // end while
-
-    /* Last type computed in loop should be the type of n */
-    Assert(typeNode == getAttribute(n, TypeAttr()));
-  }
-  else if (!hasType || needsCheck)
-  {
-    /* We can compute the type top-down, without worrying about
-       deep recursion. */
-    Assert(check || n.getMetaKind() != kind::metakind::NULLARY_OPERATOR);
-    typeNode = TypeChecker::computeType(this, n, check);
-  }
+      setAttribute(cur, ta, typeNode);
+      setAttribute(cur, tca, check || getAttribute(cur, tca));
+    }
+  } while (!visit.empty());
 
   /* The type should be have been computed and stored. */
-  Assert(hasAttribute(n, TypeAttr()));
+  Assert(hasAttribute(n, ta));
   /* The check should have happened, if we asked for it. */
-  Assert(!check || getAttribute(n, TypeCheckedAttr()));
-
-  Trace("getType") << "type of " << &n << " " << n << " is " << typeNode
-                   << endl;
+  Assert(!check || getAttribute(n, tca));
+  // should be the last type computed in the above loop
   return typeNode;
 }
 
@@ -557,57 +583,53 @@ TypeNode NodeManager::mkBagType(TypeNode elementType)
 {
   Assert(!elementType.isNull()) << "unexpected NULL element type";
   Trace("bags") << "making bags type " << elementType << std::endl;
-  return mkTypeNode(kind::BAG_TYPE, elementType);
+  return mkTypeNode(Kind::BAG_TYPE, elementType);
 }
 
 TypeNode NodeManager::mkSequenceType(TypeNode elementType)
 {
   Assert(!elementType.isNull()) << "unexpected NULL element type";
-  return mkTypeNode(kind::SEQUENCE_TYPE, elementType);
+  return mkTypeNode(Kind::SEQUENCE_TYPE, elementType);
 }
 
 bool NodeManager::isSortKindAbstractable(Kind k)
 {
-  return k == kind::ABSTRACT_TYPE || k == kind::ARRAY_TYPE
-         || k == kind::BAG_TYPE || k == kind::BITVECTOR_TYPE
-         || k == kind::TUPLE_TYPE || k == kind::FINITE_FIELD_TYPE
-         || k == kind::FLOATINGPOINT_TYPE || k == kind::FUNCTION_TYPE
-         || k == kind::SEQUENCE_TYPE || k == kind::SET_TYPE;
+  return k == Kind::ABSTRACT_TYPE || k == Kind::ARRAY_TYPE
+         || k == Kind::BAG_TYPE || k == Kind::BITVECTOR_TYPE
+         || k == Kind::TUPLE_TYPE || k == Kind::FINITE_FIELD_TYPE
+         || k == Kind::FLOATINGPOINT_TYPE || k == Kind::FUNCTION_TYPE
+         || k == Kind::SEQUENCE_TYPE || k == Kind::SET_TYPE;
 }
 
 TypeNode NodeManager::mkAbstractType(Kind k)
 {
-  if (!isSortKindAbstractable(k))
-  {
-    std::stringstream ss;
-    ss << "Cannot construct abstract type for kind " << k;
-    throw Exception(ss.str());
-  }
-  if (k == kind::ARRAY_TYPE)
+  Assert(isSortKindAbstractable(k));
+  if (k == Kind::ARRAY_TYPE)
   {
     // ?Array -> (Array ? ?)
-    TypeNode a = mkAbstractType(kind::ABSTRACT_TYPE);
+    TypeNode a = mkAbstractType(Kind::ABSTRACT_TYPE);
     return mkArrayType(a, a);
   }
-  if (k == kind::SET_TYPE)
+  if (k == Kind::SET_TYPE)
   {
     // ?Set -> (Set ?)
-    TypeNode a = mkAbstractType(kind::ABSTRACT_TYPE);
+    TypeNode a = mkAbstractType(Kind::ABSTRACT_TYPE);
     return mkSetType(a);
   }
-  if (k == kind::BAG_TYPE)
+  if (k == Kind::BAG_TYPE)
   {
     // ?Bag -> (Bag ?)
-    TypeNode a = mkAbstractType(kind::ABSTRACT_TYPE);
+    TypeNode a = mkAbstractType(Kind::ABSTRACT_TYPE);
     return mkBagType(a);
   }
-  if (k == kind::SEQUENCE_TYPE)
+  if (k == Kind::SEQUENCE_TYPE)
   {
     // ?Seq -> (Seq ?)
-    TypeNode a = mkAbstractType(kind::ABSTRACT_TYPE);
+    TypeNode a = mkAbstractType(Kind::ABSTRACT_TYPE);
     return mkSequenceType(a);
   }
-  return mkTypeConst<AbstractType>(AbstractType(k));
+  return mkConstInternal<TypeNode, AbstractType>(Kind::ABSTRACT_TYPE,
+                                                 AbstractType(k));
 }
 
 TypeNode NodeManager::mkDatatypeType(DType& datatype)
@@ -653,7 +675,7 @@ std::vector<TypeNode> NodeManager::mkMutualDatatypeTypesInternal(
     d_dtypes.push_back(std::unique_ptr<DType>(new DType(dt)));
     DType* dtp = d_dtypes.back().get();
 
-    NodeBuilder dtnb(this, kind::DATATYPE_TYPE);
+    NodeBuilder dtnb(this, Kind::DATATYPE_TYPE);
     TypeNode typeNode = dtnb.constructTypeNode();
     typeNode.setAttribute(dia, index);
     if (dtp->getNumParameters() == 0)
@@ -671,8 +693,17 @@ std::vector<TypeNode> NodeManager::mkMutualDatatypeTypesInternal(
           tupleTypes.push_back(dc[i].getType());
         }
         // Set its datatype representation
-        typeNode = mkTypeNode(kind::TUPLE_TYPE, tupleTypes);
+        typeNode = mkTypeNode(Kind::TUPLE_TYPE, tupleTypes);
         typeNode.setAttribute(expr::TupleDatatypeAttr(), dtt);
+      }
+      if (dt.isNullable())
+      {
+        TypeNode dtt = typeNode;
+        const DTypeConstructor& some = dt[1];
+        Assert(some.getNumArgs() == 1);
+        // Set its datatype representation
+        typeNode = mkTypeNode(Kind::NULLABLE_TYPE, some[0].getType());
+        typeNode.setAttribute(expr::NullableDatatypeAttr(), dtt);
       }
     }
     else
@@ -684,12 +715,15 @@ std::vector<TypeNode> NodeManager::mkMutualDatatypeTypesInternal(
       {
         params.push_back(dtp->getParameter(ip));
       }
-      typeNode = mkTypeNode(kind::PARAMETRIC_DATATYPE, params);
+      typeNode = mkTypeNode(Kind::PARAMETRIC_DATATYPE, params);
     }
     if (nameResolutions.find(dtp->getName()) != nameResolutions.end())
     {
-      throw Exception(
-          "cannot construct two datatypes at the same time with the same name");
+      std::stringstream ss;
+      ss << "cannot construct two datatypes at the same time with the same "
+            "name ("
+         << dtp->getName() << ")";
+      throw Exception(ss.str());
     }
     nameResolutions.insert(std::make_pair(dtp->getName(), typeNode));
     dtts.push_back(typeNode);
@@ -790,19 +824,19 @@ TypeNode NodeManager::mkConstructorType(const std::vector<TypeNode>& args,
 {
   std::vector<TypeNode> sorts = args;
   sorts.push_back(range);
-  return mkTypeNode(kind::CONSTRUCTOR_TYPE, sorts);
+  return mkTypeNode(Kind::CONSTRUCTOR_TYPE, sorts);
 }
 
 TypeNode NodeManager::mkSelectorType(TypeNode domain, TypeNode range)
 {
   Assert(domain.isDatatype()) << "cannot create non-datatype selector type";
-  return mkTypeNode(kind::SELECTOR_TYPE, domain, range);
+  return mkTypeNode(Kind::SELECTOR_TYPE, domain, range);
 }
 
 TypeNode NodeManager::mkTesterType(TypeNode domain)
 {
   Assert(domain.isDatatype()) << "cannot create non-datatype tester";
-  return mkTypeNode(kind::TESTER_TYPE, domain);
+  return mkTypeNode(Kind::TESTER_TYPE, domain);
 }
 
 TypeNode NodeManager::mkDatatypeUpdateType(TypeNode domain, TypeNode range)
@@ -810,7 +844,7 @@ TypeNode NodeManager::mkDatatypeUpdateType(TypeNode domain, TypeNode range)
   Assert(domain.isDatatype()) << "cannot create non-datatype updater type";
   // It is a function type domain x range -> domain, we store only the
   // arguments
-  return mkTypeNode(kind::UPDATER_TYPE, domain, range);
+  return mkTypeNode(Kind::UPDATER_TYPE, domain, range);
 }
 
 TypeNode NodeManager::TupleTypeCache::getTupleType(
@@ -890,7 +924,7 @@ TypeNode NodeManager::RecTypeCache::getRecordType(NodeManager* nm,
 TypeNode NodeManager::mkFunctionType(const std::vector<TypeNode>& sorts)
 {
   Assert(sorts.size() >= 2);
-  return mkTypeNode(kind::FUNCTION_TYPE, sorts);
+  return mkTypeNode(Kind::FUNCTION_TYPE, sorts);
 }
 
 TypeNode NodeManager::mkPredicateType(const std::vector<TypeNode>& sorts)
@@ -925,6 +959,35 @@ TypeNode NodeManager::mkTupleType(const std::vector<TypeNode>& types)
   return d_tt_cache.getTupleType(this, types);
 }
 
+TypeNode NodeManager::mkNullableType(const TypeNode& type)
+{
+  Assert(!type.isNull());
+  auto it = d_nt_cache.find(type);
+  if (it != d_nt_cache.end())
+  {
+    return it->second;
+  }
+  // construct the corresponding datatype with two constructors
+  // null and some.
+  std::stringstream sst;
+  sst << "__cvc5_nullable_" << type;
+  DType dt(sst.str());
+  dt.setNullable();  
+  std::shared_ptr<DTypeConstructor> null =
+      std::make_shared<DTypeConstructor>("nullable.null");
+  dt.addConstructor(null);
+  std::shared_ptr<DTypeConstructor> some =
+      std::make_shared<DTypeConstructor>("nullable.some");  
+  some->addArg("nullable.val", type);
+  dt.addConstructor(some);
+  TypeNode datatype = mkDatatypeType(dt);
+  Assert(datatype.isNullable());
+  d_nt_cache[type] = datatype;
+  Trace("nullable-debug") << "NodeManager::mkNullableType(" << type
+                          << ") = " << datatype << std::endl;
+  return datatype;
+}
+
 TypeNode NodeManager::mkRecordType(const Record& rec)
 {
   return d_rt_cache.getRecordType(this, rec);
@@ -932,22 +995,19 @@ TypeNode NodeManager::mkRecordType(const Record& rec)
 
 TypeNode NodeManager::mkSort()
 {
-  NodeBuilder nb(this, kind::SORT_TYPE);
+  NodeBuilder nb(this, Kind::SORT_TYPE);
   return nb.constructTypeNode();
 }
 
-TypeNode NodeManager::mkSort(const std::string& name)
+TypeNode NodeManager::mkSort(const std::string& name, bool fresh)
 {
-  NodeBuilder nb(this, kind::SORT_TYPE);
-  TypeNode tn = nb.constructTypeNode();
-  setAttribute(tn, expr::VarNameAttr(), name);
-  return tn;
+  return mkSortConstructor(name, 0, fresh);
 }
 
 TypeNode NodeManager::mkSort(TypeNode constructor,
                              const std::vector<TypeNode>& children)
 {
-  Assert(constructor.getKind() == kind::SORT_TYPE
+  Assert(constructor.getKind() == Kind::SORT_TYPE
          && constructor.getNumChildren() == 0)
       << "expected a sort constructor";
   Assert(children.size() > 0) << "expected non-zero # of children";
@@ -957,19 +1017,42 @@ TypeNode NodeManager::mkSort(TypeNode constructor,
   Assert(getAttribute(constructor.d_nv, expr::SortArityAttr())
          == children.size())
       << "arity mismatch in application of sort constructor";
-  NodeBuilder nb(this, kind::INSTANTIATED_SORT_TYPE);
+  NodeBuilder nb(this, Kind::INSTANTIATED_SORT_TYPE);
   nb << constructor;
   nb.append(children);
   return nb.constructTypeNode();
 }
 
-TypeNode NodeManager::mkSortConstructor(const std::string& name, size_t arity)
+TypeNode NodeManager::mkSortConstructor(const std::string& name,
+                                        size_t arity,
+                                        bool fresh)
 {
-  Assert(arity > 0);
-  NodeBuilder nb(this, kind::SORT_TYPE);
+  if (!fresh)
+  {
+    std::pair<std::string, size_t> key(name, arity);
+    std::map<std::pair<std::string, size_t>, TypeNode>::iterator it =
+        d_nfreshSorts.find(key);
+    if (it != d_nfreshSorts.end())
+    {
+      return it->second;
+    }
+    // allocate a new one
+    TypeNode t = mkSortConstructorInternal(name, arity);
+    d_nfreshSorts[key] = t;
+    return t;
+  }
+  return mkSortConstructorInternal(name, arity);
+}
+TypeNode NodeManager::mkSortConstructorInternal(const std::string& name,
+                                                size_t arity)
+{
+  NodeBuilder nb(this, Kind::SORT_TYPE);
   TypeNode type = nb.constructTypeNode();
   setAttribute(type, expr::VarNameAttr(), name);
-  setAttribute(type, expr::SortArityAttr(), arity);
+  if (arity > 0)
+  {
+    setAttribute(type, expr::SortArityAttr(), arity);
+  }
   return type;
 }
 
@@ -984,7 +1067,7 @@ TypeNode NodeManager::mkUnresolvedDatatypeSort(const std::string& name,
 
 Node NodeManager::mkOracle(Oracle& o)
 {
-  Node n = NodeBuilder(this, kind::ORACLE);
+  Node n = NodeBuilder(this, Kind::ORACLE);
   n.setAttribute(TypeAttr(), builtinOperatorType());
   n.setAttribute(TypeCheckedAttr(), true);
   n.setAttribute(OracleIndexAttr(), d_oracles.size());
@@ -995,19 +1078,40 @@ Node NodeManager::mkOracle(Oracle& o)
 
 const Oracle& NodeManager::getOracleFor(const Node& n) const
 {
-  Assert(n.getKind() == kind::ORACLE);
+  Assert(n.getKind() == Kind::ORACLE);
   size_t index = n.getAttribute(OracleIndexAttr());
   Assert(index < d_oracles.size());
   return *d_oracles[index];
 }
 
-Node NodeManager::mkVar(const std::string& name, const TypeNode& type)
+Node NodeManager::mkVar(const std::string& name,
+                        const TypeNode& type,
+                        bool fresh)
 {
-  Node n = NodeBuilder(this, kind::VARIABLE);
+  if (fresh)
+  {
+    Node n = NodeBuilder(this, Kind::VARIABLE);
+    setAttribute(n, TypeAttr(), type);
+    setAttribute(n, TypeCheckedAttr(), true);
+    setAttribute(n, expr::VarNameAttr(), name);
+    return n;
+  }
+  // Note that the constructed variable must have kind VARIABLE, not SKOLEM,
+  // which is why this is not implemented as a case inside SkolemManager.
+  std::pair<std::string, TypeNode> key(name, type);
+  std::map<std::pair<std::string, TypeNode>, Node>::iterator it;
+  it = d_nfreshVars.find(key);
+  if (it != d_nfreshVars.end())
+  {
+    return it->second;
+  }
+  Node n = NodeBuilder(this, Kind::VARIABLE);
   setAttribute(n, TypeAttr(), type);
   setAttribute(n, TypeCheckedAttr(), true);
   setAttribute(n, expr::VarNameAttr(), name);
-  return n;
+  Node v = n;
+  d_nfreshVars[key] = v;
+  return v;
 }
 
 Node NodeManager::mkBoundVar(const std::string& name, const TypeNode& type)
@@ -1028,7 +1132,7 @@ Node NodeManager::getBoundVarListForFunctionType(TypeNode tn)
     {
       vars.push_back(mkBoundVar(tn[i]));
     }
-    bvl = mkNode(kind::BOUND_VAR_LIST, vars);
+    bvl = mkNode(Kind::BOUND_VAR_LIST, vars);
     Trace("functions") << "Make standard bound var list " << bvl << " for "
                        << tn << std::endl;
     tn.setAttribute(LambdaBoundVarListAttr(), bvl);
@@ -1124,12 +1228,12 @@ Node NodeManager::mkChain(Kind kind, const std::vector<Node>& children)
   {
     cchildren.push_back(mkNode(kind, children[i], children[i + 1]));
   }
-  return mkNode(kind::AND, cchildren);
+  return mkNode(Kind::AND, cchildren);
 }
 
 Node NodeManager::mkVar(const TypeNode& type)
 {
-  Node n = NodeBuilder(this, kind::VARIABLE);
+  Node n = NodeBuilder(this, Kind::VARIABLE);
   setAttribute(n, TypeAttr(), type);
   setAttribute(n, TypeCheckedAttr(), true);
   return n;
@@ -1137,7 +1241,7 @@ Node NodeManager::mkVar(const TypeNode& type)
 
 Node NodeManager::mkBoundVar(const TypeNode& type)
 {
-  Node n = NodeBuilder(this, kind::BOUND_VARIABLE);
+  Node n = NodeBuilder(this, Kind::BOUND_VARIABLE);
   setAttribute(n, TypeAttr(), type);
   setAttribute(n, TypeCheckedAttr(), true);
   return n;
@@ -1145,7 +1249,7 @@ Node NodeManager::mkBoundVar(const TypeNode& type)
 
 Node NodeManager::mkInstConstant(const TypeNode& type)
 {
-  Node n = NodeBuilder(this, kind::INST_CONSTANT);
+  Node n = NodeBuilder(this, Kind::INST_CONSTANT);
   n.setAttribute(TypeAttr(), type);
   n.setAttribute(TypeCheckedAttr(), true);
   return n;
@@ -1153,7 +1257,7 @@ Node NodeManager::mkInstConstant(const TypeNode& type)
 
 Node NodeManager::mkRawSymbol(const std::string& name, const TypeNode& type)
 {
-  Node n = NodeBuilder(this, kind::RAW_SYMBOL);
+  Node n = NodeBuilder(this, Kind::RAW_SYMBOL);
   n.setAttribute(TypeAttr(), type);
   n.setAttribute(TypeCheckedAttr(), true);
   setAttribute(n, expr::VarNameAttr(), name);
@@ -1193,6 +1297,7 @@ bool NodeManager::hasOperator(Kind k)
 
     default: Unhandled() << mk;
   }
+  return false;
 }
 
 TNode NodeManager::operatorOf(Kind k)
@@ -1201,7 +1306,7 @@ TNode NodeManager::operatorOf(Kind k)
                  k,
                  "Kind is not an OPERATOR-kinded kind "
                  "in NodeManager::operatorOf()");
-  return d_operators[k];
+  return d_operators[static_cast<uint32_t>(k)];
 }
 
 template <class NodeClass, class T>
@@ -1211,7 +1316,7 @@ NodeClass NodeManager::mkConstInternal(Kind k, const T& val)
   expr::NodeValue& nvStack = reinterpret_cast<expr::NodeValue&>(nvStorage);
 
   nvStack.d_id = 0;
-  nvStack.d_kind = k;
+  nvStack.d_kind = static_cast<uint32_t>(k);
   nvStack.d_rc = 0;
   nvStack.d_nchildren = 1;
 
@@ -1219,6 +1324,9 @@ NodeClass NodeManager::mkConstInternal(Kind k, const T& val)
     && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6))
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
+#endif
+#if defined(__GNUC__) && (__GNUC__ > 9)
+#pragma GCC diagnostic ignored "-Wzero-length-bounds"
 #endif
 
   nvStack.d_children[0] = const_cast<expr::NodeValue*>(
@@ -1242,7 +1350,7 @@ NodeClass NodeManager::mkConstInternal(Kind k, const T& val)
   }
 
   nv->d_nchildren = 0;
-  nv->d_kind = k;
+  nv->d_kind = static_cast<uint32_t>(k);
   nv->d_id = d_nextId++;
   nv->d_rc = 0;
 
@@ -1287,25 +1395,25 @@ Kind NodeManager::getKindForFunction(TNode fun)
   TypeNode tn = fun.getType();
   if (tn.isFunction())
   {
-    return kind::APPLY_UF;
+    return Kind::APPLY_UF;
   }
   else if (tn.isDatatypeConstructor())
   {
-    return kind::APPLY_CONSTRUCTOR;
+    return Kind::APPLY_CONSTRUCTOR;
   }
   else if (tn.isDatatypeSelector())
   {
-    return kind::APPLY_SELECTOR;
+    return Kind::APPLY_SELECTOR;
   }
   else if (tn.isDatatypeTester())
   {
-    return kind::APPLY_TESTER;
+    return Kind::APPLY_TESTER;
   }
   else if (tn.isDatatypeUpdater())
   {
-    return kind::APPLY_UPDATER;
+    return Kind::APPLY_UPDATER;
   }
-  return kind::UNDEFINED_KIND;
+  return Kind::UNDEFINED_KIND;
 }
 
 Node NodeManager::mkNode(Kind kind, std::initializer_list<TNode> children)
@@ -1318,7 +1426,7 @@ Node NodeManager::mkNode(Kind kind, std::initializer_list<TNode> children)
 Node NodeManager::mkNode(TNode opNode, std::initializer_list<TNode> children)
 {
   NodeBuilder nb(this, operatorToKind(opNode));
-  if (opNode.getKind() != kind::BUILTIN)
+  if (opNode.getKind() != Kind::BUILTIN)
   {
     nb << opNode;
   }
@@ -1328,14 +1436,14 @@ Node NodeManager::mkNode(TNode opNode, std::initializer_list<TNode> children)
 
 Node NodeManager::mkConstReal(const Rational& r)
 {
-  // works with (r.isIntegral() ? kind::CONST_INTEGER : kind::CONST_RATIONAL)
-  return mkConst(kind::CONST_RATIONAL, r);
+  // works with (r.isIntegral() ? Kind::CONST_INTEGER : Kind::CONST_RATIONAL)
+  return mkConst(Kind::CONST_RATIONAL, r);
 }
 
 Node NodeManager::mkConstInt(const Rational& r)
 {
   Assert(r.isIntegral());
-  return mkConst(kind::CONST_INTEGER, r);
+  return mkConst(Kind::CONST_INTEGER, r);
 }
 
 Node NodeManager::mkConstRealOrInt(const Rational& r)

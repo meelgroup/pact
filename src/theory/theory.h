@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -141,11 +141,6 @@ class Theory : protected EnvObj
   virtual void computeCareGraph();
 
   /**
-   * A list of shared terms that the theory has.
-   */
-  context::CDList<TNode> d_sharedTerms;
-
-  /**
    * Construct a Theory.
    *
    * The pair <id, instance> is assumed to uniquely identify this Theory
@@ -212,7 +207,7 @@ class Theory : protected EnvObj
    * Returns true if x -> val is a legal elimination of variable x. This is
    * useful for ppAssert, when x = val is an entailed equality. This function
    * determines whether indeed x can be eliminated from the problem via the
-   * substituion x -> val.
+   * substitution x -> val.
    *
    * The following criteria imply that x -> val is *not* a legal elimination:
    * (1) If x is contained in val,
@@ -301,7 +296,7 @@ class Theory : protected EnvObj
                                   TheoryId usortOwner = theory::THEORY_UF)
   {
     TheoryId id;
-    if (typeNode.getKind() == kind::TYPE_CONSTANT)
+    if (typeNode.getKind() == Kind::TYPE_CONSTANT)
     {
       id = typeConstantToTheoryId(typeNode.getConst<TypeConstant>());
     }
@@ -318,6 +313,16 @@ class Theory : protected EnvObj
 
   /**
    * Returns the ID of the theory responsible for the given node.
+   *
+   * Note this method does not take into account "Boolean term skolem". Boolean
+   * term skolems always belong to THEORY_UF. This case is handled in
+   * Env::theoryOf.
+   * 
+   * @param node The node in question.
+   * @param mdoe The theoryof mode, which impacts which theory owns e.g.
+   * variables.
+   * @param usortOwner The theory that owns uninterpreted sorts.
+   * @return The theory that owns node.
    */
   static TheoryId theoryOf(
       TNode node,
@@ -329,6 +334,8 @@ class Theory : protected EnvObj
    */
   inline bool isLeaf(TNode node) const
   {
+    // variables have 0 children thus theoryOf is not impacted by whether
+    // node is a Boolean term skolem.
     return node.getNumChildren() == 0
            || theoryOf(node, options().theory.theoryOfMode) != d_id;
   }
@@ -341,6 +348,8 @@ class Theory : protected EnvObj
       TheoryId theoryId,
       options::TheoryOfMode mode = options::TheoryOfMode::THEORY_OF_TYPE_BASED)
   {
+    // variables have 0 children thus theoryOf is not impacted by whether
+    // node is a Boolean term skolem.
     return node.getNumChildren() == 0 || theoryOf(node, mode) != theoryId;
   }
 
@@ -631,10 +640,11 @@ class Theory : protected EnvObj
    * carries information about the proof generator for the rewrite, which can
    * be the null TrustNode if n is unchanged.
    *
-   * Notice this method is used both in the "theory rewrite equalities"
-   * preprocessing pass, where n is an equality from the input formula,
-   * and in theory preprocessing, where n is a (non-equality) term occurring
-   * in the input or generated in a lemma.
+   * Notice this method is only in theory preprocessing. It is called on all
+   * (non-equality) terms n that occur in the input formula or in lemmas. We
+   * do not pass equality terms to this method, since they should never be
+   * preprocessed in lemmas. Instead, equalities may be prepreocessed in
+   * the ppStaticRewrite method below.
    *
    * @param n the node to preprocess-rewrite.
    * @param lems a set of lemmas that should be added as a consequence of
@@ -651,6 +661,22 @@ class Theory : protected EnvObj
   {
     return TrustNode::null();
   }
+  /**
+   * Similar to the above method, given a term of the theory coming from the
+   * input formula, this method can be overridden in a theory implementation to
+   * rewrite the term into an equivalent form. This method returns a TrustNode
+   * of kind TrustNodeKind::REWRITE, as in ppRewrite.
+   *
+   * Notice this method is used in the "static preprocess rewrite"
+   * preprocessing pass, where n is a term from the input formula.
+   * It is not called on lemmas generated during solving.
+   *
+   * @param n the node to preprocess-rewrite.
+   *
+   * Note that ppRewrite should not return WITNESS terms, since the internal
+   * calculus works in "original forms" and not "witness forms".
+   */
+  virtual TrustNode ppStaticRewrite(TNode n) { return TrustNode::null(); }
 
   /**
    * Notify preprocessed assertions. Called on new assertions after
@@ -715,31 +741,6 @@ class Theory : protected EnvObj
   size_t numAssertions() { return d_facts.size(); }
 
   typedef context::CDList<TNode>::const_iterator shared_terms_iterator;
-
-  /**
-   * Provides access to the shared terms, primarily intended for theory
-   * debugging purposes.
-   *
-   * @return the iterator to the beginning of the shared terms list
-   */
-  shared_terms_iterator shared_terms_begin() const
-  {
-    return d_sharedTerms.begin();
-  }
-
-  /**
-   * Provides access to the facts queue, primarily intended for theory
-   * debugging purposes.
-   *
-   * @return the iterator to the end of the shared terms list
-   */
-  shared_terms_iterator shared_terms_end() const { return d_sharedTerms.end(); }
-
-  /**
-   * This is a utility function for constructing a copy of the currently
-   * shared terms in a queriable form.  As this is
-   */
-  std::unordered_set<TNode> currentlySharedTerms() const;
 
   /**
    * This allows the theory to be queried for whether a literal, lit, is
@@ -817,9 +818,6 @@ class Theory : protected EnvObj
 
   /** Index into the head of the facts list */
   context::CDO<unsigned> d_factsHead;
-
-  /** Indices for splitting on the shared terms. */
-  context::CDO<unsigned> d_sharedTermsIndex;
 
   /** The care graph the theory will use during combination. */
   CareGraph* d_careGraph;

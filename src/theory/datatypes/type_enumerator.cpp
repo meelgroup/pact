@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Gereon Kremer, Morgan Deters
+ *   Andrew Reynolds, Gereon Kremer, Aina Niemetz
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -140,7 +140,7 @@ Node DatatypesEnumerator::getTermEnum( TypeNode tn, unsigned i ){
        }
      }
      Trace("dt-enum-debug") << "Get constructor..." << std::endl;
-     NodeBuilder b(kind::APPLY_CONSTRUCTOR);
+     NodeBuilder b(Kind::APPLY_CONSTRUCTOR);
      if (d_datatype.isParametric())
      {
        b << ctor.getInstantiatedConstructor(d_type);
@@ -227,7 +227,7 @@ Node DatatypesEnumerator::getTermEnum( TypeNode tn, unsigned i ){
      // find the "zero" term via mkGroundTerm
      Trace("dt-enum-debug") << "make ground term..." << std::endl;
      Trace("dt-enum-debug") << "done : " << d_zeroTerm << std::endl;
-     Assert(d_zeroTerm.getKind() == kind::APPLY_CONSTRUCTOR);
+     Assert(d_zeroTerm.getKind() == Kind::APPLY_CONSTRUCTOR);
      d_has_debruijn = 0;
    }
    Trace("dt-enum") << "zero term : " << d_zeroTerm << std::endl;

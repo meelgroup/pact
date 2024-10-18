@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 ###############################################################################
 # Top contributors (to current version):
-#   Gereon Kremer, Mathias Preiner, Andres Noetzli
+#   Gereon Kremer, Mathias Preiner, Alex Ozdemir
 #
 # This file is part of the cvc5 project.
 #
-# Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+# Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
 # in the top-level source directory and their institutional affiliations.
 # All rights reserved.  See the file COPYING in the top-level source
 # directory for licensing information.
@@ -50,7 +50,10 @@ import os
 import re
 import sys
 import textwrap
-import toml
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
 
 ### Allowed attributes for module/option
 
@@ -230,7 +233,7 @@ def generate_holder_mem_decls(modules):
 def generate_holder_ref_decls(modules):
     """Render reference declarations for holder members of the Option class"""
     return concat_format('''  const options::Holder{id_cap}& {id};
-  options::Holder{id_cap}& write{id_capitalized}();''', modules)
+  options::Holder{id_cap}& write_{id}();''', modules)
 
 
 ################################################################################
@@ -256,7 +259,7 @@ def generate_holder_ref_inits(modules):
 
 def generate_write_functions(modules):
     """Render write functions for holders within the Option class"""
-    return concat_format('''  options::Holder{id_cap}& Options::write{id_capitalized}()
+    return concat_format('''  options::Holder{id_cap}& Options::write_{id}()
   {{
     return *d_{id};
   }}
@@ -344,7 +347,7 @@ def generate_get_impl(modules):
             ret = '{{ std::stringstream s; s << options.{}.{}; return s.str(); }}'.format(
                 module.id, option.name)
         res.append('  case OptionEnum::{}: {}'.format(option.enum_name(), ret))
-    res.append('  default:'.format(option.enum_name()))
+    res.append('  default:')
     res.append('  {')
     res.append('    throw OptionException(\"Ungettable option key or setting: \" + name);')
     res.append('  }')
@@ -398,15 +401,18 @@ def generate_set_impl(modules):
         for pred in _set_predicates(module, option):
             res.append('    {}'.format(pred))
         if option.name:
-            res.append('    opts.write{module}().{name} = value;'.format(
-                module=module.id_capitalized, name=option.name))
-            res.append('    opts.write{module}().{name}WasSetByUser = true;'.format(
-                module=module.id_capitalized, name=option.name))
+            res.append('    opts.write_{module}().{name} = value;'.format(
+                module=module.id, name=option.name))
+            res.append('    opts.write_{module}().{name}WasSetByUser = true;'.format(
+                module=module.id, name=option.name))
         res.append('    break;')
         res.append('  }')
     res.append('}')
     return '\n    '.join(res)
 
+def cpp_category(category):
+    assert category
+    return f'OptionInfo::Category::{category.upper()}'
 
 def generate_getinfo_impl(modules):
     """Generates the implementation for options::getInfo()."""
@@ -429,6 +435,7 @@ def generate_getinfo_impl(modules):
             'default': option.default if option.default else '{}()'.format(option.type),
             'minimum': option.minimum if option.minimum else '{}',
             'maximum': option.maximum if option.maximum else '{}',
+            'category': cpp_category(option.category)
         }
         if option.alias:
             fmt['alias'] = ', '.join(map(lambda s: '"{}"'.format(s), option.alias))
@@ -447,7 +454,7 @@ def generate_getinfo_impl(modules):
         else:
             constr = 'OptionInfo::VoidInfo{{}}'
         res.append("  case OptionEnum::{}:".format(option.enum_name()))
-        line = '    return OptionInfo{{"{name}", {{{alias}}}, {setbyuser}, ' + constr + '}};'
+        line = '    return OptionInfo{{"{name}", {{{alias}}}, {setbyuser}, {category}, ' + constr + '}};'
         res.append(line.format(**fmt))
     res.append("}")
     return '\n  '.join(res)
@@ -501,6 +508,16 @@ def generate_module_holder_decl(module):
             res.append('{} {};'.format(option.type, option.name))
         res.append('bool {}WasSetByUser = false;'.format(option.name))
     return '\n  '.join(res)
+
+def generate_module_long_name_decl(module):
+    res = []
+    for option in module.options:
+        if option.name is None:
+            continue
+        if option.long_name:
+            res.append('static constexpr const char* {} = "{}";'.format(
+                       option.name, option.long_name))
+    return '\n    '.join(res)
 
 ################################################################################
 # for options/<module>.cpp
@@ -713,6 +730,7 @@ def _cli_help_wrap(help_msg, opts):
 def generate_cli_help(modules):
     """Generate the output for --help."""
     common = []
+    regular = []
     others = []
     for module in modules:
         if not module.options:
@@ -735,7 +753,9 @@ def generate_cli_help(modules):
                     common.extend(res)
                 else:
                     others.extend(res)
-    return '\n'.join(common), '\n'.join(others)
+                    if option.category == 'regular':
+                        regular.extend(res)
+    return '\n'.join(common), '\n'.join(others), '\n'.join(regular)
 
 
 ################################################################################
@@ -942,6 +962,7 @@ def codegen_module(module, dst_dir, tpls):
         'includes': generate_module_includes(module),
         'modes_decl': generate_module_mode_decl(module),
         'holder_decl': generate_module_holder_decl(module),
+        'long_name_decl': generate_module_long_name_decl(module),
         # module source
         'header': module.header,
         'modes_impl': generate_module_mode_impl(module),
@@ -958,7 +979,7 @@ def codegen_module(module, dst_dir, tpls):
 def codegen_all_modules(modules, src_dir, build_dir, dst_dir, tpls):
     """Generate code for all option modules."""
     short, cmdline_opts, parseinternal = generate_parsing(modules)
-    help_common, help_others = generate_cli_help(modules)
+    help_common, help_others, help_regular = generate_cli_help(modules)
 
     if os.path.isdir('{}/docs/'.format(build_dir)):
         write_file('{}/docs/'.format(build_dir), 'options_generated.rst',
@@ -994,6 +1015,7 @@ def codegen_all_modules(modules, src_dir, build_dir, dst_dir, tpls):
         # main/options.cpp
         'help_common': help_common,
         'help_others': help_others,
+        'help_regular': help_regular,
         'cmdoptions_long': cmdline_opts,
         'cmdoptions_short': short,
         'parseinternal_impl': parseinternal,
@@ -1162,7 +1184,8 @@ def mkoptions_main():
     checker = Checker()
     modules = []
     for filename in filenames:
-        data = toml.load(filename)
+        with open(filename, "rb") as f:
+            data = tomllib.load(f)
         module = checker.check_module(data, filename)
         if 'option' in data:
             module.options = sorted(

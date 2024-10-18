@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Morgan Deters, Aina Niemetz
+ *   Andrew Reynolds, Aina Niemetz, Morgan Deters
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -19,6 +19,7 @@
 #include "expr/dtype_cons.h"
 #include "expr/node_algorithm.h"
 #include "expr/skolem_manager.h"
+#include "expr/sort_to_term.h"
 #include "expr/type_matcher.h"
 #include "util/rational.h"
 
@@ -31,6 +32,7 @@ DType::DType(std::string name, bool isCo)
       d_params(),
       d_isCo(isCo),
       d_isTuple(false),
+      d_isNullable(false),
       d_isRecord(false),
       d_constructors(),
       d_resolved(false),
@@ -50,6 +52,7 @@ DType::DType(std::string name, const std::vector<TypeNode>& params, bool isCo)
       d_params(params),
       d_isCo(isCo),
       d_isTuple(false),
+      d_isNullable(false),
       d_isRecord(false),
       d_constructors(),
       d_resolved(false),
@@ -90,6 +93,8 @@ bool DType::isSygus() const { return !d_sygusType.isNull(); }
 
 bool DType::isTuple() const { return d_isTuple; }
 
+bool DType::isNullable() const { return d_isNullable; }
+
 bool DType::isRecord() const { return d_isRecord; }
 
 bool DType::isResolved() const { return d_resolved; }
@@ -99,10 +104,10 @@ const DType& DType::datatypeOf(Node item)
   TypeNode t = item.getType();
   switch (t.getKind())
   {
-    case CONSTRUCTOR_TYPE: return t[t.getNumChildren() - 1].getDType();
-    case SELECTOR_TYPE:
-    case TESTER_TYPE:
-    case UPDATER_TYPE: return t[0].getDType();
+    case Kind::CONSTRUCTOR_TYPE: return t[t.getNumChildren() - 1].getDType();
+    case Kind::SELECTOR_TYPE:
+    case Kind::TESTER_TYPE:
+    case Kind::UPDATER_TYPE: return t[0].getDType();
     default:
       Unhandled() << "arg must be a datatype constructor, selector, or tester";
   }
@@ -119,7 +124,7 @@ size_t DType::indexOf(Node item)
 
 size_t DType::indexOfInternal(Node item)
 {
-  if (item.getKind() == APPLY_TYPE_ASCRIPTION)
+  if (item.getKind() == Kind::APPLY_TYPE_ASCRIPTION)
   {
     return indexOf(item[0]);
   }
@@ -135,7 +140,7 @@ size_t DType::cindexOf(Node item)
 }
 size_t DType::cindexOfInternal(Node item)
 {
-  if (item.getKind() == APPLY_TYPE_ASCRIPTION)
+  if (item.getKind() == Kind::APPLY_TYPE_ASCRIPTION)
   {
     return cindexOf(item[0]);
   }
@@ -350,6 +355,12 @@ void DType::setTuple()
 {
   Assert(!d_resolved);
   d_isTuple = true;
+}
+
+void DType::setNullable()
+{
+  Assert(!d_resolved);
+  d_isNullable = true;
 }
 
 void DType::setRecord()
@@ -915,9 +926,11 @@ Node DType::getSharedSelector(TypeNode dtt, TypeNode t, size_t index) const
   std::stringstream ss;
   ss << "sel_" << index;
   SkolemManager* sm = nm->getSkolemManager();
-  TypeNode stype = nm->mkSelectorType(dtt, t);
-  Node nindex = nm->mkConstInt(Rational(index));
-  s = sm->mkSkolemFunction(SkolemFunId::SHARED_SELECTOR, stype, nindex);
+  std::vector<Node> cacheVals;
+  cacheVals.push_back(nm->mkConst(SortToTerm(dtt)));
+  cacheVals.push_back(nm->mkConst(SortToTerm(t)));
+  cacheVals.push_back(nm->mkConstInt(Rational(index)));
+  s = sm->mkSkolemFunction(SkolemId::SHARED_SELECTOR, cacheVals);
   d_sharedSel[dtt][t][index] = s;
   Trace("dt-shared-sel") << "Made " << s << " of type " << dtt << " -> " << t
                          << std::endl;
@@ -992,3 +1005,11 @@ void DType::toStream(std::ostream& out) const
 }
 
 }  // namespace cvc5::internal
+
+namespace std {
+size_t hash<cvc5::internal::DType>::operator()(
+    const cvc5::internal::DType& dt) const
+{
+  return std::hash<std::string>()(dt.getName());
+}
+}  // namespace std

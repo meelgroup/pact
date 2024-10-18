@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Dejan Jovanovic, Mathias Preiner, Liana Hadarean
+ *   Dejan Jovanovic, Mathias Preiner, Aina Niemetz
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -24,7 +24,7 @@
 #include "context/context.h"
 #include "expr/node.h"
 #include "proof/clause_id.h"
-#include "proof/proof_node_manager.h"
+#include "prop/prop_proof_manager.h"
 #include "prop/sat_solver_types.h"
 #include "util/statistics_stats.h"
 
@@ -32,6 +32,7 @@ namespace cvc5::internal {
 
 namespace prop {
 
+class SatProofManager;
 class TheoryProxy;
 
 class SatSolver {
@@ -124,19 +125,32 @@ class CDCLTSatSolver : public SatSolver
   virtual void initialize(context::Context* context,
                           prop::TheoryProxy* theoryProxy,
                           context::UserContext* userContext,
-                          ProofNodeManager* pnm) = 0;
+                          PropPfManager* ppm) = 0;
 
   virtual void push() = 0;
 
   virtual void pop() = 0;
 
-  /*
+  /**
    * Reset the decisions in the DPLL(T) SAT solver at the current assertion
    * level.
    */
   virtual void resetTrail() = 0;
 
-  virtual void requirePhase(SatLiteral lit) = 0;
+  /**
+   * Configure the preferred phase for a decision literal.
+   *
+   * @note This phase is always enforced when the SAT solver decides to make a
+   *       decision on this variable on its own. If a decision is injected into
+   *       the SAT solver via TheoryProxy::getNextDecisionRequest(), the
+   *       preferred phase will only be considered if the decision was derived
+   *       by the decision engine. It will be ignored if the decision was
+   *       derived from a theory (the phase enforced by the theory overrides
+   *       the preferred phase).
+   *
+   * @param lit The literal.
+   */
+  virtual void preferPhase(SatLiteral lit) = 0;
 
   virtual bool isDecision(SatVariable decn) const = 0;
 
@@ -156,6 +170,10 @@ class CDCLTSatSolver : public SatSolver
    */
   virtual std::vector<Node> getOrderHeap() const = 0;
 
+  /**
+   * Get proof, which is used if option prop-proof-mode is PROOF.
+   * @return a complete proof computed by this SAT solver.
+   */
   virtual std::shared_ptr<ProofNode> getProof() = 0;
 
 }; /* class CDCLTSatSolver */

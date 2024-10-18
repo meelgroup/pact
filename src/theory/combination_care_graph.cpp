@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Dejan Jovanovic
+ *   Andrew Reynolds, Dejan Jovanovic, Aina Niemetz
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -89,7 +89,7 @@ void CombinationCareGraph::combineTheories()
     // already have but it doesn't seem to make a big difference - need to
     // explore more -Clark
     Node e = d_valuation.ensureLiteral(equality);
-    propEngine->requirePhase(e, true);
+    propEngine->preferPhase(e, true);
   }
 }
 

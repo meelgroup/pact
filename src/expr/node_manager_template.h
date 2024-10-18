@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Morgan Deters, Andrew Reynolds, Christopher L. Conway
+ *   Morgan Deters, Andrew Reynolds, Aina Niemetz
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -35,6 +35,7 @@
 namespace cvc5 {
 
 class Solver;
+class TermManager;
 
 namespace internal {
 
@@ -62,12 +63,13 @@ class TypeChecker;
 /**
  * The node manager.
  *
- * This class should not be used simulatenously in multiple threads. It is a
+ * This class should not be used simultaneously in multiple threads. It is a
  * singleton that is accessible via NodeManager::currentNM().
  */
 class NodeManager
 {
   friend class cvc5::Solver;
+  friend class cvc5::TermManager;
   friend class expr::NodeValue;
   friend class expr::TypeChecker;
   friend class SkolemManager;
@@ -423,6 +425,13 @@ class NodeManager
   TypeNode mkTupleType(const std::vector<TypeNode>& types);
 
   /**
+   * Make a nullable type from the given type.
+   * @param type An element type.
+   * @returns The nullable type.
+   */
+  TypeNode mkNullableType(const TypeNode& type);
+
+  /**
    * Make a record type with the description from rec.
    *
    * @param rec a description of the record
@@ -709,13 +718,15 @@ class NodeManager
   TypeNode mkSort();
 
   /** Make a new sort with the given name of arity 0. */
-  TypeNode mkSort(const std::string& name);
+  TypeNode mkSort(const std::string& name, bool fresh = true);
 
   /** Make a new sort by parameterizing the given sort constructor. */
   TypeNode mkSort(TypeNode constructor, const std::vector<TypeNode>& children);
 
   /** Make a new sort with the given name and arity. */
-  TypeNode mkSortConstructor(const std::string& name, size_t arity);
+  TypeNode mkSortConstructor(const std::string& name,
+                             size_t arity,
+                             bool fresh = true);
 
   /** Make an unresolved datatype sort */
   TypeNode mkUnresolvedDatatypeSort(const std::string& name, size_t arity = 0);
@@ -812,6 +823,7 @@ class NodeManager
                           const std::vector<TypeNode>& types,
                           unsigned index = 0);
   };
+
   /** Same as above, for records */
   class RecTypeCache
   {
@@ -945,17 +957,29 @@ class NodeManager
   bool safeToReclaimZombies() const;
 
   /**
-   * Create a variable with the given name and type.  NOTE that no
-   * lookup is done on the name.  If you mkVar("a", type) and then
-   * mkVar("a", type) again, you have two variables.  This method is private to
-   * avoid internal uses of mkVar() from within cvc5. Instead, the SkolemManager
-   * submodule is the interface for constructing internal variables
-   * (see expr/skolem_manager.h).
+   * Create a variable with the given name and type.
+   *
+   * @note If `fresh` is true, no lookup is done on the name.  If you
+   *       mkVar("a", type) and then mkVar("a", type) again, you have will
+   *       have two variables.
+   *
+   * @warning This function is private to avoid internal uses of mkVar() from
+   *          within cvc5. Instead, the SkolemManager submodule is the
+   *          interface for constructing internal variables (see
+   *          expr/skolem_manager.h).
+   *
+   * @param name  The symbol of the variable.
+   * @param type  The type of the variable.
+   * @param fresh True to return a fresh variable. If false, it returns the
+   *              same variable for the given type and name.
    */
-  Node mkVar(const std::string& name, const TypeNode& type);
+  Node mkVar(const std::string& name, const TypeNode& type, bool fresh = true);
 
   /** Create a variable with the given type. */
   Node mkVar(const TypeNode& type);
+
+  /** Make a new sort with the given name and arity. */
+  TypeNode mkSortConstructorInternal(const std::string& name, size_t arity);
 
   /** The skolem manager */
   std::unique_ptr<SkolemManager> d_skManager;
@@ -1006,9 +1030,9 @@ class NodeManager
    * ADD, are APPLYs of a ADD operator to arguments.  This array
    * holds the set of operators for these things.  A ADD operator is
    * a Node with kind "BUILTIN", and if you call
-   * plusOperator->getConst<cvc5::internal::Kind>(), you get kind::ADD back.
+   * plusOperator->getConst<cvc5::internal::Kind>(), you get Kind::ADD back.
    */
-  Node d_operators[kind::LAST_KIND];
+  Node d_operators[static_cast<uint32_t>(Kind::LAST_KIND)];
 
   /** unique vars per (Kind,Type) */
   std::map<Kind, std::map<TypeNode, Node>> d_unique_vars;
@@ -1019,7 +1043,15 @@ class NodeManager
   /** A list of oracles owned by this node manager */
   std::vector<std::unique_ptr<Oracle>> d_oracles;
 
+  /** A mapping for sorts allocated by mkSortConstructor where fresh is false */
+  std::map<std::pair<std::string, size_t>, TypeNode> d_nfreshSorts;
+
+  /** A mapping for variables constructed when fresh is false */
+  std::map<std::pair<std::string, TypeNode>, Node> d_nfreshVars;
+
   TupleTypeCache d_tt_cache;
+  /** a mapping from the element types to nullable datatypes */
+  std::map<TypeNode, TypeNode> d_nt_cache;
   RecTypeCache d_rt_cache;
 }; /* class NodeManager */
 
@@ -1030,14 +1062,14 @@ inline TypeNode NodeManager::mkArrayType(TypeNode indexType,
   Assert(!constituentType.isNull()) << "unexpected NULL constituent type";
   Trace("arrays") << "making array type " << indexType << " "
                   << constituentType << std::endl;
-  return mkTypeNode(kind::ARRAY_TYPE, indexType, constituentType);
+  return mkTypeNode(Kind::ARRAY_TYPE, indexType, constituentType);
 }
 
 inline TypeNode NodeManager::mkSetType(TypeNode elementType)
 {
   Assert(!elementType.isNull()) << "unexpected NULL element type";
   Trace("sets") << "making sets type " << elementType << std::endl;
-  return mkTypeNode(kind::SET_TYPE, elementType);
+  return mkTypeNode(Kind::SET_TYPE, elementType);
 }
 
 inline expr::NodeValue* NodeManager::poolLookup(expr::NodeValue* nv) const {
@@ -1112,7 +1144,7 @@ Node NodeManager::mkAnd(const std::vector<NodeTemplate<ref_count> >& children)
   {
     return children[0];
   }
-  return mkNode(kind::AND, children);
+  return mkNode(Kind::AND, children);
 }
 
 template <bool ref_count>
@@ -1126,13 +1158,14 @@ Node NodeManager::mkOr(const std::vector<NodeTemplate<ref_count> >& children)
   {
     return children[0];
   }
-  return mkNode(kind::OR, children);
+  return mkNode(Kind::OR, children);
 }
 
 // for operators
 inline Node NodeManager::mkNode(TNode opNode) {
   NodeBuilder nb(this, operatorToKind(opNode));
-  if(opNode.getKind() != kind::BUILTIN) {
+  if (opNode.getKind() != Kind::BUILTIN)
+  {
     nb << opNode;
   }
   return nb.constructNode();
@@ -1140,7 +1173,8 @@ inline Node NodeManager::mkNode(TNode opNode) {
 
 inline Node NodeManager::mkNode(TNode opNode, TNode child1) {
   NodeBuilder nb(this, operatorToKind(opNode));
-  if(opNode.getKind() != kind::BUILTIN) {
+  if (opNode.getKind() != Kind::BUILTIN)
+  {
     nb << opNode;
   }
   nb << child1;
@@ -1149,7 +1183,8 @@ inline Node NodeManager::mkNode(TNode opNode, TNode child1) {
 
 inline Node NodeManager::mkNode(TNode opNode, TNode child1, TNode child2) {
   NodeBuilder nb(this, operatorToKind(opNode));
-  if(opNode.getKind() != kind::BUILTIN) {
+  if (opNode.getKind() != Kind::BUILTIN)
+  {
     nb << opNode;
   }
   nb << child1 << child2;
@@ -1159,7 +1194,8 @@ inline Node NodeManager::mkNode(TNode opNode, TNode child1, TNode child2) {
 inline Node NodeManager::mkNode(TNode opNode, TNode child1, TNode child2,
                                 TNode child3) {
   NodeBuilder nb(this, operatorToKind(opNode));
-  if(opNode.getKind() != kind::BUILTIN) {
+  if (opNode.getKind() != Kind::BUILTIN)
+  {
     nb << opNode;
   }
   nb << child1 << child2 << child3;
@@ -1172,7 +1208,8 @@ inline Node NodeManager::mkNode(TNode opNode,
                                 const std::vector<NodeTemplate<ref_count> >&
                                 children) {
   NodeBuilder nb(this, operatorToKind(opNode));
-  if(opNode.getKind() != kind::BUILTIN) {
+  if (opNode.getKind() != Kind::BUILTIN)
+  {
     nb << opNode;
   }
   nb.append(children);

@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -286,7 +286,8 @@ void InstStrategyAutoGenTriggers::generateTriggers(Node q)
                                    patTermsSingle[i],
                                    false,
                                    TriggerDatabase::TR_RETURN_NULL,
-                                   d_num_trigger_vars[q]);
+                                   d_num_trigger_vars[q],
+                                   false);
       addTrigger(tr, q);
     }
     if (!options().quantifiers.multiTriggerWhenSingle)
@@ -318,7 +319,8 @@ void InstStrategyAutoGenTriggers::generateTriggers(Node q)
                                patTermsMulti,
                                false,
                                TriggerDatabase::TR_GET_OLD,
-                               d_num_trigger_vars[q]);
+                               d_num_trigger_vars[q],
+                               false);
   addTrigger(tr, q);
   // we only add a single multi-trigger
 }
@@ -337,7 +339,7 @@ bool InstStrategyAutoGenTriggers::generatePatternTerms(Node f)
   bool ntrivTriggers = options().quantifiers.relationalTriggers;
   std::vector<Node> patTermsF;
   std::map<Node, inst::TriggerTermInfo> tinfo;
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   // well-defined function: can assume LHS is only pattern
   if (options().quantifiers.quantFunWellDefined)
   {
@@ -385,7 +387,7 @@ bool InstStrategyAutoGenTriggers::generatePatternTerms(Node f)
   int32_t last_weight = -1;
   for (const Node& p : patTermsF)
   {
-    Assert(p.getKind() != NOT);
+    Assert(p.getKind() != Kind::NOT);
     bool newVar = false;
     inst::TriggerTermInfo& tip = tinfo[p];
     for (const Node& v : tip.d_fv)
@@ -438,7 +440,7 @@ bool InstStrategyAutoGenTriggers::generatePatternTerms(Node f)
       }
       for (size_t i = 0; i < 2; i++)
       {
-        d_vc_partition[i][f] = nm->mkNode(BOUND_VAR_LIST, vcs[i]);
+        d_vc_partition[i][f] = nm->mkNode(Kind::BOUND_VAR_LIST, vcs[i]);
       }
     }
     else
@@ -570,19 +572,19 @@ void InstStrategyAutoGenTriggers::addTrigger( inst::Trigger * tr, Node q ) {
   }
   if (d_num_trigger_vars[q] < q[0].getNumChildren())
   {
-    NodeManager* nm = NodeManager::currentNM();
+    NodeManager* nm = nodeManager();
     // partial trigger : generate implication to mark user pattern
     Node pat =
         d_qreg.substituteInstConstantsToBoundVariables(tr->getInstPattern(), q);
-    Node ipl = nm->mkNode(INST_PATTERN_LIST, pat);
-    Node qq = nm->mkNode(FORALL,
+    Node ipl = nm->mkNode(Kind::INST_PATTERN_LIST, pat);
+    Node qq = nm->mkNode(Kind::FORALL,
                          d_vc_partition[1][q],
-                         nm->mkNode(FORALL, d_vc_partition[0][q], q[1]),
+                         nm->mkNode(Kind::FORALL, d_vc_partition[0][q], q[1]),
                          ipl);
     Trace("auto-gen-trigger-partial")
         << "Make partially specified user pattern: " << std::endl;
     Trace("auto-gen-trigger-partial") << "  " << qq << std::endl;
-    Node lem = nm->mkNode(OR, q.negate(), qq);
+    Node lem = nm->mkNode(Kind::OR, q.negate(), qq);
     d_qim.addPendingLemma(lem, InferenceId::QUANTIFIERS_PARTIAL_TRIGGER_REDUCE);
     return;
   }
@@ -625,7 +627,7 @@ bool InstStrategyAutoGenTriggers::hasUserPatterns( Node q ) {
   bool hasPat = false;
   for (const Node& ip : q[2])
   {
-    if (ip.getKind() == INST_PATTERN)
+    if (ip.getKind() == Kind::INST_PATTERN)
     {
       hasPat = true;
       break;
@@ -636,7 +638,7 @@ bool InstStrategyAutoGenTriggers::hasUserPatterns( Node q ) {
 }
 
 void InstStrategyAutoGenTriggers::addUserNoPattern( Node q, Node pat ) {
-  Assert(pat.getKind() == INST_NO_PATTERN && pat.getNumChildren() == 1);
+  Assert(pat.getKind() == Kind::INST_NO_PATTERN && pat.getNumChildren() == 1);
   std::vector<Node>& ung = d_user_no_gen[q];
   if (std::find(ung.begin(), ung.end(), pat[0]) == ung.end())
   {

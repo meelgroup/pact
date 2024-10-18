@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -20,6 +20,7 @@
 
 #include <vector>
 
+#include "cvc5/cvc5_proof_rule.h"
 #include "expr/node.h"
 
 namespace cvc5::internal {
@@ -57,6 +58,16 @@ void getFreeAssumptionsMap(
     std::map<Node, std::vector<std::shared_ptr<ProofNode>>>& amap);
 
 /**
+ * Get the subproofs of pn that have rule r.
+ * @param pn The proof node.
+ * @param r The rule to find.
+ * @param pfs The list of subproofs of pn that have rule r.
+ */
+void getSubproofRule(std::shared_ptr<ProofNode> pn,
+                     ProofRule r,
+                     std::vector<std::shared_ptr<ProofNode>>& pfs);
+
+/**
  * Return true if pn contains a subproof whose rule is ASSUME. Notice that we
  * do *not* distinguish between free vs. non-free assumptions in this call.
  * This call involves at most a single dag traversal over the proof node.
@@ -68,7 +79,15 @@ void getFreeAssumptionsMap(
  * @param pn The proof node.
  * @param caMap Cache of results, mapping proof nodes to whether they contain
  * assumptions.
- * @return true if pn contains assumptions
+ * @param allowed The set of assumptions the proof is allowed to contain, i.e.
+ * if the free assumptions of pn is a subset of this set, we return false.
+ * @return true if pn contains assumptions (not in allowed).
+ */
+bool containsAssumption(const ProofNode* pn,
+                        std::unordered_map<const ProofNode*, bool>& caMap,
+                        const std::unordered_set<Node>& allowed);
+/**
+ * Same as above, but with an empty set of allowed assumptions.
  */
 bool containsAssumption(const ProofNode* pn,
                         std::unordered_map<const ProofNode*, bool>& caMap);
@@ -90,6 +109,16 @@ bool containsSubproof(ProofNode* pn, ProofNode* pnc);
 bool containsSubproof(ProofNode* pn,
                       ProofNode* pnc,
                       std::unordered_set<const ProofNode*>& visited);
+
+/**
+ * Returns the ProofRule that handles congruence for the given term.
+ *
+ * @param n The term, i.e. the lhs or rhs of the conclusion of the cong step.
+ * @param args The arguments to the application of cong for the given term
+ * @return the proof rule for congruence over the given term, which is one
+ * of CONG, NARY_CONG or HO_CONG.
+ */
+ProofRule getCongRule(const Node& n, std::vector<Node>& args);
 
 }  // namespace expr
 }  // namespace cvc5::internal

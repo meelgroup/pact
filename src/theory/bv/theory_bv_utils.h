@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Aina Niemetz, Andrew Reynolds, Mathias Preiner
+ *   Aina Niemetz, Mathias Preiner, Liana Hadarean
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -118,10 +118,10 @@ Node mkSortedNode(Kind kind, std::vector<Node>& children);
 template<bool ref_count>
 Node mkNaryNode(Kind k, const std::vector<NodeTemplate<ref_count>>& nodes)
 {
-  Assert(k == kind::AND || k == kind::OR || k == kind::XOR
-         || k == kind::BITVECTOR_AND || k == kind::BITVECTOR_OR
-         || k == kind::BITVECTOR_XOR || k == kind::BITVECTOR_ADD
-         || k == kind::BITVECTOR_SUB || k == kind::BITVECTOR_MULT);
+  Assert(k == Kind::AND || k == Kind::OR || k == Kind::XOR
+         || k == Kind::BITVECTOR_AND || k == Kind::BITVECTOR_OR
+         || k == Kind::BITVECTOR_XOR || k == Kind::BITVECTOR_ADD
+         || k == Kind::BITVECTOR_SUB || k == Kind::BITVECTOR_MULT);
 
   if (nodes.size() == 1) { return nodes[0]; }
   return NodeManager::currentNM()->mkNode(k, nodes);
@@ -141,7 +141,7 @@ Node mkAnd(const std::vector<NodeTemplate<ref_count>>& conjunctions)
   /* All the same, or just one  */
   if (all.size() == 1) { return conjunctions[0]; }
 
-  NodeBuilder conjunction(kind::AND);
+  NodeBuilder conjunction(Kind::AND);
   for (TNode n : all) { conjunction << n; }
   return conjunction;
 }
@@ -160,7 +160,7 @@ Node mkOr(const std::vector<NodeTemplate<ref_count>>& nodes)
   /* All the same, or just one  */
   if (all.size() == 1) { return nodes[0]; }
 
-  NodeBuilder disjunction(kind::OR);
+  NodeBuilder disjunction(Kind::OR);
   for (TNode n : all) { disjunction << n; }
   return disjunction;
 }
@@ -175,7 +175,7 @@ Node mkSignExtend(TNode node, unsigned amount);
 Node mkExtract(TNode node, unsigned high, unsigned low);
 /* Create extract node of bit-width 1 where the resulting node represents
  * the bit at given index.  */
-Node mkBitOf(TNode node, unsigned index);
+Node mkBit(TNode node, unsigned index);
 
 /* Create n-ary concat node of given children.  */
 Node mkConcat(TNode t1, TNode t2);

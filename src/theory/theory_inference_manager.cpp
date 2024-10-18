@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Gereon Kremer, Mathias Preiner
+ *   Andrew Reynolds, Gereon Kremer, Hans-Joerg Schurr
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -16,10 +16,9 @@
 #include "theory/theory_inference_manager.h"
 
 #include "options/proof_options.h"
-#include "proof/annotation_proof_generator.h"
 #include "proof/eager_proof_generator.h"
+#include "proof/trust_id.h"
 #include "theory/builtin/proof_checker.h"
-#include "theory/inference_id_proof_annotator.h"
 #include "theory/output_channel.h"
 #include "theory/rewriter.h"
 #include "theory/theory.h"
@@ -58,21 +57,14 @@ TheoryInferenceManager::TheoryInferenceManager(Env& env,
           statsName + "inferencesLemma"))
 {
   // don't add true lemma
-  Node truen = NodeManager::currentNM()->mkConst(true);
+  Node truen = nodeManager()->mkConst(true);
   d_lemmasSent.insert(truen);
 
   if (isProofEnabled())
   {
     context::UserContext* u = userContext();
-    ProofNodeManager* pnm = env.getProofNodeManager();
     d_defaultPg.reset(
         new EagerProofGenerator(env, u, statsName + "EagerProofGenerator"));
-    if (options().proof.proofAnnotate)
-    {
-      d_iipa.reset(new InferenceIdProofAnnotator(pnm, u));
-      d_apg.reset(new AnnotationProofGenerator(
-          pnm, u, statsName + "AnnotationProofGenerator"));
-    }
   }
 }
 
@@ -147,17 +139,12 @@ void TheoryInferenceManager::trustedConflict(TrustNode tconf, InferenceId id)
   resourceManager()->spendResource(id);
   Trace("im") << "(conflict " << id << " " << tconf.getProven() << ")"
               << std::endl;
-  // annotate if the annotation proof generator is active
-  if (d_apg != nullptr)
-  {
-    tconf = annotateId(tconf, id, true);
-  }
-  d_out.trustedConflict(tconf);
+  d_out.trustedConflict(tconf, id);
   ++d_numConflicts;
 }
 
 void TheoryInferenceManager::conflictExp(InferenceId id,
-                                         PfRule pfr,
+                                         ProofRule pfr,
                                          const std::vector<Node>& exp,
                                          const std::vector<Node>& args)
 {
@@ -170,7 +157,7 @@ void TheoryInferenceManager::conflictExp(InferenceId id,
   }
 }
 
-TrustNode TheoryInferenceManager::mkConflictExp(PfRule id,
+TrustNode TheoryInferenceManager::mkConflictExp(ProofRule id,
                                                 const std::vector<Node>& exp,
                                                 const std::vector<Node>& args)
 {
@@ -288,22 +275,13 @@ bool TheoryInferenceManager::trustedLemma(const TrustNode& tlem,
   // shouldn't send trivially true or false lemmas
   Assert(!rewrite(tlem.getProven()).isConst());
   d_numCurrentLemmas++;
-  // annotate if the annotation proof generator is active
-  if (d_apg != nullptr)
-  {
-    TrustNode tlema = annotateId(tlem, id);
-    d_out.trustedLemma(tlema, p);
-  }
-  else
-  {
-    d_out.trustedLemma(tlem, p);
-  }
+  d_out.trustedLemma(tlem, id, p);
   return true;
 }
 
 bool TheoryInferenceManager::lemmaExp(Node conc,
                                       InferenceId id,
-                                      PfRule pfr,
+                                      ProofRule pfr,
                                       const std::vector<Node>& exp,
                                       const std::vector<Node>& noExplain,
                                       const std::vector<Node>& args,
@@ -316,7 +294,7 @@ bool TheoryInferenceManager::lemmaExp(Node conc,
 }
 
 TrustNode TheoryInferenceManager::mkLemmaExp(Node conc,
-                                             PfRule id,
+                                             ProofRule id,
                                              const std::vector<Node>& exp,
                                              const std::vector<Node>& noExplain,
                                              const std::vector<Node>& args)
@@ -328,7 +306,7 @@ TrustNode TheoryInferenceManager::mkLemmaExp(Node conc,
   }
   // otherwise, not using proofs, explain and make trust node
   Node ant = mkExplainPartial(exp, noExplain);
-  Node lem = NodeManager::currentNM()->mkNode(kind::IMPLIES, ant, conc);
+  Node lem = nodeManager()->mkNode(Kind::IMPLIES, ant, conc);
   return TrustNode::mkTrustLemma(lem, nullptr);
 }
 
@@ -357,7 +335,7 @@ TrustNode TheoryInferenceManager::mkLemmaExp(Node conc,
   }
   // otherwise, not using proofs, explain and make trust node
   Node ant = mkExplainPartial(exp, noExplain);
-  Node lem = NodeManager::currentNM()->mkNode(kind::IMPLIES, ant, conc);
+  Node lem = nodeManager()->mkNode(Kind::IMPLIES, ant, conc);
   return TrustNode::mkTrustLemma(lem, nullptr);
 }
 
@@ -383,17 +361,17 @@ bool TheoryInferenceManager::assertInternalFact(TNode atom,
                                                 TNode exp)
 {
   return processInternalFact(
-      atom, pol, id, PfRule::UNKNOWN, {exp}, {}, nullptr);
+      atom, pol, id, ProofRule::UNKNOWN, {exp}, {}, nullptr);
 }
 
 bool TheoryInferenceManager::assertInternalFact(TNode atom,
                                                 bool pol,
                                                 InferenceId id,
-                                                PfRule pfr,
+                                                ProofRule pfr,
                                                 const std::vector<Node>& exp,
                                                 const std::vector<Node>& args)
 {
-  Assert(pfr != PfRule::UNKNOWN);
+  Assert(pfr != ProofRule::UNKNOWN);
   return processInternalFact(atom, pol, id, pfr, exp, args, nullptr);
 }
 
@@ -403,13 +381,13 @@ bool TheoryInferenceManager::assertInternalFact(TNode atom,
                                                 const std::vector<Node>& exp,
                                                 ProofGenerator* pg)
 {
-  return processInternalFact(atom, pol, id, PfRule::ASSUME, exp, {}, pg);
+  return processInternalFact(atom, pol, id, ProofRule::ASSUME, exp, {}, pg);
 }
 
 bool TheoryInferenceManager::processInternalFact(TNode atom,
                                                  bool pol,
                                                  InferenceId iid,
-                                                 PfRule id,
+                                                 ProofRule id,
                                                  const std::vector<Node>& exp,
                                                  const std::vector<Node>& args,
                                                  ProofGenerator* pg)
@@ -419,7 +397,7 @@ bool TheoryInferenceManager::processInternalFact(TNode atom,
   d_factIdStats << iid;
   resourceManager()->spendResource(iid);
   // make the node corresponding to the explanation
-  Node expn = NodeManager::currentNM()->mkAnd(exp);
+  Node expn = nodeManager()->mkAnd(exp);
   Trace("im") << "(fact " << iid << " " << (pol ? Node(atom) : atom.notNode())
               << " " << expn << ")" << std::endl;
   // call the pre-notify fact method with preReg = false, isInternal = true
@@ -441,11 +419,11 @@ bool TheoryInferenceManager::processInternalFact(TNode atom,
     for (size_t i = 0; i < expc.size(); i++)
     {
       Node e = expc[i];
-      bool epol = e.getKind() != NOT;
+      bool epol = e.getKind() != Kind::NOT;
       Node eatom = epol ? e : e[0];
       Trace("infer-manager")
           << "...check " << eatom << " " << epol << std::endl;
-      if (eatom.getKind() == AND)
+      if (eatom.getKind() == Kind::AND)
       {
         Assert(epol);
         for (const Node& ea : eatom)
@@ -454,7 +432,7 @@ bool TheoryInferenceManager::processInternalFact(TNode atom,
         }
         continue;
       }
-      else if (eatom.getKind() == EQUAL)
+      else if (eatom.getKind() == Kind::EQUAL)
       {
         Assert(d_ee->hasTerm(eatom[0]));
         Assert(d_ee->hasTerm(eatom[1]));
@@ -464,7 +442,7 @@ bool TheoryInferenceManager::processInternalFact(TNode atom,
       else
       {
         Assert(d_ee->hasTerm(eatom));
-        Assert(d_ee->areEqual(eatom, NodeManager::currentNM()->mkConst(epol)));
+        Assert(d_ee->areEqual(eatom, nodeManager()->mkConst(epol)));
       }
     }
   }
@@ -474,7 +452,7 @@ bool TheoryInferenceManager::processInternalFact(TNode atom,
   if (d_pfee == nullptr)
   {
     Trace("infer-manager") << "...assert without proofs..." << std::endl;
-    if (atom.getKind() == kind::EQUAL)
+    if (atom.getKind() == Kind::EQUAL)
     {
       ret = d_ee->assertEquality(atom, pol, expn);
     }
@@ -492,7 +470,7 @@ bool TheoryInferenceManager::processInternalFact(TNode atom,
   }
   else
   {
-    Assert(id != PfRule::UNKNOWN);
+    Assert(id != ProofRule::UNKNOWN);
     Trace("infer-manager") << "...assert with proofs..." << std::endl;
     // Note that we reconstruct the original literal lit here, since both the
     // original literal is needed for bookkeeping proofs. It is possible to
@@ -520,7 +498,7 @@ bool TheoryInferenceManager::processInternalFact(TNode atom,
 
 void TheoryInferenceManager::explain(TNode n, std::vector<TNode>& assumptions)
 {
-  if (n.getKind() == kind::AND)
+  if (n.getKind() == Kind::AND)
   {
     for (const Node& nc : n)
     {
@@ -537,7 +515,7 @@ Node TheoryInferenceManager::mkExplain(TNode n)
 {
   std::vector<TNode> assumptions;
   explain(n, assumptions);
-  return NodeManager::currentNM()->mkAnd(assumptions);
+  return nodeManager()->mkAnd(assumptions);
 }
 
 Node TheoryInferenceManager::mkExplainPartial(
@@ -558,7 +536,7 @@ Node TheoryInferenceManager::mkExplainPartial(
     // otherwise, explain it
     explain(e, assumps);
   }
-  return NodeManager::currentNM()->mkAnd(assumps);
+  return nodeManager()->mkAnd(assumps);
 }
 
 uint32_t TheoryInferenceManager::numSentFacts() const
@@ -582,34 +560,15 @@ bool TheoryInferenceManager::cacheLemma(TNode lem, LemmaProperty p)
   return true;
 }
 
-TrustNode TheoryInferenceManager::annotateId(const TrustNode& trn,
-                                             InferenceId id,
-                                             bool isConflict)
-{
-  Assert(d_iipa != nullptr && d_apg != nullptr);
-  Node lemma = trn.getProven();
-  TrustNode trna = trn;
-  // ensure we have a proof generator, make trusted theory lemma if not
-  if (trn.getGenerator() == nullptr)
-  {
-    Node tidn =
-        builtin::BuiltinProofRuleChecker::mkTheoryIdNode(d_theory.getId());
-    trna = d_defaultPg->mkTrustNode(
-        trn.getNode(), PfRule::THEORY_LEMMA, {}, {lemma, tidn}, isConflict);
-  }
-  d_iipa->setAnnotation(lemma, id);
-  return d_apg->transform(trna, d_iipa.get());
-}
-
 DecisionManager* TheoryInferenceManager::getDecisionManager()
 {
   return d_decManager;
 }
 
-void TheoryInferenceManager::requirePhase(TNode n, bool pol)
+void TheoryInferenceManager::preferPhase(TNode n, bool pol)
 {
   Node en = d_theoryState.getValuation().ensureLiteral(n);
-  return d_out.requirePhase(en, pol);
+  return d_out.preferPhase(en, pol);
 }
 
 void TheoryInferenceManager::spendResource(Resource r)

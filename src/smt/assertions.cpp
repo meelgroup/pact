@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -23,7 +23,6 @@
 #include "options/expr_options.h"
 #include "options/language.h"
 #include "options/smt_options.h"
-#include "smt/abstract_values.h"
 #include "smt/env.h"
 #include "theory/trust_substitutions.h"
 #include "util/result.h"
@@ -34,9 +33,8 @@ using namespace cvc5::internal::kind;
 namespace cvc5::internal {
 namespace smt {
 
-Assertions::Assertions(Env& env, AbstractValues& absv)
+Assertions::Assertions(Env& env)
     : EnvObj(env),
-      d_absValues(absv),
       d_assertionList(userContext()),
       d_assertionListDefs(userContext()),
       d_globalDefineFunLemmasIndex(userContext(), 0)
@@ -65,10 +63,8 @@ void Assertions::setAssumptions(const std::vector<Node>& assumptions)
   d_assumptions.clear();
   d_assumptions = assumptions;
 
-  for (const Node& e : d_assumptions)
+  for (const Node& n : d_assumptions)
   {
-    // Substitute out any abstract values in ex.
-    Node n = d_absValues.substituteAbstractValues(e);
     // Ensure expr is type-checked at this point.
     ensureBoolean(n);
     addFormula(n, false, false);
@@ -124,12 +120,12 @@ void Assertions::addFormula(TNode n,
   if (isFunDef)
   {
     // if a non-recursive define-fun, just add as a top-level substitution
-    if (n.getKind() == EQUAL && n[0].isVar())
+    if (n.getKind() == Kind::EQUAL && n[0].isVar())
     {
       // A define-fun is an assumption in the overall proof, thus
       // we justify the substitution with ASSUME here.
       d_env.getTopLevelSubstitutions().addSubstitution(
-          n[0], n[1], PfRule::ASSUME, {}, {n});
+          n[0], n[1], ProofRule::ASSUME, {}, {n});
       return;
     }
   }
@@ -137,19 +133,19 @@ void Assertions::addFormula(TNode n,
   // Ensure that it does not contain free variables
   if (maybeHasFv)
   {
-    bool wasShadow = false;
-    if (expr::hasFreeOrShadowedVar(n, wasShadow))
+    // Note that API users and the smt2 parser may generate assertions with
+    // shadowed variables, which are resolved during rewriting. Hence we do not
+    // check for this here.
+    if (expr::hasFreeVar(n))
     {
-      std::string varType(wasShadow ? "shadowed" : "free");
       std::stringstream se;
       if (isFunDef)
       {
-        se << "Cannot process function definition with " << varType
-           << " variable.";
+        se << "Cannot process function definition with free variable.";
       }
       else
       {
-        se << "Cannot process assertion with " << varType << " variable.";
+        se << "Cannot process assertion with free variable.";
         if (language::isLangSygus(options().base.inputLanguage))
         {
           // Common misuse of SyGuS is to use top-level assert instead of
@@ -164,7 +160,6 @@ void Assertions::addFormula(TNode n,
 
 void Assertions::addDefineFunDefinition(Node n, bool global)
 {
-  n = d_absValues.substituteAbstractValues(n);
   if (global)
   {
     // Global definitions are asserted at check-sat-time because we have to

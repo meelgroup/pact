@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Gereon Kremer, Mathias Preiner
+ *   Andrew Reynolds, Aina Niemetz, Mathias Preiner
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -32,6 +32,7 @@
 #include "theory/quantifiers/term_database.h"
 #include "theory/quantifiers/term_util.h"
 #include "theory/rewriter.h"
+#include "expr/elim_witness_converter.h"
 #include "util/rational.h"
 
 using namespace std;
@@ -41,157 +42,18 @@ namespace cvc5::internal {
 namespace theory {
 namespace quantifiers {
 
-CegTermType mkStrictCTT(CegTermType c)
-{
-  Assert(!isStrictCTT(c));
-  if (c == CEG_TT_LOWER)
-  {
-    return CEG_TT_LOWER_STRICT;
-  }
-  else if (c == CEG_TT_UPPER)
-  {
-    return CEG_TT_UPPER_STRICT;
-  }
-  return c;
-}
-
-CegTermType mkNegateCTT(CegTermType c)
-{
-  if (c == CEG_TT_LOWER)
-  {
-    return CEG_TT_UPPER;
-  }
-  else if (c == CEG_TT_UPPER)
-  {
-    return CEG_TT_LOWER;
-  }
-  else if (c == CEG_TT_LOWER_STRICT)
-  {
-    return CEG_TT_UPPER_STRICT;
-  }
-  else if (c == CEG_TT_UPPER_STRICT)
-  {
-    return CEG_TT_LOWER_STRICT;
-  }
-  return c;
-}
-bool isStrictCTT(CegTermType c)
-{
-  return c == CEG_TT_LOWER_STRICT || c == CEG_TT_UPPER_STRICT;
-}
-bool isLowerBoundCTT(CegTermType c)
-{
-  return c == CEG_TT_LOWER || c == CEG_TT_LOWER_STRICT;
-}
-bool isUpperBoundCTT(CegTermType c)
-{
-  return c == CEG_TT_UPPER || c == CEG_TT_UPPER_STRICT;
-}
-
-std::ostream& operator<<(std::ostream& os, CegInstEffort e)
-{
-  switch (e)
-  {
-    case CEG_INST_EFFORT_NONE: os << "?"; break;
-    case CEG_INST_EFFORT_STANDARD: os << "STANDARD"; break;
-    case CEG_INST_EFFORT_STANDARD_MV: os << "STANDARD_MV"; break;
-    case CEG_INST_EFFORT_FULL: os << "FULL"; break;
-    default: Unreachable();
-  }
-  return os;
-}
-
-std::ostream& operator<<(std::ostream& os, CegInstPhase phase)
-{
-  switch (phase)
-  {
-    case CEG_INST_PHASE_NONE: os << "?"; break;
-    case CEG_INST_PHASE_EQC: os << "eqc"; break;
-    case CEG_INST_PHASE_EQUAL: os << "eq"; break;
-    case CEG_INST_PHASE_ASSERTION: os << "as"; break;
-    case CEG_INST_PHASE_MVALUE: os << "mv"; break;
-    default: Unreachable();
-  }
-  return os;
-}
-std::ostream& operator<<(std::ostream& os, CegHandledStatus status)
-{
-  switch (status)
-  {
-    case CEG_UNHANDLED: os << "unhandled"; break;
-    case CEG_PARTIALLY_HANDLED: os << "partially_handled"; break;
-    case CEG_HANDLED: os << "handled"; break;
-    case CEG_HANDLED_UNCONDITIONAL: os << "handled_unc"; break;
-    default: Unreachable();
-  }
-  return os;
-}
-
-void TermProperties::composeProperty(TermProperties& p)
-{
-  if (p.d_coeff.isNull())
-  {
-    return;
-  }
-  if (d_coeff.isNull())
-  {
-    d_coeff = p.d_coeff;
-  }
-  else
-  {
-    d_coeff = arith::multConstants(d_coeff, p.d_coeff);
-  }
-}
-
-// push the substitution pv_prop.getModifiedTerm(pv) -> n
-void SolvedForm::push_back(Node pv, Node n, TermProperties& pv_prop)
-{
-  Assert(n.getType() == pv.getType());
-  d_vars.push_back(pv);
-  d_subs.push_back(n);
-  d_props.push_back(pv_prop);
-  if (pv_prop.isBasic())
-  {
-    return;
-  }
-  d_non_basic.push_back(pv);
-  // update theta value
-  Node new_theta = getTheta();
-  if (new_theta.isNull())
-  {
-    new_theta = pv_prop.d_coeff;
-  }
-  else
-  {
-    new_theta = arith::multConstants(new_theta, pv_prop.d_coeff);
-  }
-  d_theta.push_back(new_theta);
-}
-// pop the substitution pv_prop.getModifiedTerm(pv) -> n
-void SolvedForm::pop_back(Node pv, Node n, TermProperties& pv_prop)
-{
-  d_vars.pop_back();
-  d_subs.pop_back();
-  d_props.pop_back();
-  if (pv_prop.isBasic())
-  {
-    return;
-  }
-  d_non_basic.pop_back();
-  // update theta value
-  d_theta.pop_back();
-}
-
 CegInstantiator::CegInstantiator(Env& env,
                                  Node q,
                                  QuantifiersState& qs,
-                                 TermRegistry& tr,
-                                 InstStrategyCegqi* parent)
+                                 QuantifiersInferenceManager& qim,
+                                 QuantifiersRegistry& qr,
+                                 TermRegistry& tr)
     : EnvObj(env),
       d_quant(q),
       d_qstate(qs),
+      d_qim(qim),
+      d_qreg(qr),
       d_treg(tr),
-      d_parent(parent),
       d_is_nested_quant(false),
       d_effort(CEG_INST_EFFORT_NONE)
 {
@@ -212,7 +74,7 @@ void CegInstantiator::computeProgVars( Node n ){
   if( d_prog_var.find( n )==d_prog_var.end() ){
     d_prog_var[n].clear();
     Kind k = n.getKind();
-    if (k == kind::WITNESS)
+    if (k == Kind::WITNESS)
     {
       Assert(d_prog_var.find(n[0][0]) == d_prog_var.end());
       // ignore the bound variable
@@ -243,11 +105,12 @@ void CegInstantiator::computeProgVars( Node n ){
       d_prog_var[n].insert(d_prog_var[n[i]].begin(), d_prog_var[n[i]].end());
     }
     // selectors applied to program variables are also variables
-    if (k == APPLY_SELECTOR && d_prog_var[n].find(n[0]) != d_prog_var[n].end())
+    if (k == Kind::APPLY_SELECTOR
+        && d_prog_var[n].find(n[0]) != d_prog_var[n].end())
     {
       d_prog_var[n].insert(n);
     }
-    if (k == kind::WITNESS)
+    if (k == Kind::WITNESS)
     {
       d_prog_var.erase(n[0][0]);
     }
@@ -262,11 +125,13 @@ bool CegInstantiator::isEligible( Node n ) {
 
 CegHandledStatus CegInstantiator::isCbqiKind(Kind k)
 {
-  if (quantifiers::TermUtil::isBoolConnective(k) || k == ADD || k == GEQ
-      || k == EQUAL || k == MULT || k == NONLINEAR_MULT || k == DIVISION
-      || k == DIVISION_TOTAL || k == INTS_DIVISION || k == INTS_DIVISION_TOTAL
-      || k == INTS_MODULUS || k == INTS_MODULUS_TOTAL || k == TO_INTEGER
-      || k == IS_INTEGER || k == TO_REAL)
+  if (quantifiers::TermUtil::isBoolConnective(k) || k == Kind::ADD
+      || k == Kind::GEQ || k == Kind::EQUAL || k == Kind::MULT
+      || k == Kind::NONLINEAR_MULT || k == Kind::DIVISION
+      || k == Kind::DIVISION_TOTAL || k == Kind::INTS_DIVISION
+      || k == Kind::INTS_DIVISION_TOTAL || k == Kind::INTS_MODULUS
+      || k == Kind::INTS_MODULUS_TOTAL || k == Kind::TO_INTEGER
+      || k == Kind::IS_INTEGER || k == Kind::TO_REAL || k == Kind::ABS)
   {
     return CEG_HANDLED;
   }
@@ -295,9 +160,10 @@ CegHandledStatus CegInstantiator::isCbqiTerm(Node n)
     if (visited.find(cur) == visited.end())
     {
       visited.insert(cur);
-      if (cur.getKind() != BOUND_VARIABLE && TermUtil::hasBoundVarAttr(cur))
+      if (cur.getKind() != Kind::BOUND_VARIABLE
+          && TermUtil::hasBoundVarAttr(cur))
       {
-        if (cur.getKind() == FORALL || cur.getKind() == WITNESS)
+        if (cur.getKind() == Kind::FORALL || cur.getKind() == Kind::WITNESS)
         {
           visit.push_back(cur[1]);
         }
@@ -409,7 +275,7 @@ CegHandledStatus CegInstantiator::isCbqiQuantPrefix(Node q)
 
 CegHandledStatus CegInstantiator::isCbqiQuant(Node q, bool cegqiAll)
 {
-  Assert(q.getKind() == FORALL);
+  Assert(q.getKind() == Kind::FORALL);
   // compute attributes
   QAttributes qa;
   QuantAttributes::computeQuantAttributes(q, qa);
@@ -427,7 +293,7 @@ CegHandledStatus CegInstantiator::isCbqiQuant(Node q, bool cegqiAll)
   {
     for (const Node& pat : q[2])
     {
-      if (pat.getKind() == INST_PATTERN)
+      if (pat.getKind() == Kind::INST_PATTERN)
       {
         return CEG_UNHANDLED;
       }
@@ -487,7 +353,8 @@ void CegInstantiator::activateInstantiationVariable(Node v, unsigned index)
     Instantiator * vinst;
     if (tn.isRealOrInt())
     {
-      vinst = new ArithInstantiator(d_env, tn, d_parent->getVtsTermCache());
+      VtsTermCache* vtc = d_treg.getVtsTermCache();
+      vinst = new ArithInstantiator(d_env, tn, vtc);
     }
     else if (tn.isDatatype())
     {
@@ -495,7 +362,7 @@ void CegInstantiator::activateInstantiationVariable(Node v, unsigned index)
     }
     else if (tn.isBitVector())
     {
-      vinst = new BvInstantiator(d_env, tn, d_parent->getBvInverter());
+      vinst = new BvInstantiator(d_env, tn, d_treg.getBvInverter());
     }
     else if (tn.isBoolean())
     {
@@ -1074,6 +941,34 @@ bool CegInstantiator::constructInstantiationInc(Node pv,
   }
 }
 
+/**
+ * A class for eliminating witness terms. We require overriding the method of
+ * the base class to ensure that quantified formulas have been run through
+ * theory preprocessing. This ensures that the skolem variables introduced
+ * align exactly with the quantified formula we will assert in the corresponding
+ * QUANTIFIERS_CEGQI_WITNESS lemma.
+ */
+class PreprocessElimWitnessNodeConverter : public ElimWitnessNodeConverter
+{
+ public:
+  PreprocessElimWitnessNodeConverter(Env& env, Valuation& val)
+      : ElimWitnessNodeConverter(env), d_val(val)
+  {
+  }
+  /**
+   * Get the normal form for quantified formula q, which must perform theory
+   * preprocessing.
+   */
+  Node getNormalFormFor(const Node& q) override
+  {
+    return d_val.getPreprocessedTerm(q);
+  }
+
+ private:
+  /** Reference to a valuation */
+  Valuation& d_val;
+};
+
 bool CegInstantiator::doAddInstantiation(std::vector<Node>& vars,
                                          std::vector<Node>& subs)
 {
@@ -1108,13 +1003,60 @@ bool CegInstantiator::doAddInstantiation(std::vector<Node>& vars,
     }
   }
   Trace("cegqi-inst-debug") << "Do the instantiation...." << std::endl;
-  return d_parent->doAddInstantiation(subs);
+
+  // construct the final instantiation by eliminating witness terms
+  std::vector<Node> svec;
+  std::vector<Node> exists;
+  for (const Node& s : subs)
+  {
+    if (expr::hasSubtermKind(Kind::WITNESS, s))
+    {
+      PreprocessElimWitnessNodeConverter ewc(d_env, d_qstate.getValuation());
+      Node sc = ewc.convert(s);
+      const std::vector<Node>& wexists = ewc.getExistentials();
+      exists.insert(exists.end(), wexists.begin(), wexists.end());
+      svec.push_back(sc);
+    }
+    else
+    {
+      svec.push_back(s);
+    }
+  }
+  
+  Assert(!d_quant.isNull());
+  // check if we need virtual term substitution (if used delta or infinity)
+  VtsTermCache* vtc = d_treg.getVtsTermCache();
+  bool usedVts = vtc->containsVtsTerm(svec, false);
+  Instantiate* inst = d_qim.getInstantiate();
+  // if doing partial quantifier elimination, record the instantiation and set
+  // the incomplete flag instead of sending instantiation lemma
+  if (d_qreg.getQuantAttributes().isQuantElimPartial(d_quant))
+  {
+    inst->recordInstantiation(d_quant, svec, usedVts);
+    return true;
+  }
+  else if (inst->addInstantiation(d_quant,
+                                  svec,
+                                  InferenceId::QUANTIFIERS_INST_CEGQI,
+                                  Node::null(),
+                                  usedVts))
+  {
+    // add the existentials, if any witness term was eliminated
+    for (const Node& q : exists)
+    {
+      d_qim.addPendingLemma(q, InferenceId::QUANTIFIERS_CEGQI_WITNESS);
+    }
+    return true;
+  }
+  // this should never happen for monotonic selection strategies
+  Trace("cegqi-warn") << "WARNING: Existing instantiation" << std::endl;
+  return false;
 }
 
 bool CegInstantiator::isEligibleForInstantiation(Node n) const
 {
   Kind nk = n.getKind();
-  if (nk != INST_CONSTANT && nk != SKOLEM && nk != BOOLEAN_TERM_VARIABLE)
+  if (nk != Kind::INST_CONSTANT && nk != Kind::SKOLEM)
   {
     return true;
   }
@@ -1145,7 +1087,7 @@ bool CegInstantiator::canApplyBasicSubstitution( Node n, std::vector< Node >& no
 
 Node CegInstantiator::applySubstitution( TypeNode tn, Node n, std::vector< Node >& vars, std::vector< Node >& subs, std::vector< TermProperties >& prop, 
                                          std::vector< Node >& non_basic, TermProperties& pv_prop, bool try_coeff ) {
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   n = rewrite(n);
   computeProgVars( n );
   bool is_basic = canApplyBasicSubstitution( n, non_basic );
@@ -1168,12 +1110,12 @@ Node CegInstantiator::applySubstitution( TypeNode tn, Node n, std::vector< Node 
         if( !prop[i].d_coeff.isNull() ){
           Assert(vars[i].getType().isInteger());
           Assert(prop[i].d_coeff.isConst());
-          Node nn = NodeManager::currentNM()->mkNode(
-              MULT,
+          Node nn = nodeManager()->mkNode(
+              Kind::MULT,
               subs[i],
-              NodeManager::currentNM()->mkConstReal(
+              nodeManager()->mkConstReal(
                   Rational(1) / prop[i].d_coeff.getConst<Rational>()));
-          nn = NodeManager::currentNM()->mkNode( kind::TO_INTEGER, nn );
+          nn = nodeManager()->mkNode(Kind::TO_INTEGER, nn);
           nn = rewrite(nn);
           nsubs.push_back( nn );
         }else{
@@ -1204,7 +1146,8 @@ Node CegInstantiator::applySubstitution( TypeNode tn, Node n, std::vector< Node 
               if( pv_prop.d_coeff.isNull() ){
                 pv_prop.d_coeff = prop[index].d_coeff;
               }else{
-                pv_prop.d_coeff = NodeManager::currentNM()->mkNode( MULT, pv_prop.d_coeff, prop[index].d_coeff );
+                pv_prop.d_coeff = nodeManager()->mkNode(
+                    Kind::MULT, pv_prop.d_coeff, prop[index].d_coeff);
               }
             }
           }else{
@@ -1234,13 +1177,13 @@ Node CegInstantiator::applySubstitution( TypeNode tn, Node n, std::vector< Node 
             if (!v.isNull())
             {
               Assert(v.getType() == type);
-              c = nm->mkNode(MULT, c, v);
+              c = nm->mkNode(Kind::MULT, c, v);
             }
             children.push_back( c );
             Trace("sygus-si-apply-subs-debug") << "Add child : " << c << std::endl;
           }
-          Node nretc =
-              children.size() == 1 ? children[0] : nm->mkNode(ADD, children);
+          Node nretc = children.size() == 1 ? children[0]
+                                            : nm->mkNode(Kind::ADD, children);
           nretc = rewrite(nretc);
           //ensure that nret does not contain vars
           if (!expr::hasSubterm(nretc, vars))
@@ -1273,21 +1216,25 @@ Node CegInstantiator::applySubstitutionToLiteral( Node lit, std::vector< Node >&
   if( is_basic ){
    lret = lit.substitute( vars.begin(), vars.end(), subs.begin(), subs.end() );
   }else{
-    Node atom = lit.getKind()==NOT ? lit[0] : lit;
-    bool pol = lit.getKind()!=NOT;
+    Node atom = lit.getKind() == Kind::NOT ? lit[0] : lit;
+    bool pol = lit.getKind() != Kind::NOT;
     //arithmetic inequalities and disequalities
-    if (atom.getKind() == GEQ
-        || (atom.getKind() == EQUAL && !pol && atom[0].getType().isRealOrInt()))
+    if (atom.getKind() == Kind::GEQ
+        || (atom.getKind() == Kind::EQUAL && !pol
+            && atom[0].getType().isRealOrInt()))
     {
-      NodeManager* nm = NodeManager::currentNM();
-      Assert(atom.getKind() != GEQ || atom[1].isConst());
+      NodeManager* nm = nodeManager();
+      Assert(atom.getKind() != Kind::GEQ || atom[1].isConst());
       Node atom_lhs;
       Node atom_rhs;
-      if( atom.getKind()==GEQ ){
+      if (atom.getKind() == Kind::GEQ)
+      {
         atom_lhs = atom[0];
         atom_rhs = atom[1];
-      }else{
-        atom_lhs = nm->mkNode(SUB, atom[0], atom[1]);
+      }
+      else
+      {
+        atom_lhs = nm->mkNode(Kind::SUB, atom[0], atom[1]);
         atom_lhs = rewrite(atom_lhs);
         atom_rhs = nm->mkConstRealOrInt(atom_lhs.getType(), Rational(0));
       }
@@ -1304,7 +1251,7 @@ Node CegInstantiator::applySubstitutionToLiteral( Node lit, std::vector< Node >&
                                      atom_lhs_prop);
         if( !atom_lhs.isNull() ){
           if( !atom_lhs_prop.d_coeff.isNull() ){
-            atom_rhs = nm->mkNode(MULT, atom_lhs_prop.d_coeff, atom_rhs);
+            atom_rhs = nm->mkNode(Kind::MULT, atom_lhs_prop.d_coeff, atom_rhs);
             atom_rhs = rewrite(atom_rhs);
           }
           lret = nm->mkNode(atom.getKind(), atom_lhs, atom_rhs);
@@ -1390,7 +1337,7 @@ void CegInstantiator::processAssertions() {
          ++it)
     {
       Node lit = (*it).d_assertion;
-      Node atom = lit.getKind() == NOT ? lit[0] : lit;
+      Node atom = lit.getKind() == Kind::NOT ? lit[0] : lit;
       if (d_is_nested_quant
           || std::find(d_ce_atoms.begin(), d_ce_atoms.end(), atom)
                  != d_ce_atoms.end())
@@ -1467,12 +1414,17 @@ void CegInstantiator::processAssertions() {
   }
 }
 
-Node CegInstantiator::getModelValue( Node n ) {
+Node CegInstantiator::getModelValue(Node n)
+{
   Node mv = d_treg.getModel()->getValue(n);
-  // Witness terms with identifiers may appear in the model. We require
-  // dropping their annotations here.
-  AnnotationElimNodeConverter aenc;
-  mv = aenc.convert(mv);
+  // if the model value is not constant, it may require some processing
+  if (!mv.isConst())
+  {
+    // Witness terms with identifiers may appear in the model. We require
+    // dropping their annotations here.
+    AnnotationElimNodeConverter aenc(nodeManager());
+    mv = aenc.convert(mv);
+  }
   return mv;
 }
 
@@ -1490,7 +1442,7 @@ Node CegInstantiator::getBoundVariable(TypeNode tn)
   {
     std::stringstream ss;
     ss << "x" << index;
-    Node x = NodeManager::currentNM()->mkBoundVar(ss.str(), tn);
+    Node x = nodeManager()->mkBoundVar(ss.str(), tn);
     d_bound_var[tn].push_back(x);
   }
   return d_bound_var[tn][index];
@@ -1513,22 +1465,35 @@ void CegInstantiator::markSolved(Node n, bool solved)
   }
 }
 
-void CegInstantiator::collectCeAtoms( Node n, std::map< Node, bool >& visited ) {
-  if( n.getKind()==FORALL ){
-    d_is_nested_quant = true;
-  }else if( visited.find( n )==visited.end() ){
-    visited[n] = true;
-    if( TermUtil::isBoolConnectiveTerm( n ) ){
-      for( unsigned i=0; i<n.getNumChildren(); i++ ){
-        collectCeAtoms( n[i], visited );
+void CegInstantiator::collectCeAtoms(Node n)
+{
+  std::unordered_set<TNode> visited;
+  std::vector<TNode> visit;
+  TNode cur;
+  visit.push_back(n);
+  do
+  {
+    cur = visit.back();
+    visit.pop_back();
+    if (visited.find(cur) == visited.end())
+    {
+      visited.insert(cur);
+      if (cur.getKind() == Kind::FORALL)
+      {
+        d_is_nested_quant = true;
       }
-    }else{
-      if( std::find( d_ce_atoms.begin(), d_ce_atoms.end(), n )==d_ce_atoms.end() ){
-        Trace("cegqi-ce-atoms") << "CE atoms : " << n << std::endl;
-        d_ce_atoms.push_back( n );
+      if (TermUtil::isBoolConnectiveTerm(cur))
+      {
+        visit.insert(visit.end(), cur.begin(), cur.end());
+      }
+      else if (std::find(d_ce_atoms.begin(), d_ce_atoms.end(), cur)
+               == d_ce_atoms.end())
+      {
+        Trace("cegqi-ce-atoms") << "CE atoms : " << cur << std::endl;
+        d_ce_atoms.push_back(cur);
       }
     }
-  }
+  } while (!visit.empty());
 }
 
 void CegInstantiator::registerCounterexampleLemma(Node lem,
@@ -1653,28 +1618,13 @@ void CegInstantiator::registerCounterexampleLemma(Node lem,
   // collect atoms from all lemmas: we will only solve for literals coming from
   // the original body
   d_is_nested_quant = false;
-  std::map< Node, bool > visited;
-  collectCeAtoms(lem, visited);
+  Node lemr = rewrite(lem);
+  collectCeAtoms(lemr);
   for (const Node& alem : auxLems)
   {
-    collectCeAtoms(alem, visited);
+    Node alemr = rewrite(alem);
+    collectCeAtoms(alemr);
   }
-}
-
-Instantiator::Instantiator(Env& env, TypeNode tn) : EnvObj(env), d_type(tn)
-{
-  d_closed_enum_type = tn.isClosedEnumerable();
-}
-
-bool Instantiator::processEqualTerm(CegInstantiator* ci,
-                                    SolvedForm& sf,
-                                    Node pv,
-                                    TermProperties& pv_prop,
-                                    Node n,
-                                    CegInstEffort effort)
-{
-  pv_prop.d_type = CEG_TT_EQUAL;
-  return ci->constructInstantiationInc(pv, n, pv_prop, sf);
 }
 
 }  // namespace quantifiers

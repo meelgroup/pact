@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Mathias Preiner, Gereon Kremer
+ *   Andrew Reynolds, Aina Niemetz, Hans-Joerg Schurr
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -15,6 +15,7 @@
 
 #include "theory/quantifiers/alpha_equivalence.h"
 
+#include "expr/node_algorithm.h"
 #include "proof/method_id.h"
 #include "proof/proof.h"
 #include "proof/proof_node.h"
@@ -89,7 +90,7 @@ AlphaEquivalenceDb::AlphaEquivalenceDb(context::Context* c,
 }
 Node AlphaEquivalenceDb::addTerm(Node q)
 {
-  Assert(q.getKind() == FORALL);
+  Assert(q.getKind() == Kind::FORALL);
   Trace("aeq") << "Alpha equivalence : register " << q << std::endl;
   //construct canonical quantified formula
   Node t = d_tc->getCanonicalTerm(q[1], d_sortCommutativeOpChildren);
@@ -109,9 +110,9 @@ Node AlphaEquivalenceDb::addTermWithSubstitution(Node q,
   std::map<Node, TNode>& bm = d_bvmap[q];
   for (const std::pair<const TNode, Node>& b : visited)
   {
-    if (b.first.getKind() == BOUND_VARIABLE)
+    if (b.first.getKind() == Kind::BOUND_VARIABLE)
     {
-      Assert(b.second.getKind() == BOUND_VARIABLE);
+      Assert(b.second.getKind() == Kind::BOUND_VARIABLE);
       bm[b.second] = b.first;
     }
   }
@@ -173,7 +174,7 @@ AlphaEquivalence::AlphaEquivalence(Env& env)
 
 TrustNode AlphaEquivalence::reduceQuantifier(Node q)
 {
-  Assert(q.getKind() == FORALL);
+  Assert(q.getKind() == Kind::FORALL);
   Node ret;
   std::vector<Node> vars;
   std::vector<Node> subs;
@@ -207,23 +208,40 @@ TrustNode AlphaEquivalence::reduceQuantifier(Node q)
   // if successfully computed the substitution above
   if (isProofEnabled() && !vars.empty())
   {
-    std::vector<Node> pfArgs;
-    pfArgs.push_back(ret);
-    for (size_t i = 0, nvars = vars.size(); i < nvars; i++)
+    if (Configuration::isAssertionBuild())
     {
-      pfArgs.push_back(vars[i].eqNode(subs[i]));
-      Trace("alpha-eq") << "subs: " << vars[i] << " -> " << subs[i]
-                        << std::endl;
+      // all variables should be unique since we are processing rewritten
+      // quantified formulas
+      std::unordered_set<Node> vset(vars.begin(), vars.end());
+      Assert(vset.size() == vars.size());
+      std::unordered_set<Node> sset(subs.begin(), subs.end());
+      Assert(sset.size() == subs.size());
     }
     CDProof cdp(d_env);
-    Node sret =
-        ret.substitute(vars.begin(), vars.end(), subs.begin(), subs.end());
     std::vector<Node> transEq;
-    Node eq = ret.eqNode(sret);
-    transEq.push_back(eq);
+    // if there is variable shadowing, we do an intermediate step with fresh
+    // variables
+    if (expr::hasSubterm(ret, subs))
+    {
+      std::vector<Node> isubs;
+      NodeManager* nm = nodeManager();
+      for (const Node& v : subs)
+      {
+        isubs.emplace_back(nm->mkBoundVar(v.getType()));
+      }
+      // ---------- ALPHA_EQUIV
+      // ret = iret
+      Node ieq = addAlphaEquivStep(cdp, ret, vars, isubs);
+      transEq.emplace_back(ieq);
+      ret = ieq[1];
+      vars = isubs;
+    }
     // ---------- ALPHA_EQUIV
     // ret = sret
-    cdp.addStep(eq, PfRule::ALPHA_EQUIV, {}, pfArgs);
+    Node eq = addAlphaEquivStep(cdp, ret, vars, subs);
+    Assert(eq.getKind() == Kind::EQUAL);
+    Node sret = eq[1];
+    transEq.emplace_back(eq);
     // if not syntactically equal, maybe it can be transformed
     bool success = false;
     if (sret == q)
@@ -245,7 +263,7 @@ TrustNode AlphaEquivalence::reduceQuantifier(Node q)
                      MethodId::SB_DEFAULT,
                      MethodId::SBA_SEQUENTIAL,
                      MethodId::RW_EXT_REWRITE);
-        cdp.addStep(eq2, PfRule::MACRO_SR_PRED_INTRO, {}, pfArgs2);
+        cdp.addStep(eq2, ProofRule::MACRO_SR_PRED_INTRO, {}, pfArgs2);
         success = true;
       }
     }
@@ -255,7 +273,7 @@ TrustNode AlphaEquivalence::reduceQuantifier(Node q)
       if (transEq.size() > 1)
       {
         // TRANS of ALPHA_EQ and MACRO_SR_PRED_INTRO steps from above
-        cdp.addStep(lem, PfRule::TRANS, transEq, {});
+        cdp.addStep(lem, ProofRule::TRANS, transEq, {});
       }
       std::shared_ptr<ProofNode> pn = cdp.getProofFor(lem);
       Trace("alpha-eq") << "Proof is " << *pn.get() << std::endl;
@@ -264,6 +282,24 @@ TrustNode AlphaEquivalence::reduceQuantifier(Node q)
     }
   }
   return TrustNode::mkTrustLemma(lem, pg);
+}
+
+Node AlphaEquivalence::addAlphaEquivStep(CDProof& cdp,
+                                         const Node& f,
+                                         const std::vector<Node>& vars,
+                                         const std::vector<Node>& subs)
+{
+  std::vector<Node> pfArgs;
+  pfArgs.push_back(f);
+  NodeManager* nm = nodeManager();
+  pfArgs.push_back(nm->mkNode(Kind::SEXPR, vars));
+  pfArgs.push_back(nm->mkNode(Kind::SEXPR, subs));
+  Node sf = f.substitute(vars.begin(), vars.end(), subs.begin(), subs.end());
+  std::vector<Node> transEq;
+  Node eq = f.eqNode(sf);
+  cdp.addStep(eq, ProofRule::ALPHA_EQUIV, {}, pfArgs);
+  // if not syntactically equal, maybe it can be transform
+  return eq;
 }
 
 bool AlphaEquivalence::isProofEnabled() const { return d_pfAlpha != nullptr; }

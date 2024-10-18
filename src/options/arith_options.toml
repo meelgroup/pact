@@ -411,6 +411,14 @@ name   = "Arithmetic Theory"
   help       = "interleave tangent plane strategy for non-linear incremental linearization solver"
 
 [[option]]
+  name       = "arithExp"
+  category   = "expert"
+  long       = "arith-exp"
+  type       = "bool"
+  default    = "true"
+  help       = "enables non-standard extensions of the arithmetic solver"
+
+[[option]]
   name       = "nlExtTfTangentPlanes"
   category   = "regular"
   long       = "nl-ext-tf-tplanes"
@@ -522,7 +530,7 @@ name   = "Arithmetic Theory"
   long       = "nl-cov-prune"
   type       = "bool"
   default    = "false"
-  help       = "whether to prune intervals more agressively"
+  help       = "whether to prune intervals more aggressively"
 
 [[option]]
   name       = "nlCovLinearModel"

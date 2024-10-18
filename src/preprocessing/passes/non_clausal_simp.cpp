@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -54,9 +54,6 @@ NonClausalSimp::NonClausalSimp(PreprocessingPassContext* preprocContext)
       d_llpg(options().smt.produceProofs ? new smt::PreprocessProofGenerator(
                  d_env, userContext(), "NonClausalSimp::llpg")
                                          : nullptr),
-      d_llra(options().smt.produceProofs ? new LazyCDProof(
-                 d_env, nullptr, userContext(), "NonClausalSimp::llra")
-                                         : nullptr),
       d_tsubsList(userContext())
 {
 }
@@ -105,7 +102,6 @@ PreprocessingPassResult NonClausalSimp::applyInternal(
     // If in conflict, just return false
     Trace("non-clausal-simplify")
         << "conflict in non-clausal propagation" << std::endl;
-    assertionsToPreprocess->clear();
     assertionsToPreprocess->pushBackTrusted(conf);
     return PreprocessingPassResult::CONFLICT;
   }
@@ -114,7 +110,7 @@ PreprocessingPassResult NonClausalSimp::applyInternal(
       << "Iterate through " << propagator->getLearnedLiterals().size()
       << " learned literals." << std::endl;
   // No conflict, go through the literals and solve them
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   context::Context* u = userContext();
   Rewriter* rw = d_env.getRewriter();
   TrustSubstitutionMap& ttls = d_preprocContext->getTopLevelSubstitutions();
@@ -122,12 +118,12 @@ PreprocessingPassResult NonClausalSimp::applyInternal(
   // constant propagations
   std::shared_ptr<TrustSubstitutionMap> constantPropagations =
       std::make_shared<TrustSubstitutionMap>(
-          d_env, u, "NonClausalSimp::cprop", PfRule::PREPROCESS_LEMMA);
+          d_env, u, "NonClausalSimp::cprop", TrustId::PREPROCESS_LEMMA);
   SubstitutionMap& cps = constantPropagations->get();
   // new substitutions
   std::shared_ptr<TrustSubstitutionMap> newSubstitutions =
       std::make_shared<TrustSubstitutionMap>(
-          d_env, u, "NonClausalSimp::newSubs", PfRule::PREPROCESS_LEMMA);
+          d_env, u, "NonClausalSimp::newSubs", TrustId::PREPROCESS_LEMMA);
   SubstitutionMap& nss = newSubstitutions->get();
 
   size_t j = 0;
@@ -171,7 +167,6 @@ PreprocessingPassResult NonClausalSimp::applyInternal(
         // If the learned literal simplifies to false, we're in conflict
         Trace("non-clausal-simplify")
             << "conflict with " << learned_literals[i].getNode() << std::endl;
-        assertionsToPreprocess->clear();
         Node n = nm->mkConst<bool>(false);
         assertionsToPreprocess->push_back(n, false, d_llpg.get());
         return PreprocessingPassResult::CONFLICT;
@@ -204,7 +199,6 @@ PreprocessingPassResult NonClausalSimp::applyInternal(
         // If in conflict, we return false
         Trace("non-clausal-simplify")
             << "conflict while solving " << learnedLiteral << std::endl;
-        assertionsToPreprocess->clear();
         Node n = nm->mkConst<bool>(false);
         assertionsToPreprocess->push_back(n);
         return PreprocessingPassResult::CONFLICT;
@@ -212,7 +206,7 @@ PreprocessingPassResult NonClausalSimp::applyInternal(
       default:
         TNode t;
         TNode c;
-        if (learnedLiteral.getKind() == kind::EQUAL
+        if (learnedLiteral.getKind() == Kind::EQUAL
             && (learnedLiteral[0].isConst() || learnedLiteral[1].isConst()))
         {
           // constant propagation
@@ -232,7 +226,7 @@ PreprocessingPassResult NonClausalSimp::applyInternal(
           // From non-equalities, learn the Boolean equality. Notice that
           // the equality case above is strictly more powerful that this, since
           // e.g. (= t c) * { t -> c } also simplifies to true.
-          bool pol = learnedLiteral.getKind() != kind::NOT;
+          bool pol = learnedLiteral.getKind() != Kind::NOT;
           c = nm->mkConst(pol);
           t = pol ? learnedLiteral : learnedLiteral[0];
         }
@@ -331,6 +325,10 @@ PreprocessingPassResult NonClausalSimp::applyInternal(
     s.insert(assertion);
     Trace("non-clausal-simplify")
         << "non-clausal preprocessed: " << assertion << std::endl;
+    if (assertionsToPreprocess->isInConflict())
+    {
+      return PreprocessingPassResult::CONFLICT;
+    }
   }
 
   // If necessary, add as assertions if needed (when incremental). This is
@@ -356,6 +354,9 @@ PreprocessingPassResult NonClausalSimp::applyInternal(
         Trace("non-clausal-simplify")
             << "substitute: will notify SAT layer of substitution: "
             << trhs.getProven() << std::endl;
+        // note that trhs.getProven() may not be in rewritten form (e.g. the
+        // rewriter may swap order). This is handled internally within
+        // addSubstitutionNode.
         assertionsToPreprocess->addSubstitutionNode(trhs.getProven(),
                                                     trhs.getGenerator());
       }
@@ -408,35 +409,13 @@ PreprocessingPassResult NonClausalSimp::applyInternal(
 
   if (!learnedLitsToConjoin.empty())
   {
-    size_t replIndex = assertionsToPreprocess->size() - 1;
-    Node newConj = nm->mkAnd(learnedLitsToConjoin);
     Trace("non-clausal-simplify")
-        << "non-clausal simplification, reassert: " << newConj << std::endl;
-    ProofGenerator* pg = nullptr;
-    if (isProofEnabled())
+        << "non-clausal simplification, reassert: " << learnedLitsToConjoin
+        << std::endl;
+    for (const Node& lit : learnedLitsToConjoin)
     {
-      // justify in d_llra
-      for (const Node& lit : learnedLitsToConjoin)
-      {
-        d_llra->addLazyStep(lit, d_llpg.get());
-      }
-      if (learnedLitsToConjoin.size() > 1)
-      {
-        d_llra->addStep(newConj, PfRule::AND_INTRO, learnedLitsToConjoin, {});
-        pg = d_llra.get();
-      }
-      else
-      {
-        // otherwise we ask the learned literal proof generator directly
-        pg = d_llpg.get();
-      }
+      assertionsToPreprocess->push_back(lit, false, d_llpg.get());
     }
-    // ------- from d_llpg    --------- from d_llpg
-    //  conj[0]       ....    d_conj[n]
-    // -------------------------------- AND_INTRO
-    //  newConj
-    // where newConj is conjoined at the given index
-    assertionsToPreprocess->conjoin(replIndex, newConj, pg);
   }
 
   // Note that typically ttls.apply(assert)==assert here.

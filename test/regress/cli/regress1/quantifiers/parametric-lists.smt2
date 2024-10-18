@@ -1,3 +1,4 @@
+; DISABLE-TESTER: cpc
 ; EXPECT: unsat
 (set-logic ALL)
 (set-info :status unsat)

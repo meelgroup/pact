@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Haniel Barbosa, Aina Niemetz
+ *   Andrew Reynolds, Haniel Barbosa, Abdalrhman Mohamed
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -34,13 +34,6 @@ namespace rewriter {
 class RewriteDb;
 }
 
-namespace smt {
-
-class Assertions;
-class SmtSolver;
-class PreprocessProofGenerator;
-class ProofPostprocess;
-
 /** Modes for global Proof scopes introducing definitions and assertions. */
 enum class ProofScopeMode
 {
@@ -51,6 +44,13 @@ enum class ProofScopeMode
   /** Proof closed by 2 nested scopes introducing definitions and assertions. */
   DEFINITIONS_AND_ASSERTIONS,
 };
+
+namespace smt {
+
+class Assertions;
+class SmtSolver;
+class PreprocessProofGenerator;
+class ProofPostprocess;
 
 /**
  * This class is responsible for managing the proof output of SolverEngine, as
@@ -95,7 +95,9 @@ class PfManager : protected EnvObj
    */
   void printProof(std::ostream& out,
                   std::shared_ptr<ProofNode> fp,
-                  options::ProofFormatMode mode);
+                  options::ProofFormatMode mode,
+                  const std::map<Node, std::string>& assertionNames =
+                      std::map<Node, std::string>());
 
   /**
    * Translate difficulty map. This takes a mapping dmap from preprocessed

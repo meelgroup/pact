@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Mathias Preiner
+ *   Andrew Reynolds, Aina Niemetz, Mathias Preiner
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -147,7 +147,7 @@ void SygusExplain::getExplanationForEquality(Node n,
     // abstractions only, hence we disregard this field
     return;
   }
-  Assert(vn.getKind() == kind::APPLY_CONSTRUCTOR);
+  Assert(vn.getKind() == Kind::APPLY_CONSTRUCTOR);
   const DType& dt = tn.getDType();
   int i = datatypes::utils::indexOf(vn.getOperator());
   Node tst = datatypes::utils::mkTester(n, i, dt);
@@ -177,7 +177,7 @@ Node SygusExplain::getExplanationForEquality(Node n,
   getExplanationForEquality(n, vn, exp, cexc);
   Assert(!exp.empty());
   return exp.size() == 1 ? exp[0]
-                         : NodeManager::currentNM()->mkNode(kind::AND, exp);
+                         : NodeManager::currentNM()->mkNode(Kind::AND, exp);
 }
 
 // we have ( n = vn => eval( n ) = bvr ) ^ vn != vnr , returns exp such that exp
@@ -186,7 +186,7 @@ void SygusExplain::getExplanationFor(TermRecBuild& trb,
                                      Node n,
                                      Node vn,
                                      std::vector<Node>& exp,
-                                     std::map<TypeNode, int>& var_count,
+                                     std::map<TypeNode, size_t>& var_count,
                                      SygusInvarianceTest& et,
                                      Node vnr,
                                      Node& vnr_exp,
@@ -206,8 +206,8 @@ void SygusExplain::getExplanationFor(TermRecBuild& trb,
     // constant constructors, since their explanation is not included here.
     return;
   }
-  Assert(vn.getKind() == APPLY_CONSTRUCTOR);
-  Assert(vnr.isNull() || vnr.getKind() == APPLY_CONSTRUCTOR);
+  Assert(vn.getKind() == Kind::APPLY_CONSTRUCTOR);
+  Assert(vnr.isNull() || vnr.getKind() == Kind::APPLY_CONSTRUCTOR);
   std::map<unsigned, bool> cexc;
   // for each child, 
   // check whether replacing that child by a fresh variable
@@ -218,7 +218,7 @@ void SygusExplain::getExplanationFor(TermRecBuild& trb,
     Node x = d_tdb->getFreeVarInc(xtn, var_count);
     trb.replaceChild(i, x);
     Node nvn = trb.build();
-    Assert(nvn.getKind() == kind::APPLY_CONSTRUCTOR);
+    Assert(nvn.getKind() == Kind::APPLY_CONSTRUCTOR);
     if (et.is_invariant(d_tdb, nvn, x))
     {
       cexc[i] = true;
@@ -295,7 +295,7 @@ void SygusExplain::getExplanationFor(Node n,
                                      Node vnr,
                                      unsigned& sz)
 {
-  std::map<TypeNode, int> var_count;
+  std::map<TypeNode, size_t> var_count;
   return getExplanationFor(n, vn, exp, et, vnr, var_count, sz);
 }
 
@@ -304,7 +304,7 @@ void SygusExplain::getExplanationFor(Node n,
                                      std::vector<Node>& exp,
                                      SygusInvarianceTest& et,
                                      Node vnr,
-                                     std::map<TypeNode, int>& var_count,
+                                     std::map<TypeNode, size_t>& var_count,
                                      unsigned& sz)
 {
   // naive :
@@ -331,7 +331,7 @@ void SygusExplain::getExplanationFor(Node n,
                                      SygusInvarianceTest& et,
                                      bool strict)
 {
-  std::map<TypeNode, int> var_count;
+  std::map<TypeNode, size_t> var_count;
   getExplanationFor(n, vn, exp, et, var_count, strict);
 }
 
@@ -339,7 +339,7 @@ void SygusExplain::getExplanationFor(Node n,
                                      Node vn,
                                      std::vector<Node>& exp,
                                      SygusInvarianceTest& et,
-                                     std::map<TypeNode, int>& var_count,
+                                     std::map<TypeNode, size_t>& var_count,
                                      bool strict)
 {
   if (!strict)

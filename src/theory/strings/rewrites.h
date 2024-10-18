@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -30,6 +30,8 @@ namespace strings {
  */
 enum class Rewrite : uint32_t
 {
+  // no rewrite
+  NONE,
   CTN_COMPONENT,
   CTN_CONCAT_CHAR,
   CTN_CONST,
@@ -77,6 +79,7 @@ enum class Rewrite : uint32_t
   INDEXOF_RE_EVAL,
   INDEXOF_RE_INVALID_INDEX,
   INDEXOF_RE_MAX_INDEX,
+  INDEXOF_RE_NONE,
   ITOS_EVAL,
   RE_ALL_ELIM,
   RE_AND_EMPTY,
@@ -97,6 +100,7 @@ enum class Rewrite : uint32_t
   RE_IN_INCLUSION,
   RE_LOOP,
   RE_LOOP_NONE,
+  RE_LOOP_ZERO,
   RE_LOOP_STAR,
   RE_OR_ALL,
   RE_SIMPLE_CONSUME,
@@ -129,7 +133,9 @@ enum class Rewrite : uint32_t
   RPL_RPL_LEN_ID,
   RPL_X_Y_X_SIMP,
   REPLACE_RE_EVAL,
+  REPLACE_RE_NONE,
   REPLACE_RE_ALL_EVAL,
+  REPLACE_RE_ALL_NONE,
   REPLACE_RE_EMP_RE,
   SPLIT_EQ,
   SPLIT_EQ_STRIP_L,
@@ -232,7 +238,10 @@ enum class Rewrite : uint32_t
   SEQ_UNIT_EVAL,
   SEQ_NTH_EVAL,
   SEQ_NTH_EVAL_OOB,
-  SEQ_NTH_EVAL_SYM
+  SEQ_NTH_EVAL_SYM,
+
+  // the rewrite was unspecified
+  UNKNOWN
 };
 
 /**

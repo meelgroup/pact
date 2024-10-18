@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -36,6 +36,7 @@
 #include "options/language.h"
 #include "options/main_options.h"
 #include "options/option_exception.h"
+#include "options/parser_options.h"
 #include "options/smt_options.h"
 #include "options/theory_options.h"
 #include "util/didyoumean.h"
@@ -120,14 +121,12 @@ Languages currently supported as arguments to the -L / --lang option:
   auto                           attempt to automatically determine language
   smt | smtlib | smt2 |
   smt2.6 | smtlib2.6             SMT-LIB format 2.6 with support for the strings standard
-  tptp                           TPTP format (cnf, fof and tff)
   sygus | sygus2                 SyGuS version 2.0
 
 Languages currently supported as arguments to the --output-lang option:
   auto                           match output language to input language
   smt | smtlib | smt2 |
   smt2.6 | smtlib2.6             SMT-LIB format 2.6 with support for the strings standard
-  tptp                           TPTP format
   ast                            internal format (simple syntax trees)
 )FOOBAR" << std::endl;
     throw OptionException("help is not a valid language");
@@ -154,7 +153,7 @@ void OptionsHandler::setInputLanguage(const std::string& flag, Language lang)
   }
   if (!d_options->printer.outputLanguageWasSetByUser)
   {
-    d_options->writePrinter().outputLanguage = lang;
+    d_options->write_printer().outputLanguage = lang;
     ioutils::setDefaultOutputLanguage(lang);
   }
 }
@@ -175,13 +174,13 @@ void OptionsHandler::setVerbosity(const std::string& flag, int value)
 
 void OptionsHandler::decreaseVerbosity(const std::string& flag, bool value)
 {
-  d_options->writeBase().verbosity -= 1;
+  d_options->write_base().verbosity -= 1;
   setVerbosity(flag, d_options->base.verbosity);
 }
 
 void OptionsHandler::increaseVerbosity(const std::string& flag, bool value)
 {
-  d_options->writeBase().verbosity += 1;
+  d_options->write_base().verbosity += 1;
   setVerbosity(flag, d_options->base.verbosity);
 }
 
@@ -277,15 +276,6 @@ void OptionsHandler::checkBvSatSolver(const std::string& flag, SatSolverMode m)
     throw OptionException(ss.str());
   }
 
-  if (m == SatSolverMode::APPROXMC && !Configuration::isBuiltWithApproxmc())
-  {
-    std::stringstream ss;
-    ss << "option `" << flag
-       << "' requires a ApproxMC build of cvc5; this binary was not built "
-          "with ApproxMC support";
-    throw OptionException(ss.str());
-  }
-
   if (m == SatSolverMode::KISSAT && !Configuration::isBuiltWithKissat())
   {
     std::stringstream ss;
@@ -297,7 +287,7 @@ void OptionsHandler::checkBvSatSolver(const std::string& flag, SatSolverMode m)
 
   if (d_options->bv.bvSolver != options::BVSolver::BITBLAST
       && (m == SatSolverMode::CRYPTOMINISAT || m == SatSolverMode::CADICAL
-          || m == SatSolverMode::APPROXMC || m == SatSolverMode::KISSAT))
+          || m == SatSolverMode::KISSAT))
   {
     if (d_options->bv.bitblastMode == options::BitblastMode::LAZY
         && d_options->bv.bitblastModeWasSetByUser)
@@ -306,10 +296,6 @@ void OptionsHandler::checkBvSatSolver(const std::string& flag, SatSolverMode m)
       if (m == options::SatSolverMode::CADICAL)
       {
         sat_solver = "CaDiCaL";
-      }
-      else if (m == options::SatSolverMode::APPROXMC)
-      {
-        sat_solver = "ApproxMC";
       }
       else if (m == options::SatSolverMode::KISSAT)
       {

@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Mathias Preiner, Gereon Kremer
+ *   Andrew Reynolds, Mathias Preiner, Aina Niemetz
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -46,7 +46,7 @@ void SynthConjectureProcessFun::init(Node f)
     TypeNode atn = argTypes[j];
     std::stringstream ss;
     ss << "a" << j;
-    Node k = NodeManager::currentNM()->mkBoundVar(ss.str(), atn);
+    Node k = nodeManager()->mkBoundVar(ss.str(), atn);
     d_arg_vars.push_back(k);
     d_arg_var_num[k] = j;
     d_arg_props.push_back(SynthConjectureProcessArg());
@@ -154,7 +154,7 @@ Node SynthConjectureProcessFun::inferDefinition(
       }
       if (childChanged)
       {
-        ret = NodeManager::currentNM()->mkNode(cur.getKind(), children);
+        ret = nodeManager()->mkNode(cur.getKind(), children);
       }
       visited[cur] = ret;
     }
@@ -535,7 +535,7 @@ Node SynthConjectureProcess::preSimplify(Node q)
 Node SynthConjectureProcess::postSimplify(Node q)
 {
   Trace("sygus-process") << "Post-simplify conjecture : " << q << std::endl;
-  Assert(q.getKind() == FORALL);
+  Assert(q.getKind() == Kind::FORALL);
 
   if (options().quantifiers.sygusArgRelevant)
   {
@@ -554,7 +554,7 @@ Node SynthConjectureProcess::postSimplify(Node q)
     // get the base on the conjecture
     Node base = q[1];
     std::unordered_set<Node> synth_fv;
-    if (base.getKind() == NOT && base[0].getKind() == FORALL)
+    if (base.getKind() == Kind::NOT && base[0].getKind() == Kind::FORALL)
     {
       for (unsigned j = 0, size = base[0][0].getNumChildren(); j < size; j++)
       {
@@ -563,7 +563,7 @@ Node SynthConjectureProcess::postSimplify(Node q)
       base = base[0][1];
     }
     std::vector<Node> conjuncts;
-    getComponentVector(AND, base, conjuncts);
+    getComponentVector(Kind::AND, base, conjuncts);
 
     // process the conjunctions
     for (std::map<Node, SynthConjectureProcessFun>::iterator it =
@@ -710,13 +710,13 @@ Node SynthConjectureProcess::SynthConjectureProcess::flatten(
       }
       if (childChanged)
       {
-        ret = NodeManager::currentNM()->mkNode(cur.getKind(), children);
+        ret = nodeManager()->mkNode(cur.getKind(), children);
       }
       // is it the function to synthesize?
-      if (cur.getKind() == APPLY_UF && cur.getOperator() == f)
+      if (cur.getKind() == Kind::APPLY_UF && cur.getOperator() == f)
       {
         // if so, flatten
-        Node k = NodeManager::currentNM()->mkBoundVar("vf", cur.getType());
+        Node k = nodeManager()->mkBoundVar("vf", cur.getType());
         defs[k] = ret;
         ret = k;
         synth_fv.insert(k);

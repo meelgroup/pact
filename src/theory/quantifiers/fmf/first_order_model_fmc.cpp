@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Andres Noetzli, Mathias Preiner
+ *   Andrew Reynolds, Aina Niemetz, Andres Noetzli
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -66,11 +66,11 @@ void FirstOrderModelFmc::processInitialize(bool ispre)
 
 void FirstOrderModelFmc::processInitializeModelForTerm(Node n)
 {
-  if (n.getKind() == APPLY_UF)
+  if (n.getKind() == Kind::APPLY_UF)
   {
     // cannot be a bound variable
     Node op = n.getOperator();
-    if (op.getKind() != BOUND_VARIABLE)
+    if (op.getKind() != Kind::BOUND_VARIABLE)
     {
       if (d_models.find(op) == d_models.end())
       {
@@ -92,7 +92,7 @@ Node FirstOrderModelFmc::getStar(TypeNode tn)
   {
     return it->second;
   }
-  SkolemManager* sm = NodeManager::currentNM()->getSkolemManager();
+  SkolemManager* sm = nodeManager()->getSkolemManager();
   Node st =
       sm->mkDummySkolem("star", tn, "skolem created for full-model checking");
   d_type_star[tn] = st;
@@ -103,7 +103,7 @@ Node FirstOrderModelFmc::getStar(TypeNode tn)
 Node FirstOrderModelFmc::getFunctionValue(Node op, const char* argPrefix)
 {
   Trace("fmc-model") << "Get function value for " << op << std::endl;
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   TypeNode type = op.getType();
   std::vector<Node> vars;
   for (size_t i = 0, nargs = type.getNumChildren() - 1; i < nargs; i++)
@@ -113,7 +113,7 @@ Node FirstOrderModelFmc::getFunctionValue(Node op, const char* argPrefix)
     Node b = nm->mkBoundVar(ss.str(), type[i]);
     vars.push_back(b);
   }
-  Node boundVarList = nm->mkNode(BOUND_VAR_LIST, vars);
+  Node boundVarList = nm->mkNode(Kind::BOUND_VAR_LIST, vars);
   Node curr;
   Def* odef = d_models[op];
   for (size_t i = 0, ncond = odef->d_cond.size(); i < ncond; i++)
@@ -139,7 +139,7 @@ Node FirstOrderModelFmc::getFunctionValue(Node op, const char* argPrefix)
         {
           Node c = getRepresentative(cond[j]);
           c = getRepresentative(c);
-          children.push_back(nm->mkNode(EQUAL, vars[j], c));
+          children.push_back(nm->mkNode(Kind::EQUAL, vars[j], c));
         }
       }
       Assert(!children.empty());
@@ -147,12 +147,12 @@ Node FirstOrderModelFmc::getFunctionValue(Node op, const char* argPrefix)
 
       Trace("fmc-model-func")
           << "condition : " << cc << ", value : " << v << std::endl;
-      curr = nm->mkNode(ITE, cc, v, curr);
+      curr = nm->mkNode(Kind::ITE, cc, v, curr);
     }
   }
   Trace("fmc-model") << "Made " << curr << " for " << op << std::endl;
   curr = rewrite(curr);
-  return nm->mkNode(LAMBDA, boundVarList, curr);
+  return nm->mkNode(Kind::LAMBDA, boundVarList, curr);
 }
 
 }  // namespace fmcheck

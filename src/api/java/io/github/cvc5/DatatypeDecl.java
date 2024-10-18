@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -46,10 +46,32 @@ public class DatatypeDecl extends AbstractPointer
 
   protected native void deletePointer(long pointer);
 
-  public long getPointer()
+  /**
+   * Syntactic equality operator.
+   *
+   * @param d The datatype declaration to compare to for equality.
+   * @return True if the datatype declarations are equal.
+   */
+  @Override
+  public boolean equals(Object d)
   {
-    return pointer;
+    if (this == d)
+    {
+      return true;
+    }
+    if (d == null || getClass() != d.getClass())
+    {
+      return false;
+    }
+    DatatypeDecl decl = (DatatypeDecl) d;
+    if (this.pointer == decl.pointer)
+    {
+      return true;
+    }
+    return equals(pointer, decl.getPointer());
   }
+
+  private native boolean equals(long pointer1, long pointer2);
 
   /**
    * Add datatype constructor declaration.
@@ -62,7 +84,10 @@ public class DatatypeDecl extends AbstractPointer
 
   private native void addConstructor(long pointer, long declPointer);
 
-  /** Get the number of constructors (so far) for this Datatype declaration. */
+  /**
+   * Get the number of constructors (so far) for this Datatype declaration.
+   * @return The number of constructors.
+   */
   public int getNumConstructors()
   {
     return getNumConstructors(pointer);
@@ -71,6 +96,7 @@ public class DatatypeDecl extends AbstractPointer
   private native int getNumConstructors(long pointer);
 
   /**
+   * Determine if this datatype declaration is parametric.
    * @return True if this DatatypeDecl is parametric.
    *
    * @api.note This method is experimental and may change in future versions.
@@ -104,4 +130,16 @@ public class DatatypeDecl extends AbstractPointer
   }
 
   private native String getName(long pointer);
+
+  /**
+   * Get the hash value of a datatype declaration.
+   * @return The hash value.
+   */
+  @Override
+  public int hashCode()
+  {
+    return hashCode(pointer);
+  }
+
+  private native int hashCode(long pointer);
 }

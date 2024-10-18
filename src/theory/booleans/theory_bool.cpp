@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -34,7 +34,9 @@ namespace theory {
 namespace booleans {
 
 TheoryBool::TheoryBool(Env& env, OutputChannel& out, Valuation valuation)
-    : Theory(THEORY_BOOL, env, out, valuation)
+    : Theory(THEORY_BOOL, env, out, valuation),
+      d_rewriter(nodeManager()),
+      d_checker(nodeManager())
 {
 }
 
@@ -43,20 +45,22 @@ Theory::PPAssertStatus TheoryBool::ppAssert(
 {
   Assert(tin.getKind() == TrustNodeKind::LEMMA);
   TNode in = tin.getNode();
-  if (in.getKind() == kind::CONST_BOOLEAN && !in.getConst<bool>()) {
+  if (in.getKind() == Kind::CONST_BOOLEAN && !in.getConst<bool>())
+  {
     // If we get a false literal, we're in conflict
     return PP_ASSERT_STATUS_CONFLICT;
   }
 
   // Add the substitution from the variable to its value
-  if (in.getKind() == kind::NOT) {
+  if (in.getKind() == Kind::NOT)
+  {
     if (in[0].isVar())
     {
       outSubstitutions.addSubstitutionSolved(
-          in[0], NodeManager::currentNM()->mkConst<bool>(false), tin);
+          in[0], nodeManager()->mkConst<bool>(false), tin);
       return PP_ASSERT_STATUS_SOLVED;
     }
-    else if (in[0].getKind() == kind::EQUAL && in[0][0].getType().isBoolean())
+    else if (in[0].getKind() == Kind::EQUAL && in[0][0].getType().isBoolean())
     {
       TNode eq = in[0];
       if (eq[0].isVar() && isLegalElimination(eq[0], eq[1]))
@@ -74,17 +78,12 @@ Theory::PPAssertStatus TheoryBool::ppAssert(
   else if (in.isVar())
   {
     outSubstitutions.addSubstitutionSolved(
-        in, NodeManager::currentNM()->mkConst<bool>(true), tin);
+        in, nodeManager()->mkConst<bool>(true), tin);
     return PP_ASSERT_STATUS_SOLVED;
   }
 
   // the positive Boolean equality case is handled in the default way
   return Theory::ppAssert(tin, outSubstitutions);
-}
-
-TrustNode TheoryBool::ppRewrite(TNode n, std::vector<SkolemLemma>& lems)
-{
-  return TrustNode::null();
 }
 
 TheoryRewriter* TheoryBool::getTheoryRewriter() { return &d_rewriter; }

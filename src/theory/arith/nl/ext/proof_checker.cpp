@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Gereon Kremer, Andrew Reynolds, Andres Noetzli
+ *   Gereon Kremer, Andrew Reynolds, Hans-Joerg Schurr
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -26,23 +26,27 @@ namespace theory {
 namespace arith {
 namespace nl {
 
-void ExtProofRuleChecker::registerTo(ProofChecker* pc)
+ExtProofRuleChecker::ExtProofRuleChecker(NodeManager* nm) : ProofRuleChecker(nm)
 {
-  pc->registerChecker(PfRule::ARITH_MULT_SIGN, this);
-  pc->registerChecker(PfRule::ARITH_MULT_TANGENT, this);
 }
 
-Node ExtProofRuleChecker::checkInternal(PfRule id,
+void ExtProofRuleChecker::registerTo(ProofChecker* pc)
+{
+  pc->registerChecker(ProofRule::ARITH_MULT_SIGN, this);
+  pc->registerChecker(ProofRule::ARITH_MULT_TANGENT, this);
+}
+
+Node ExtProofRuleChecker::checkInternal(ProofRule id,
                                         const std::vector<Node>& children,
                                         const std::vector<Node>& args)
 {
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   Trace("nl-ext-checker") << "Checking " << id << std::endl;
   for (const auto& c : children)
   {
     Trace("nl-ext-checker") << "\t" << c << std::endl;
   }
-  if (id == PfRule::ARITH_MULT_SIGN)
+  if (id == ProofRule::ARITH_MULT_SIGN)
   {
     Assert(children.empty());
     Assert(args.size() > 1);
@@ -114,22 +118,21 @@ Node ExtProofRuleChecker::checkInternal(PfRule id,
       default: Assert(false); return Node();
     }
   }
-  else if (id == PfRule::ARITH_MULT_TANGENT)
+  else if (id == ProofRule::ARITH_MULT_TANGENT)
   {
     Assert(children.empty());
-    Assert(args.size() == 6);
+    Assert(args.size() == 5);
     Assert(args[0].getType().isRealOrInt());
     Assert(args[1].getType().isRealOrInt());
     Assert(args[2].getType().isRealOrInt());
     Assert(args[3].getType().isRealOrInt());
-    Assert(args[4].getType().isRealOrInt());
-    Assert(args[5].isConst() && args[5].getConst<Rational>().isIntegral());
-    Node t = args[0];
-    Node x = args[1];
-    Node y = args[2];
-    Node a = args[3];
-    Node b = args[4];
-    int sgn = args[5].getConst<Rational>().getNumerator().sgn();
+    Assert(args[4].isConst() && args[4].getConst<Rational>().isIntegral());
+    Node x = args[0];
+    Node y = args[1];
+    Node t = nm->mkNode(Kind::NONLINEAR_MULT, x, y);
+    Node a = args[2];
+    Node b = args[3];
+    int sgn = args[4].getConst<Rational>().getNumerator().sgn();
     Assert(sgn == -1 || sgn == 1);
     Node tplane = nm->mkNode(Kind::SUB,
                              nm->mkNode(Kind::ADD,

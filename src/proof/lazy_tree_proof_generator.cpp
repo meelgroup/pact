@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Gereon Kremer
+ *   Gereon Kremer, Andrew Reynolds, Hans-Joerg Schurr
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -44,7 +44,7 @@ void LazyTreeProofGenerator::closeChild()
 {
   Trace("proof-ltpg") << "closeChild() start" << std::endl
                       << *this << std::endl;
-  Assert(getCurrent().d_rule != PfRule::UNKNOWN);
+  Assert(getCurrent().d_rule != ProofRule::UNKNOWN);
   d_stack.pop_back();
   Trace("proof-ltpg") << "closeChild() end" << std::endl << *this << std::endl;
 }
@@ -54,7 +54,7 @@ detail::TreeProofNode& LazyTreeProofGenerator::getCurrent()
   return *d_stack.back();
 }
 void LazyTreeProofGenerator::setCurrent(size_t objectId,
-                                        PfRule rule,
+                                        ProofRule rule,
                                         const std::vector<Node>& premise,
                                         std::vector<Node> args,
                                         Node proven)
@@ -65,6 +65,19 @@ void LazyTreeProofGenerator::setCurrent(size_t objectId,
   pn.d_premise = premise;
   pn.d_args = args;
   pn.d_proven = proven;
+}
+
+void LazyTreeProofGenerator::setCurrentTrust(size_t objectId,
+                                             TrustId tid,
+                                             const std::vector<Node>& premise,
+                                             std::vector<Node> args,
+                                             Node proven)
+{
+  std::vector<Node> newArgs;
+  newArgs.push_back(mkTrustId(tid));
+  newArgs.push_back(proven);
+  newArgs.insert(newArgs.end(), args.begin(), args.end());
+  setCurrent(objectId, ProofRule::TRUST, premise, newArgs, proven);
 }
 std::shared_ptr<ProofNode> LazyTreeProofGenerator::getProof() const
 {
@@ -95,7 +108,7 @@ std::shared_ptr<ProofNode> LazyTreeProofGenerator::getProof(
   // Store scope size to reset scope afterwards
   std::size_t before = scope.size();
   std::vector<std::shared_ptr<ProofNode>> children;
-  if (pn.d_rule == PfRule::SCOPE)
+  if (pn.d_rule == ProofRule::SCOPE)
   {
     // Extend scope for all but the root node
     if (&pn != &d_proof)

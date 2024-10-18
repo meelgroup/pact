@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Haniel Barbosa, Dejan Jovanovic, Tim King
+ *   Haniel Barbosa, Dejan Jovanovic, Andrew Reynolds
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -159,7 +159,54 @@ class CnfStream : protected EnvObj
   /** Retrieves map from literals to nodes. */
   const CnfStream::LiteralToNodeMap& getNodeCache() const;
 
+  /**
+   * Dump dimacs of the given clauses to the given output stream.
+   * We use the identifiers for literals computed by this class. All literals
+   * in clauses should be assigned by this class already.
+   *
+   * @param out The output stream.
+   * @param clauses The clauses to print.
+   */
+  void dumpDimacs(std::ostream& out, const std::vector<Node>& clauses);
+  /**
+   * Same as above, but additionally prints the clauses in auxUnits as unit
+   * clauses, after clause. In particular, say
+   * we pass the following clauses to this method:
+   *
+   * (or ~(or A B) ~C)
+   * (or A B)
+   * C
+   *
+   * And the auxilary units:
+   *
+   * (or A B)
+   *
+   * Here, we would print the DIMACS:
+   *
+   * p cnf 4 4
+   * -1 -2 0
+   * 3 4 0
+   * 2 0
+   * 1 0
+   *
+   * Note that the copy of (or A B) in clauses is printed as "3 4 0" whereas
+   * the copy of (or A B) in auxUnits is printed as "1 0".
+   *
+   * @param out The output stream.
+   * @param clauses The clauses to print.
+   * @param auxUnits The auxiliary units that were appended to the end of the
+   * DIMACS, after clauses were printed.
+   */
+  void dumpDimacs(std::ostream& out,
+                  const std::vector<Node>& clauses,
+                  const std::vector<Node>& auxUnits);
+
  protected:
+  /** Helper function */
+  void dumpDimacsInternal(std::ostream& out,
+                          const std::vector<Node>& clauses,
+                          std::vector<Node>& auxUnits,
+                          bool printAuxUnits);
   /**
    * Same as above, except that uses the saved d_removable flag. It calls the
    * dedicated converter for the possible formula kinds.
@@ -310,7 +357,11 @@ class CnfStream : protected EnvObj
   {
     Statistics(StatisticsRegistry& sr, const std::string& name);
     TimerStat d_cnfConversionTime;
-  } d_stats;
+    /** Number of atoms */
+    IntStat d_numAtoms;
+  };
+  /** Statistics */
+  Statistics d_stats;
 
 }; /* class CnfStream */
 

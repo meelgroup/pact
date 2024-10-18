@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Clark Barrett, Gereon Kremer
+ *   Andrew Reynolds, Clark Barrett, Aina Niemetz
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -16,6 +16,9 @@
 
 #include "expr/dtype.h"
 #include "expr/dtype_cons.h"
+#include "expr/skolem_manager.h"
+#include "expr/sort_to_term.h"
+#include "expr/sort_type_size.h"
 #include "options/quantifiers_options.h"
 #include "options/smt_options.h"
 #include "options/strings_options.h"
@@ -131,8 +134,8 @@ bool TheoryEngineModelBuilder::isAssignerActive(TheoryModel* tm, Assigner& a)
 
 bool TheoryEngineModelBuilder::isAssignable(TNode n)
 {
-  if (n.getKind() == kind::SELECT || n.getKind() == kind::APPLY_SELECTOR
-      || n.getKind() == kind::SEQ_NTH)
+  if (n.getKind() == Kind::SELECT || n.getKind() == Kind::APPLY_SELECTOR
+      || n.getKind() == Kind::SEQ_NTH)
   {
     // selectors are always assignable (where we guarantee that they are not
     // evaluatable here)
@@ -147,7 +150,7 @@ bool TheoryEngineModelBuilder::isAssignable(TNode n)
       return !n.getType().isFunction();
     }
   }
-  else if (n.getKind() == kind::FLOATINGPOINT_COMPONENT_SIGN)
+  else if (n.getKind() == Kind::FLOATINGPOINT_COMPONENT_SIGN)
   {
     // Extracting the sign of a floating-point number acts similar to a
     // selector on a datatype, i.e. if `(sign x)` wasn't assigned a value, we
@@ -161,16 +164,16 @@ bool TheoryEngineModelBuilder::isAssignable(TNode n)
     if (!logicInfo().isHigherOrder())
     {
       // no functions exist, all functions are fully applied
-      Assert(n.getKind() != kind::HO_APPLY);
+      Assert(n.getKind() != Kind::HO_APPLY);
       Assert(!n.getType().isFunction());
-      return n.isVar() || n.getKind() == kind::APPLY_UF;
+      return n.isVar() || n.getKind() == Kind::APPLY_UF;
     }
     else
     {
-      // Assert( n.getKind() != kind::APPLY_UF );
+      // Assert( n.getKind() != Kind::APPLY_UF );
       return (n.isVar() && !n.getType().isFunction())
-             || n.getKind() == kind::APPLY_UF
-             || (n.getKind() == kind::HO_APPLY
+             || n.getKind() == Kind::APPLY_UF
+             || (n.getKind() == Kind::HO_APPLY
                  && n[0].getType().getNumChildren() == 2);
     }
   }
@@ -245,11 +248,11 @@ bool TheoryEngineModelBuilder::isCdtValueMatch(Node v, Node r)
     // distinct constant values do not match
     return false;
   }
-  else if (r.getKind() == kind::APPLY_CONSTRUCTOR)
+  else if (r.getKind() == Kind::APPLY_CONSTRUCTOR)
   {
-    if (v.getKind() != kind::APPLY_CONSTRUCTOR)
+    if (v.getKind() != Kind::APPLY_CONSTRUCTOR)
     {
-      Assert(v.getKind() == kind::CODATATYPE_BOUND_VARIABLE);
+      Assert(v.getKind() == Kind::CODATATYPE_BOUND_VARIABLE);
       // v is the position of a loop. It may be possible to match, we return
       // true, which is an over-approximation of when it is unsafe to use v.
       return true;
@@ -269,7 +272,7 @@ bool TheoryEngineModelBuilder::isCdtValueMatch(Node v, Node r)
     // operators do not match
     return false;
   }
-  else if (v.getKind() == kind::APPLY_CONSTRUCTOR)
+  else if (v.getKind() == Kind::APPLY_CONSTRUCTOR)
   {
     // v has a constructor in a position that we have yet to fill in r.
     // we are either a finite type in which case this subfield of r can be
@@ -1084,6 +1087,7 @@ bool TheoryEngineModelBuilder::buildModel(TheoryModel* tm)
     {
       Trace("model-builder") << "***Non-empty repSet, size = " << repSet.size()
                              << ", repSet = " << repSet << endl;
+      Trace("model-builder-debug") << tm->getEqualityEngine()->debugPrintEqc();
       Assert(false);
     }
   }
@@ -1094,24 +1098,31 @@ bool TheoryEngineModelBuilder::buildModel(TheoryModel* tm)
   std::map<Node, Node>::iterator itMap;
   for (itMap = d_constantReps.begin(); itMap != d_constantReps.end(); ++itMap)
   {
-    tm->d_reps[itMap->first] = itMap->second;
-    tm->d_rep_set.add(itMap->second.getType(), itMap->second);
+    // The "constant" representative is a model value, which may be a lambda
+    // if higher-order. We now can go back and normalize its subterms.
+    // This is necessary if we assigned a lambda value whose body contains
+    // a free constant symbol that was assigned in this method.
+    Node normc = itMap->second;
+    if (!normc.isConst())
+    {
+      normc = normalize(tm, normc, true);
+    }
+    // mark this as the final representative
+    tm->assignRepresentative(itMap->first, normc, true);
   }
 
   Trace("model-builder") << "Make sure ECs have reps..." << std::endl;
   // Make sure every EC has a rep
   for (itMap = assertedReps.begin(); itMap != assertedReps.end(); ++itMap)
   {
-    tm->d_reps[itMap->first] = itMap->second;
-    tm->d_rep_set.add(itMap->second.getType(), itMap->second);
+    tm->assignRepresentative(itMap->first, itMap->second, false);
   }
   for (it = typeNoRepSet.begin(); it != typeNoRepSet.end(); ++it)
   {
     set<Node>& noRepSet = TypeSet::getSet(it);
     for (const Node& node : noRepSet)
     {
-      tm->d_reps[node] = node;
-      tm->d_rep_set.add(node.getType(), node);
+      tm->assignRepresentative(node, node, false);
     }
   }
 
@@ -1205,7 +1216,13 @@ Node TheoryEngineModelBuilder::normalize(TheoryModel* m, TNode r, bool evalOnly)
   std::map<Node, Node>::iterator itMap = d_constantReps.find(r);
   if (itMap != d_constantReps.end())
   {
-    return (*itMap).second;
+    r = (*itMap).second;
+    // if d_constantReps stores a constant, we are done, otherwise we process
+    // it below.
+    if (r.isConst())
+    {
+      return r;
+    }
   }
   NodeMap::iterator it = d_normalizedCache.find(r);
   if (it != d_normalizedCache.end())
@@ -1235,7 +1252,8 @@ Node TheoryEngineModelBuilder::normalize(TheoryModel* m, TNode r, bool evalOnly)
           {
             ri = (*itMap).second;
             Trace("model-builder-debug") << i << ": const child " << ri << std::endl;
-            recurse = false;
+            // need to recurse if d_constantReps stores a non-constant
+            recurse = !ri.isConst();
           }
           else if (!evalOnly)
           {
@@ -1254,7 +1272,7 @@ Node TheoryEngineModelBuilder::normalize(TheoryModel* m, TNode r, bool evalOnly)
       }
       children.push_back(ri);
     }
-    retNode = NodeManager::currentNM()->mkNode(r.getKind(), children);
+    retNode = nodeManager()->mkNode(r.getKind(), children);
     retNode = rewrite(retNode);
   }
   d_normalizedCache[r] = retNode;
@@ -1279,6 +1297,8 @@ void TheoryEngineModelBuilder::assignFunction(TheoryModel* m, Node f)
 {
   Assert(!logicInfo().isHigherOrder());
   uf::UfModelTree ufmt(f);
+  options::DefaultFunctionValueMode dfvm =
+      options().theory.defaultFunctionValueMode;
   Node default_v;
   for (size_t i = 0; i < m->d_uf_terms[f].size(); i++)
   {
@@ -1294,17 +1314,29 @@ void TheoryEngineModelBuilder::assignFunction(TheoryModel* m, Node f)
       Assert(rewrite(rc) == rc);
       children.push_back(rc);
     }
-    Node simp = NodeManager::currentNM()->mkNode(un.getKind(), children);
+    Node simp = nodeManager()->mkNode(un.getKind(), children);
     Node v = m->getRepresentative(un);
     Trace("model-builder") << "  Setting (" << simp << ") to (" << v << ")"
                            << endl;
     ufmt.setValue(m, simp, v);
-    default_v = v;
+    if (dfvm == options::DefaultFunctionValueMode::FIRST)
+    {
+      default_v = v;
+    }
   }
-  if (default_v.isNull())
+  TypeNode rangeType = f.getType().getRangeType();
+  if (dfvm == options::DefaultFunctionValueMode::HOLE)
+  {
+    NodeManager* nm = NodeManager::currentNM();
+    SkolemManager* sm = nm->getSkolemManager();
+    std::vector<Node> cacheVals;
+    cacheVals.push_back(nm->mkConst(SortToTerm(rangeType)));
+    default_v = sm->mkSkolemFunction(SkolemId::GROUND_TERM, cacheVals);
+  }
+  else if (default_v.isNull())
   {
     // choose default value from model if none exists
-    TypeEnumerator te(f.getType().getRangeType());
+    TypeEnumerator te(rangeType);
     default_v = (*te);
   }
   ufmt.setDefaultValue(m, default_v);
@@ -1317,6 +1349,7 @@ void TheoryEngineModelBuilder::assignFunction(TheoryModel* m, Node f)
   ss << "_arg_";
   Rewriter* r = condenseFuncValues ? d_env.getRewriter() : nullptr;
   Node val = ufmt.getFunctionValue(ss.str(), r);
+  Trace("model-builder-debug") << "...assign via function" << std::endl;
   m->assignFunctionDefinition(f, val);
   // ufmt.debugPrint( std::cout, m );
 }
@@ -1328,19 +1361,41 @@ void TheoryEngineModelBuilder::assignHoFunction(TheoryModel* m, Node f)
   std::vector<TypeNode> argTypes = type.getArgTypes();
   std::vector<Node> args;
   std::vector<TNode> apply_args;
+  options::DefaultFunctionValueMode dfvm =
+      options().theory.defaultFunctionValueMode;
   for (unsigned i = 0; i < argTypes.size(); i++)
   {
-    Node v = NodeManager::currentNM()->mkBoundVar(argTypes[i]);
+    Node v = nodeManager()->mkBoundVar(argTypes[i]);
     args.push_back(v);
     if (i > 0)
     {
       apply_args.push_back(v);
     }
   }
-  // start with the base return value (currently we use the same default value
-  // for all functions)
-  TypeEnumerator te(type.getRangeType());
-  Node curr = (*te);
+  // Depending on the default value mode, maybe set the current value (curr).
+  // We also remember a default value (currPre) in case there are no terms
+  // to assign below.
+  TypeNode rangeType = type.getRangeType();
+  Node curr, currPre;
+  if (dfvm == options::DefaultFunctionValueMode::HOLE)
+  {
+    NodeManager* nm = NodeManager::currentNM();
+    SkolemManager* sm = nm->getSkolemManager();
+    std::vector<Node> cacheVals;
+    cacheVals.push_back(nm->mkConst(SortToTerm(rangeType)));
+    currPre = sm->mkSkolemFunction(SkolemId::GROUND_TERM, cacheVals);
+    curr = currPre;
+  }
+  else
+  {
+    TypeEnumerator te(rangeType);
+    currPre = (*te);
+    if (dfvm == options::DefaultFunctionValueMode::FIRST_ENUM)
+    {
+      curr = currPre;
+    }
+  }
+  curr = currPre;
   std::map<Node, std::vector<Node> >::iterator itht = m->d_ho_uf_terms.find(f);
   if (itht != m->d_ho_uf_terms.end())
   {
@@ -1348,23 +1403,24 @@ void TheoryEngineModelBuilder::assignHoFunction(TheoryModel* m, Node f)
     {
       Node hn = itht->second[i];
       Trace("model-builder-debug") << "    process : " << hn << std::endl;
-      Assert(hn.getKind() == kind::HO_APPLY);
+      Assert(hn.getKind() == Kind::HO_APPLY);
       Assert(m->areEqual(hn[0], f));
       Node hni = m->getRepresentative(hn[1]);
-      Trace("model-builder-debug2") << "      get rep : " << hn[0]
-                                    << " returned " << hni << std::endl;
+      Trace("model-builder-debug2")
+          << "      get rep : " << hn[1] << " returned " << hni << std::endl;
       Assert(hni.getType() == args[0].getType());
       hni = rewrite(args[0].eqNode(hni));
       Node hnv = m->getRepresentative(hn);
       Trace("model-builder-debug2") << "      get rep val : " << hn
                                     << " returned " << hnv << std::endl;
-      Assert(hnv.isConst());
+      // hnv is expected to be constant but may not be the case if e.g. a non-trivial
+      // lambda is given as argument to this function.
       if (!apply_args.empty())
       {
         // Convert to lambda, which is necessary if hnv is a function array
         // constant.
         hnv = uf::FunctionConst::toLambda(hnv);
-        Assert(!hnv.isNull() && hnv.getKind() == kind::LAMBDA
+        Assert(!hnv.isNull() && hnv.getKind() == Kind::LAMBDA
                && hnv[0].getNumChildren() + 1 == args.size());
         std::vector<TNode> largs;
         for (unsigned j = 0; j < hnv[0].getNumChildren(); j++)
@@ -1377,67 +1433,26 @@ void TheoryEngineModelBuilder::assignHoFunction(TheoryModel* m, Node f)
         hnv = rewrite(hnv);
       }
       Assert(hnv.getType() == curr.getType());
-      curr = NodeManager::currentNM()->mkNode(kind::ITE, hni, hnv, curr);
+      if (curr.isNull())
+      {
+        curr = hnv;
+      }
+      else
+      {
+        curr = nodeManager()->mkNode(Kind::ITE, hni, hnv, curr);
+      }
     }
   }
-  Node val = NodeManager::currentNM()->mkNode(
-      kind::LAMBDA,
-      NodeManager::currentNM()->mkNode(kind::BOUND_VAR_LIST, args),
-      curr);
+  // if curr was not set, we set it to currPre.
+  if (curr.isNull())
+  {
+    curr = currPre;
+  }
+  Node val = nodeManager()->mkNode(
+      Kind::LAMBDA, nodeManager()->mkNode(Kind::BOUND_VAR_LIST, args), curr);
+  Trace("model-builder-debug") << "...assign via ho function" << std::endl;
   m->assignFunctionDefinition(f, val);
 }
-
-// This struct is used to sort terms by the "size" of their type
-//   The size of the type is the number of nodes in the type, for example
-//  size of Int is 1
-//  size of Function( Int, Int ) is 3
-//  size of Function( Function( Bool, Int ), Int ) is 5
-struct sortTypeSize
-{
-  // stores the size of the type
-  std::map<TypeNode, unsigned> d_type_size;
-  // get the size of type tn
-  unsigned getTypeSize(TypeNode tn)
-  {
-    std::map<TypeNode, unsigned>::iterator it = d_type_size.find(tn);
-    if (it != d_type_size.end())
-    {
-      return it->second;
-    }
-    else
-    {
-      unsigned sum = 1;
-      for (unsigned i = 0; i < tn.getNumChildren(); i++)
-      {
-        sum += getTypeSize(tn[i]);
-      }
-      d_type_size[tn] = sum;
-      return sum;
-    }
-  }
-
- public:
-  // compares the type size of i and j
-  // returns true iff the size of i is less than that of j
-  // tiebreaks are determined by node value
-  bool operator()(Node i, Node j)
-  {
-    int si = getTypeSize(i.getType());
-    int sj = getTypeSize(j.getType());
-    if (si < sj)
-    {
-      return true;
-    }
-    else if (si == sj)
-    {
-      return i < j;
-    }
-    else
-    {
-      return false;
-    }
-  }
-};
 
 void TheoryEngineModelBuilder::assignFunctions(TheoryModel* m)
 {
@@ -1452,7 +1467,7 @@ void TheoryEngineModelBuilder::assignFunctions(TheoryModel* m)
   {
     // sort based on type size if higher-order
     Trace("model-builder") << "Sort functions by type..." << std::endl;
-    sortTypeSize sts;
+    SortTypeSize sts;
     std::sort(funcs_to_assign.begin(), funcs_to_assign.end(), sts);
   }
 
@@ -1473,8 +1488,6 @@ void TheoryEngineModelBuilder::assignFunctions(TheoryModel* m)
   {
     Node f = funcs_to_assign[k];
     Trace("model-builder") << "  Function #" << k << " is " << f << std::endl;
-    // std::map< Node, std::vector< Node > >::iterator itht =
-    // m->d_ho_uf_terms.find( f );
     if (!logicInfo().isHigherOrder())
     {
       Trace("model-builder") << "  Assign function value for " << f

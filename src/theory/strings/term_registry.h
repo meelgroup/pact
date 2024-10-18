@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -65,6 +65,11 @@ class TermRegistry : protected EnvObj
   uint32_t getAlphabetCardinality() const;
   /** Finish initialize, which sets the inference manager */
   void finishInit(InferenceManager* im);
+  /**
+   * Return a TrustNode of kind LEMMA that provides the eager reduction lemma
+   * for t, or the null trust node if it does not exist.
+   */
+  TrustNode eagerReduceTrusted(const Node& t);
   /** The eager reduce routine
    *
    * Constructs a lemma for t that is incomplete, but communicates pertinent
@@ -138,7 +143,7 @@ class TermRegistry : protected EnvObj
    * If the status is LENGTH_SPLIT, we send a send a lemma of the form:
    *   ( n = "" ^ len( n ) = 0 ) OR len( n ) > 0
    * This method also ensures that, when applicable, the left branch is taken
-   * first via calls to requirePhase.
+   * first via calls to preferPhase.
    *
    * If the status is LENGTH_IGNORE, then no lemma is sent. This status is used
    * e.g. when the length of n is already implied by other constraints.
@@ -227,7 +232,7 @@ class TermRegistry : protected EnvObj
   Node mkNConcat(Node n1, Node n2, Node n3) const;
 
   /**
-   * Returns the rewritten form of the concatentation from vector c of
+   * Returns the rewritten form of the concatenation from vector c of
    * (string-like) type tn.
    */
   Node mkNConcat(const std::vector<Node>& c, TypeNode tn) const;

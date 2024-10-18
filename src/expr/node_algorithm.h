@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Andres Noetzli, Yoni Zohar
+ *   Andrew Reynolds, Andres Noetzli, Abdalrhman Mohamed
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -79,6 +79,11 @@ bool hasBoundVar(TNode n);
 /**
  * Returns true iff the node n contains a free variable, that is, a node
  * of kind BOUND_VARIABLE that is not bound in n.
+ *
+ * NOTE: this method should only be called on terms that do not have shadowing,
+ * which is the case if n is rewritten. Otherwise, an assertion failure is
+ * thrown in debug builds.
+ *
  * @param n The node under investigation
  * @return true iff this node contains a free variable.
  */
@@ -106,6 +111,10 @@ bool hasClosure(Node n);
 /**
  * Get the free variables in n, that is, the subterms of n of kind
  * BOUND_VARIABLE that are not bound in n, adds these to fvs.
+ *
+ * NOTE: this method should only be called on terms that do not have shadowing,
+ * which is the case if n is rewritten.
+ *
  * @param n The node under investigation
  * @param fvs The set which free variables are added to
  * @return true iff this node contains a free variable.
@@ -136,7 +145,17 @@ bool hasFreeVariablesScope(TNode n, std::unordered_set<TNode>& scope);
  * @param vs The set which free variables are added to
  * @return true iff this node contains a free variable.
  */
-bool getVariables(TNode n, std::unordered_set<TNode>& vs);
+bool getVariables(TNode n, std::unordered_set<Node>& vs);
+/**
+ * Get all variables in n.
+ * @param n The node under investigation
+ * @param vs The set which free variables are added to
+ * @param visited A cache of nodes we have already visited
+ * @return true iff this node contains a free variable.
+ */
+bool getVariables(TNode n,
+                  std::unordered_set<Node>& vs,
+                  std::unordered_set<TNode>& visited);
 
 /**
  * For term n, this function collects the symbols that occur as a subterms
@@ -243,6 +262,13 @@ bool isBooleanConnective(TNode cur);
 
 /** Is n a theory atom? */
 bool isTheoryAtom(TNode cur);
+
+/**
+ * Returns true iff the node n contains a subterm with abstract type.
+ * @param n The node under investigation
+ * @return true iff this node contains a subterm with abstract type
+ */
+bool hasAbstractSubterm(TNode n);
 
 }  // namespace expr
 }  // namespace cvc5::internal

@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -80,8 +80,8 @@ void EqualityEngine::init() {
   // to ensure that true/false could never be removed. However, this assertion
   // restricts our ability to construct equality engines in nested contexts.
 
-  d_true = NodeManager::currentNM()->mkConst<bool>(true);
-  d_false = NodeManager::currentNM()->mkConst<bool>(false);
+  d_true = nodeManager()->mkConst<bool>(true);
+  d_false = nodeManager()->mkConst<bool>(false);
 
   d_triggerDatabaseAllocatedSize = 100000;
   d_triggerDatabase = (char*) malloc(d_triggerDatabaseAllocatedSize);
@@ -286,7 +286,7 @@ void EqualityEngine::addFunctionKind(Kind fun,
                                      bool extOperator)
 {
   d_congruenceKinds.set(fun);
-  if (fun != kind::EQUAL)
+  if (fun != Kind::EQUAL)
   {
     if (interpreted)
     {
@@ -334,7 +334,7 @@ void EqualityEngine::addTermInternal(TNode t, bool isOperator) {
   EqualityNodeId result;
 
   Kind tk = t.getKind();
-  if (tk == kind::EQUAL)
+  if (tk == Kind::EQUAL)
   {
     addTermInternal(t[0]);
     addTermInternal(t[1]);
@@ -382,7 +382,7 @@ void EqualityEngine::addTermInternal(TNode t, bool isOperator) {
     d_isConstant[result] = !isOperator && t.isConst();
   }
 
-  if (tk == kind::EQUAL)
+  if (tk == Kind::EQUAL)
   {
     // We set this here as this only applies to actual terms, not the
     // intermediate application terms
@@ -482,7 +482,7 @@ bool EqualityEngine::assertPredicate(TNode t,
                                      unsigned pid)
 {
   Trace("equality") << d_name << "::eq::addPredicate(" << t << "," << (polarity ? "true" : "false") << ")" << std::endl;
-  Assert(t.getKind() != kind::EQUAL) << "Use assertEquality instead";
+  Assert(t.getKind() != Kind::EQUAL) << "Use assertEquality instead";
   TNode b = polarity ? d_true : d_false;
   if (hasTerm(t) && areEqual(t, b))
   {
@@ -572,7 +572,9 @@ bool EqualityEngine::assertEquality(TNode eq,
             storePropagatedDisequality(aTag, aSharedId, bSharedId);
             // Notify
             Trace("equality::trigger") << d_name << "::eq::addEquality(" << eq << "," << (polarity ? "true" : "false") << ": notifying " << aTag << " for " << d_nodes[aSharedId] << " != " << d_nodes[bSharedId] << std::endl;
-            if (!d_notify->eqNotifyTriggerTermEquality(aTag, d_nodes[aSharedId], d_nodes[bSharedId], false)) {
+            if (!notifyTriggerTermEquality(
+                    aTag, d_nodes[aSharedId], d_nodes[bSharedId], false))
+            {
               break;
             }
           }
@@ -804,7 +806,7 @@ bool EqualityEngine::merge(EqualityNode& class1, EqualityNode& class2, std::vect
               class1triggers.d_triggers[i1++];
           // since they are both tagged notify of merge
           EqualityNodeId tag2id = class2triggers.d_triggers[i2++];
-          if (!d_notify->eqNotifyTriggerTermEquality(
+          if (!notifyTriggerTermEquality(
                   tag1, d_nodes[tag1id], d_nodes[tag2id], true))
           {
             return false;
@@ -1024,8 +1026,8 @@ void EqualityEngine::buildEqConclusion(EqualityNodeId id1,
   // have the same congruence n-ary non-APPLY_* kind, since the internal nodes
   // may be full nodes.
   if ((d_isInternal[id1] || d_isInternal[id2])
-      && (k1 != k2 || k1 == kind::APPLY_UF || k1 == kind::APPLY_CONSTRUCTOR
-          || k1 == kind::APPLY_SELECTOR || k1 == kind::APPLY_TESTER
+      && (k1 != k2 || k1 == Kind::APPLY_UF || k1 == Kind::APPLY_CONSTRUCTOR
+          || k1 == Kind::APPLY_SELECTOR || k1 == Kind::APPLY_TESTER
           || !NodeManager::isNAryKind(k1)))
   {
     return;
@@ -1035,7 +1037,7 @@ void EqualityEngine::buildEqConclusion(EqualityNodeId id1,
   Trace("equality") << "buildEqConclusion: {" << id2 << "} " << d_nodes[id2]
                     << "\n";
   Node eq[2];
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   for (unsigned i = 0; i < 2; ++i)
   {
     EqualityNodeId equalityNodeId = i == 0 ? id1 : id2;
@@ -1209,7 +1211,7 @@ void EqualityEngine::explainEquality(TNode t1, TNode t2, bool polarity,
         Trace("pf::ee") << "Simplifying " << cnode << " from " << eqp->d_node
                         << std::endl;
         bool simpTrans = true;
-        if (cnode.getKind() == kind::EQUAL)
+        if (cnode.getKind() == Kind::EQUAL)
         {
           // It may be the case that we have a proof of x = c2 and we want to
           // conclude x != c1. If this is the case, below we construct:
@@ -1275,14 +1277,15 @@ void EqualityEngine::explainPredicate(TNode p, bool polarity,
       getNodeId(p), polarity ? d_trueId : d_falseId, assertions, cache, eqp);
 }
 
-void EqualityEngine::explainLit(TNode lit, std::vector<TNode>& assumptions)
+void EqualityEngine::explainLit(TNode lit,
+                                std::vector<TNode>& assumptions) const
 {
   Trace("eq-exp") << "explainLit: " << lit << std::endl;
-  Assert(lit.getKind() != kind::AND);
-  bool polarity = lit.getKind() != kind::NOT;
+  Assert(lit.getKind() != Kind::AND);
+  bool polarity = lit.getKind() != Kind::NOT;
   TNode atom = polarity ? lit : lit[0];
   std::vector<TNode> tassumptions;
-  if (atom.getKind() == kind::EQUAL)
+  if (atom.getKind() == Kind::EQUAL)
   {
     Assert(hasTerm(atom[0]));
     Assert(hasTerm(atom[1]));
@@ -1314,15 +1317,15 @@ void EqualityEngine::explainLit(TNode lit, std::vector<TNode>& assumptions)
   }
 }
 
-Node EqualityEngine::mkExplainLit(TNode lit)
+Node EqualityEngine::mkExplainLit(TNode lit) const
 {
-  Assert(lit.getKind() != kind::AND);
+  Assert(lit.getKind() != Kind::AND);
   std::vector<TNode> assumptions;
   explainLit(lit, assumptions);
   Node ret;
   if (assumptions.empty())
   {
-    ret = NodeManager::currentNM()->mkConst(true);
+    ret = nodeManager()->mkConst(true);
   }
   else if (assumptions.size() == 1)
   {
@@ -1330,7 +1333,7 @@ Node EqualityEngine::mkExplainLit(TNode lit)
   }
   else
   {
-    ret = NodeManager::currentNM()->mkNode(kind::AND, assumptions);
+    ret = nodeManager()->mkNode(Kind::AND, assumptions);
   }
   return ret;
 }
@@ -1420,7 +1423,7 @@ void EqualityEngine::getExplanation(
       }
       else
       {
-        Assert(d_nodes[t1Id].getKind() != kind::BUILTIN);
+        Assert(d_nodes[t1Id].getKind() != Kind::BUILTIN);
         eqp->d_node = d_nodes[t1Id].eqNode(d_nodes[t1Id]);
       }
     }
@@ -1543,7 +1546,7 @@ void EqualityEngine::getExplanation(
                 }
                 else
                 {
-                  Assert(k == kind::EQUAL)
+                  Assert(k == Kind::EQUAL)
                       << "not an internal node " << d_nodes[currentNode]
                       << " with non-congruence with " << k << "\n";
                 }
@@ -1648,11 +1651,16 @@ void EqualityEngine::getExplanation(
                 } else {
                   // The LFSC translator prefers (not (= a b)) over (= (= a b) false)
 
-                  if (a == NodeManager::currentNM()->mkConst(false)) {
+                  if (a == nodeManager()->mkConst(false))
+                  {
                     eqpc->d_node = b.notNode();
-                  } else if (b == NodeManager::currentNM()->mkConst(false)) {
+                  }
+                  else if (b == nodeManager()->mkConst(false))
+                  {
                     eqpc->d_node = a.notNode();
-                  } else {
+                  }
+                  else
+                  {
                     eqpc->d_node = b.eqNode(a);
                   }
                 }
@@ -1719,7 +1727,7 @@ void EqualityEngine::getExplanation(
 }
 
 void EqualityEngine::addTriggerEquality(TNode eq) {
-  Assert(eq.getKind() == kind::EQUAL);
+  Assert(eq.getKind() == Kind::EQUAL);
 
   if (d_done) {
     return;
@@ -1755,8 +1763,8 @@ void EqualityEngine::addTriggerEquality(TNode eq) {
 }
 
 void EqualityEngine::addTriggerPredicate(TNode predicate) {
-  Assert(predicate.getKind() != kind::NOT);
-  if (predicate.getKind() == kind::EQUAL)
+  Assert(predicate.getKind() != Kind::NOT);
+  if (predicate.getKind() == Kind::EQUAL)
   {
     // equality is handled separately
     return addTriggerEquality(predicate);
@@ -2011,7 +2019,7 @@ void EqualityEngine::propagate() {
     {
       for (size_t trigger_i = 0, trigger_end = triggers.size(); trigger_i < trigger_end && !d_done; ++ trigger_i) {
         const TriggerInfo& triggerInfo = d_equalityTriggersOriginal[triggers[trigger_i]];
-        if (triggerInfo.d_trigger.getKind() == kind::EQUAL)
+        if (triggerInfo.d_trigger.getKind() == Kind::EQUAL)
         {
           // Special treatment for disequalities
           if (!triggerInfo.d_polarity)
@@ -2095,7 +2103,7 @@ std::string EqualityEngine::debugPrintEqc() const
     ss << "Eqc( " << eqc << " ) : { ";
     while (!eqc2_i.isFinished())
     {
-      if ((*eqc2_i) != eqc && (*eqc2_i).getKind() != kind::EQUAL)
+      if ((*eqc2_i) != eqc && (*eqc2_i).getKind() != Kind::EQUAL)
       {
         ss << (*eqc2_i) << " ";
       }
@@ -2241,8 +2249,7 @@ void EqualityEngine::addTriggerTerm(TNode t, TheoryId tag)
         << "): already have this trigger in class with " << d_nodes[triggerId]
         << std::endl;
     if (eqNodeId != triggerId
-        && !d_notify->eqNotifyTriggerTermEquality(
-               tag, t, d_nodes[triggerId], true))
+        && !notifyTriggerTermEquality(tag, t, d_nodes[triggerId], true))
     {
       d_done = true;
     }
@@ -2338,32 +2345,6 @@ void EqualityEngine::storeApplicationLookup(FunctionApplication& funNormalized, 
     {
       enqueue(MergeCandidate(funId, d_falseId, MERGED_THROUGH_CONSTANTS, TNode::null()));
     }
-  }
-}
-
-void EqualityEngine::getUseListTerms(TNode t, std::set<TNode>& output) {
-  if (hasTerm(t)) {
-    // Get the equivalence class
-    EqualityNodeId classId = getEqualityNode(t).getFind();
-    // Go through the equivalence class and get where t is used in
-    EqualityNodeId currentId = classId;
-    do {
-      // Get the current node
-      EqualityNode& currentNode = getEqualityNode(currentId);
-      // Go through the use-list
-      UseListNodeId currentUseId = currentNode.getUseList();
-      while (currentUseId != null_uselist_id) {
-        // Get the node of the use list
-        UseListNode& useNode = d_useListNodes[currentUseId];
-        // Get the function application
-        EqualityNodeId funId = useNode.getApplicationId();
-        output.insert(d_nodes[funId]);
-        // Go to the next one in the use list
-        currentUseId = useNode.getNext();
-      }
-      // Move to the next node
-      currentId = currentNode.getNext();
-    } while (currentId != classId);
   }
 }
 
@@ -2624,7 +2605,7 @@ bool EqualityEngine::propagateTriggerTermDisequalities(
         // Store the propagation
         storePropagatedDisequality(currentTag, myRep, tagRep);
         // Notify
-        if (!d_notify->eqNotifyTriggerTermEquality(
+        if (!notifyTriggerTermEquality(
                 currentTag, d_nodes[myRep], d_nodes[tagRep], false))
         {
           d_done = true;

@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andres Noetzli, Mathias Preiner, Aina Niemetz
+ *   Aina Niemetz, Andres Noetzli, Mathias Preiner
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -26,7 +26,7 @@
 namespace cvc5::internal {
 namespace kind {
 
-enum Kind_t
+enum class Kind_t
 {
   UNDEFINED_KIND = -1, /**< undefined */
   NULL_EXPR,           /**< Null kind */
@@ -71,9 +71,15 @@ std::ostream& operator<<(std::ostream&, cvc5::internal::Kind);
 bool isAssociative(cvc5::internal::Kind k);
 std::string kindToString(cvc5::internal::Kind k);
 
+/** Return true if k is a closure kind. */
+bool isClosureKind(cvc5::internal::Kind k);
+
 struct KindHashFunction
 {
-  inline size_t operator()(cvc5::internal::Kind k) const { return k; }
+  inline size_t operator()(cvc5::internal::Kind k) const
+  {
+    return static_cast<size_t>(k);
+  }
 }; /* struct KindHashFunction */
 
 }  // namespace kind

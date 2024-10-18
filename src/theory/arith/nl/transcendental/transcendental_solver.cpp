@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Gereon Kremer, Mathias Preiner
+ *   Andrew Reynolds, Gereon Kremer, Aina Niemetz
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -22,7 +22,6 @@
 #include "expr/node_builder.h"
 #include "options/arith_options.h"
 #include "theory/arith/arith_msum.h"
-#include "theory/arith/arith_state.h"
 #include "theory/arith/arith_subs.h"
 #include "theory/arith/arith_utilities.h"
 #include "theory/arith/inference_manager.h"
@@ -39,7 +38,7 @@ namespace nl {
 namespace transcendental {
 
 TranscendentalSolver::TranscendentalSolver(Env& env,
-                                           ArithState& state,
+                                           TheoryState& state,
                                            InferenceManager& im,
                                            NlModel& m)
     : EnvObj(env),
@@ -220,7 +219,7 @@ void TranscendentalSolver::checkTranscendentalTangentPlanes()
        d_tstate.d_funcMap)
   {
     Kind k = tfs.first;
-    if (k == PI)
+    if (k == Kind::PI)
     {
       // We do not use Taylor approximation for PI currently.
       // This is because the convergence is extremely slow, and hence an
@@ -259,7 +258,7 @@ void TranscendentalSolver::checkTranscendentalTangentPlanes()
 
 bool TranscendentalSolver::checkTfTangentPlanesFun(Node tf, unsigned d)
 {
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   Kind k = tf.getKind();
   // this should only be run on purified applications
   Assert(d_tstate.isPurified(tf));
@@ -342,7 +341,7 @@ bool TranscendentalSolver::checkTfTangentPlanesFun(Node tf, unsigned d)
                         << std::endl;
 
       Assert(v_pab.isConst());
-      Node comp = nm->mkNode(r == 0 ? LT : GT, v, v_pab);
+      Node comp = nm->mkNode(r == 0 ? Kind::LT : Kind::GT, v, v_pab);
       Trace("nl-trans") << "...compare : " << comp << std::endl;
       Node compr = rewrite(comp);
       Trace("nl-trans") << "...got : " << compr << std::endl;
@@ -411,7 +410,7 @@ bool TranscendentalSolver::checkTfTangentPlanesFun(Node tf, unsigned d)
   }
   else if (is_secant)
   {
-    if (k == EXPONENTIAL)
+    if (k == Kind::EXPONENTIAL)
     {
       d_expSlv.doSecantLemmas(tf, poly_approx, c, poly_approx_c, d, actual_d);
     }
@@ -426,14 +425,14 @@ bool TranscendentalSolver::checkTfTangentPlanesFun(Node tf, unsigned d)
 
 int TranscendentalSolver::regionToConcavity(Kind k, int region)
 {
-  if (k == EXPONENTIAL)
+  if (k == Kind::EXPONENTIAL)
   {
     if (region == 1)
     {
       return 1;
     }
   }
-  else if (k == SINE)
+  else if (k == Kind::SINE)
   {
     if (region == 1 || region == 2)
     {
@@ -462,7 +461,7 @@ void TranscendentalSolver::postProcessModel(std::map<Node, Node>& arithModel,
       continue;
     }
     // it might have an exact value, in which case there is nothing to do
-    if (k == SINE && d_sineSlv.hasExactModelValue(n))
+    if (k == Kind::SINE && d_sineSlv.hasExactModelValue(n))
     {
       continue;
     }
@@ -488,7 +487,7 @@ void TranscendentalSolver::postProcessModel(std::map<Node, Node>& arithModel,
     if (d_tstate.d_trPurifyVars.find(am.first) != d_tstate.d_trPurifyVars.end())
     {
       Trace("nl-ext") << "...keep model value for purification variable "
-                      << am.first << std::endl;
+                      << am.first << " (" << am.second << ")" << std::endl;
       continue;
     }
     Node r = d_astate.getRepresentative(am.first);

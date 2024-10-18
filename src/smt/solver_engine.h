@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -45,10 +45,12 @@ class NodeTemplate;
 typedef NodeTemplate<true> Node;
 typedef NodeTemplate<false> TNode;
 class TypeNode;
+class ProofNode;
 
 class Env;
 class UnsatCore;
 class StatisticsRegistry;
+class Plugin;
 class Printer;
 class ResourceManager;
 struct InstantiationList;
@@ -59,7 +61,6 @@ namespace smt {
 /** Utilities */
 class ContextManager;
 class SolverEngineState;
-class AbstractValues;
 class ResourceOutListener;
 class CheckModels;
 /** Subsolvers */
@@ -69,6 +70,7 @@ class SygusSolver;
 class AbductionSolver;
 class InterpolationSolver;
 class QuantElimSolver;
+class FindSynthSolver;
 
 struct SolverEngineStatistics;
 class PfManager;
@@ -126,7 +128,9 @@ class CVC5_EXPORT SolverEngine
    */
   bool isFullyInited() const;
   /**
-   * Return true if a checkSatisfiability() has been made.
+   * @return True if a call to check-sat or check-synth has been made and
+   * completed. Other calls (e.g., get-interpolant, get-abduct, get-qe) do not
+   * impact this, since they are handled independently via subsolvers.
    */
   bool isQueryMade() const;
   /** Return the user context level.  */
@@ -154,15 +158,12 @@ class CVC5_EXPORT SolverEngine
 
   /**
    * Set the logic of the script.
-   * @throw ModalException, LogicException
-   */
-  void setLogic(const char* logic);
-
-  /**
-   * Set the logic of the script.
    * @throw ModalException
    */
   void setLogic(const LogicInfo& logic);
+
+  /** Has the logic been set by a call to setLogic? */
+  bool isLogicSet() const;
 
   /** Get the logic information currently set. */
   const LogicInfo& getLogicInfo() const;
@@ -183,9 +184,15 @@ class CVC5_EXPORT SolverEngine
 
   /**
    * Set an aspect of the current SMT execution environment.
+   * @param key The option to set
+   * @param value The value to set
+   * @param fromUser Whether this option was set by the user. This impacts
+   * whether we enable checks e.g. when --safe-options is enabled.
    * @throw OptionException, ModalException
    */
-  void setOption(const std::string& key, const std::string& value);
+  void setOption(const std::string& key,
+                 const std::string& value,
+                 bool fromUser = false);
 
   /** Set is internal subsolver.
    *
@@ -256,6 +263,15 @@ class CVC5_EXPORT SolverEngine
    */
   std::string getOption(const std::string& key) const;
 
+  /**
+   * Notify that a declare-fun or declare-const was made for n. This only
+   * impacts the SMT mode.
+   */
+  void declareConst(const Node& n);
+  /**
+   * Notify that a declare-sort was made for tn. This only impacts the SMT mode.
+   */
+  void declareSort(const TypeNode& tn);
   /**
    * Define function func in the current context to be:
    *   (lambda (formals) formula)
@@ -329,6 +345,15 @@ class CVC5_EXPORT SolverEngine
   Result checkSat(const Node& assumption);
   Result checkSat(const std::vector<Node>& assumptions);
 
+  /**
+   * Get a timeout core, which computes a subset of the current assertions that
+   * cause a timeout. Note it does not require being proceeded by a call to
+   * checkSat. For details, see Solver::getTimeoutCore.
+   *
+   * @return The result of the timeout core computation.
+   */
+  std::pair<Result, std::vector<Node>> getTimeoutCore(
+      const std::vector<Node>& assumptions);
   /**
    * Returns a set of so-called "failed" assumptions.
    *
@@ -430,6 +455,14 @@ class CVC5_EXPORT SolverEngine
    * @throw Exception
    */
   SynthResult checkSynth(bool isNext = false);
+  /**
+   * Find synth for the given target and grammar.
+   */
+  Node findSynth(modes::FindSynthTarget fst, const TypeNode& gtn);
+  /**
+   * Find synth for the given target and grammar.
+   */
+  Node findSynthNext();
 
   /*------------------------- end of sygus commands ------------------------*/
 
@@ -455,17 +488,23 @@ class CVC5_EXPORT SolverEngine
   void declareOracleFun(
       Node var, std::function<std::vector<Node>(const std::vector<Node>&)> fn);
   /**
-   * Simplify a formula without doing "much" work.  Does not involve
-   * the SAT Engine in the simplification, but uses the current
-   * definitions, assertions, and the current partial model, if one
-   * has been constructed.  It also involves theory normalization.
+   * Adds plugin to the theory engine of this solver engine.
    *
-   * @throw TypeCheckingException, LogicException
-   *
-   * @todo (design) is this meant to give an equivalent or an
-   * equisatisfiable formula?
+   * @param p The plugin to add.
    */
-  Node simplify(const Node& e);
+  void addPlugin(Plugin* p);
+  /**
+   * Simplify a term or formula based on rewriting and (optionally) applying
+   * substitutions for solved variables.
+   *
+   * If applySubs is true, then for example, if `(= x 0)` was asserted to this
+   * solver, this method may replace occurrences of `x` with `0`.
+   *
+   * @param t The term to simplify.
+   * @param applySubs Whether to apply substitutions for solved variables.
+   * @return The simplified term.
+   */
+  Node simplify(const Node& e, bool applySubs);
 
   /**
    * Get the assigned value of an expr (only if immediately preceded by a SAT
@@ -511,13 +550,6 @@ class CVC5_EXPORT SolverEngine
    * (list, num, etc.) is determined by printInstMode.
    */
   void printInstantiations(std::ostream& out);
-  /**
-   * Print the current proof. This method should be called after an UNSAT
-   * response. It gets the proof of false from the PropEngine and passes
-   * it to the ProofManager, which post-processes the proof and prints it
-   * in the proper format.
-   */
-  void printProof();
 
   /**
    * Get synth solution.
@@ -681,12 +713,20 @@ class CVC5_EXPORT SolverEngine
    */
   UnsatCore getUnsatCore();
 
+  /** Get the lemmas used to derive UNSAT. Only permitted if cvc5 was built with
+   * unsat cores support and produce-unsat-core-lemmas is on. */
+  std::vector<Node> getUnsatCoreLemmas();
+
   /**
    * Get a refutation proof (only if immediately preceded by an UNSAT query).
    * Only permitted if cvc5 was built with proof support and the proof option
    * is on.
    */
-  std::string getProof(modes::ProofComponent c = modes::PROOF_COMPONENT_FULL);
+  std::vector<std::shared_ptr<ProofNode>> getProof(
+      modes::ProofComponent c = modes::ProofComponent::FULL);
+
+  // TODO: this goes away after proof printing went into ProofNode
+  void proofToString(std::ostream& out, std::shared_ptr<ProofNode> fp);
 
   /**
    * Get the current set of assertions.  Only permitted if the
@@ -847,6 +887,24 @@ class CVC5_EXPORT SolverEngine
   SolverEngine(const SolverEngine&) = delete;
   SolverEngine& operator=(const SolverEngine&) = delete;
 
+  /**
+   * Begin call, which is called before any method that requires initializing
+   * this solver engine and make the state of the internal solver current.
+   *
+   * In particular, this ensures the solver is initialized, the pending pops
+   * on the context are processed, and optionally calls the resource manager
+   * to reset its limits (ResourceManager::beginCall).
+   *
+   * @param needsRLlimit If true, then beginCall() is called on the resource
+   * manager maintained by this class.
+   */
+  void beginCall(bool needsRLlimit = false);
+  /**
+   * End call. Should follow after a call to beginCall where needsRLlimit
+   * was true.
+   */
+  void endCall();
+
   /** Set solver instance that owns this SolverEngine. */
   void setSolver(cvc5::Solver* solver) { d_solver = solver; }
 
@@ -870,8 +928,8 @@ class CVC5_EXPORT SolverEngine
   void assertFormulaInternal(const Node& formula);
 
   /**
-   * Check that a generated proof checks. This method is the same as printProof,
-   * but does not print the proof. Like that method, it should be called
+   * Check that a generated proof checks. This method is the same as getProof,
+   * but does not return the proof. Like that method, it should be called
    * after an UNSAT response. It ensures that a well-formed proof of false
    * can be constructed by the combination of the PropEngine and ProofManager.
    */
@@ -885,6 +943,8 @@ class CVC5_EXPORT SolverEngine
   /**
    * Check that a generated Model (via getModel()) actually satisfies
    * all user assertions.
+   * @param hardFailure True have a failed model check should result in an
+   *                    InternalError rather than only issue a warning.
    */
   void checkModel(bool hardFailure = true);
 
@@ -919,6 +979,12 @@ class CVC5_EXPORT SolverEngine
    * this method was called.
    */
   theory::TheoryModel* getAvailableModel(const char* c) const;
+  /**
+   * Get the available proof, which is that of the prop engine if SAT
+   * proof producing, or else a dummy proof SAT_REFUTATION whose assumptions
+   * are the preprocessed input formulas.
+   */
+  std::shared_ptr<ProofNode> getAvailableSatProof();
   /**
    * Get available quantifiers engine, which throws a modal exception if it
    * does not exist. This can happen if a quantifiers-specific call (e.g.
@@ -975,6 +1041,14 @@ class CVC5_EXPORT SolverEngine
   const Options& options() const;
 
   /**
+   * Return true if the given term is a valid closed term, which can be used as
+   * an argument to, e.g., assert, get-value, block-model-values, etc.
+   *
+   * @param n The node to check
+   * @return true if n is a well formed term.
+   */
+  bool isWellFormedTerm(const Node& n) const;
+  /**
    * Check that the given term is a valid closed term, which can be used as an
    * argument to, e.g., assert, get-value, block-model-values, etc.
    *
@@ -986,6 +1060,15 @@ class CVC5_EXPORT SolverEngine
   /** Vector version of above. */
   void ensureWellFormedTerms(const std::vector<Node>& ns,
                              const std::string& src) const;
+
+  /**
+   * Prints a proof node using a proof format of choice.
+   */
+  void printProof(std::ostream& out,
+                  std::shared_ptr<ProofNode> fp,
+                  modes::ProofFormat proofFormat,
+                  const std::map<Node, std::string>& assertionNames);
+
   /* Members -------------------------------------------------------------- */
 
   /** Solver instance that owns this SolverEngine instance. */
@@ -1007,8 +1090,6 @@ class CVC5_EXPORT SolverEngine
    */
   std::unique_ptr<smt::ContextManager> d_ctxManager;
 
-  /** Abstract values */
-  std::unique_ptr<smt::AbstractValues> d_absValues;
   /** Resource out listener */
   std::unique_ptr<smt::ResourceOutListener> d_routListener;
 
@@ -1035,6 +1116,8 @@ class CVC5_EXPORT SolverEngine
 
   /** The solver for sygus queries */
   std::unique_ptr<smt::SygusSolver> d_sygusSolver;
+  /** The solver for find-synth queries */
+  std::unique_ptr<smt::FindSynthSolver> d_findSynthSolver;
 
   /** The solver for abduction queries */
   std::unique_ptr<smt::AbductionSolver> d_abductSolver;
@@ -1048,6 +1131,17 @@ class CVC5_EXPORT SolverEngine
    * logic, lives in the Env class.
    */
   LogicInfo d_userLogic;
+  /** Has the above logic been initialized? */
+  bool d_userLogicSet;
+
+  /** Have we set a regular option yet? (for --safe-options) */
+  bool d_safeOptsSetRegularOption;
+  /** The regular option we set (for --safe-options) */
+  std::string d_safeOptsRegularOption;
+  /** The value of the regular option we set (for --safe-options) */
+  std::string d_safeOptsRegularOptionValue;
+  /** Was the option already the default setting */
+  bool d_safeOptsSetRegularOptionToDefault;
 
   /** Whether this is an internal subsolver. */
   bool d_isInternalSubsolver;

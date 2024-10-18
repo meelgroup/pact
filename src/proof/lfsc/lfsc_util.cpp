@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Mathias Preiner, Andres Noetzli
+ *   Andrew Reynolds, Hans-Joerg Schurr, Mathias Preiner
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -69,19 +69,18 @@ LfscRule getLfscRule(Node n)
   return lr;
 }
 
-Node mkLfscRuleNode(LfscRule r)
+Node mkLfscRuleNode(NodeManager* nm, LfscRule r)
 {
-  return NodeManager::currentNM()->mkConstInt(
-      Rational(static_cast<uint32_t>(r)));
+  return nm->mkConstInt(Rational(static_cast<uint32_t>(r)));
 }
 
 bool LfscProofLetifyTraverseCallback::shouldTraverse(const ProofNode* pn)
 {
-  if (pn->getRule() == PfRule::SCOPE)
+  if (pn->getRule() == ProofRule::SCOPE)
   {
     return false;
   }
-  if (pn->getRule() != PfRule::LFSC_RULE)
+  if (pn->getRule() != ProofRule::LFSC_RULE)
   {
     return true;
   }

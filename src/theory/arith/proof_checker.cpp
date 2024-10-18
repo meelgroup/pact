@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Alex Ozdemir, Gereon Kremer, Andrew Reynolds
+ *   Alex Ozdemir, Andrew Reynolds, Gereon Kremer
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -23,6 +23,7 @@
 #include "theory/arith/arith_utilities.h"
 #include "theory/arith/linear/constraint.h"
 #include "theory/arith/operator_elim.h"
+#include "util/bitvector.h"
 
 using namespace cvc5::internal::kind;
 
@@ -30,27 +31,45 @@ namespace cvc5::internal {
 namespace theory {
 namespace arith {
 
-void ArithProofRuleChecker::registerTo(ProofChecker* pc)
+ArithProofRuleChecker::ArithProofRuleChecker(NodeManager* nm)
+    : ProofRuleChecker(nm),
+      d_extChecker(nm),
+      d_trChecker(nm)
+#ifdef CVC5_POLY_IMP
+      ,
+      d_covChecker(nm)
+#endif
 {
-  pc->registerChecker(PfRule::MACRO_ARITH_SCALE_SUM_UB, this);
-  pc->registerChecker(PfRule::ARITH_SUM_UB, this);
-  pc->registerChecker(PfRule::ARITH_TRICHOTOMY, this);
-  pc->registerChecker(PfRule::INT_TIGHT_UB, this);
-  pc->registerChecker(PfRule::INT_TIGHT_LB, this);
-  pc->registerChecker(PfRule::ARITH_OP_ELIM_AXIOM, this);
-  pc->registerChecker(PfRule::ARITH_MULT_POS, this);
-  pc->registerChecker(PfRule::ARITH_MULT_NEG, this);
-  pc->registerChecker(PfRule::ARITH_POLY_NORM, this);
 }
 
-Node ArithProofRuleChecker::checkInternal(PfRule id,
+void ArithProofRuleChecker::registerTo(ProofChecker* pc)
+{
+  pc->registerChecker(ProofRule::MACRO_ARITH_SCALE_SUM_UB, this);
+  pc->registerChecker(ProofRule::ARITH_SUM_UB, this);
+  pc->registerChecker(ProofRule::ARITH_TRICHOTOMY, this);
+  pc->registerChecker(ProofRule::INT_TIGHT_UB, this);
+  pc->registerChecker(ProofRule::INT_TIGHT_LB, this);
+  pc->registerChecker(ProofRule::ARITH_OP_ELIM_AXIOM, this);
+  pc->registerChecker(ProofRule::ARITH_MULT_POS, this);
+  pc->registerChecker(ProofRule::ARITH_MULT_NEG, this);
+  pc->registerChecker(ProofRule::ARITH_POLY_NORM, this);
+  pc->registerChecker(ProofRule::ARITH_POLY_NORM_REL, this);
+  // register the extended proof checkers
+  d_extChecker.registerTo(pc);
+  d_trChecker.registerTo(pc);
+#ifdef CVC5_POLY_IMP
+  d_covChecker.registerTo(pc);
+#endif
+}
+
+Node ArithProofRuleChecker::checkInternal(ProofRule id,
                                           const std::vector<Node>& children,
                                           const std::vector<Node>& args)
 {
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   if (TraceIsOn("arith::pf::check"))
   {
-    Trace("arith::pf::check") << "Arith PfRule:" << id << std::endl;
+    Trace("arith::pf::check") << "Arith ProofRule:" << id << std::endl;
     Trace("arith::pf::check") << "  children: " << std::endl;
     for (const auto& c : children)
     {
@@ -64,7 +83,7 @@ Node ArithProofRuleChecker::checkInternal(PfRule id,
   }
   switch (id)
   {
-    case PfRule::ARITH_MULT_POS:
+    case ProofRule::ARITH_MULT_POS:
     {
       Assert(children.empty());
       Assert(args.size() == 2);
@@ -74,7 +93,7 @@ Node ArithProofRuleChecker::checkInternal(PfRule id,
              || rel == Kind::LEQ || rel == Kind::GT || rel == Kind::GEQ);
       Node lhs = args[1][0];
       Node rhs = args[1][1];
-      Node zero = nm->mkConstInt(Rational(0));
+      Node zero = nm->mkConstRealOrInt(mult.getType(), Rational(0));
       return nm->mkNode(Kind::IMPLIES,
                         nm->mkAnd(std::vector<Node>{
                             nm->mkNode(Kind::GT, mult, zero), args[1]}),
@@ -82,7 +101,7 @@ Node ArithProofRuleChecker::checkInternal(PfRule id,
                                    nm->mkNode(Kind::MULT, mult, lhs),
                                    nm->mkNode(Kind::MULT, mult, rhs)));
     }
-    case PfRule::ARITH_MULT_NEG:
+    case ProofRule::ARITH_MULT_NEG:
     {
       Assert(children.empty());
       Assert(args.size() == 2);
@@ -93,7 +112,7 @@ Node ArithProofRuleChecker::checkInternal(PfRule id,
       Kind rel_inv = (rel == Kind::DISTINCT ? rel : reverseRelationKind(rel));
       Node lhs = args[1][0];
       Node rhs = args[1][1];
-      Node zero = nm->mkConstInt(Rational(0));
+      Node zero = nm->mkConstRealOrInt(mult.getType(), Rational(0));
       return nm->mkNode(Kind::IMPLIES,
                         nm->mkAnd(std::vector<Node>{
                             nm->mkNode(Kind::LT, mult, zero), args[1]}),
@@ -101,7 +120,7 @@ Node ArithProofRuleChecker::checkInternal(PfRule id,
                                    nm->mkNode(Kind::MULT, mult, lhs),
                                    nm->mkNode(Kind::MULT, mult, rhs)));
     }
-    case PfRule::ARITH_SUM_UB:
+    case ProofRule::ARITH_SUM_UB:
     {
       if (children.size() < 2)
       {
@@ -142,7 +161,7 @@ Node ArithProofRuleChecker::checkInternal(PfRule id,
                           rightSum.constructNode());
       return r;
     }
-    case PfRule::MACRO_ARITH_SCALE_SUM_UB:
+    case ProofRule::MACRO_ARITH_SCALE_SUM_UB:
     {
       //================================================= Arithmetic rules
       // ======== Adding Inequalities
@@ -206,6 +225,23 @@ Node ArithProofRuleChecker::checkInternal(PfRule id,
                 << "Bad kind: " << children[i].getKind() << std::endl;
           }
         }
+        // check for spurious mixed arithmetic
+        if (children[i][0].getType().isReal()
+            || children[i][1].getType().isReal())
+        {
+          if (args[i].getType().isInteger())
+          {
+            // Should use real for predicates over reals. This is only
+            // necessary for avoiding spurious usage of mixed arithmetic, but we
+            // check here to be pedantic.
+            return Node::null();
+          }
+        }
+        else if (args[i].getType().isReal() && scalar.isIntegral())
+        {
+          // conversely, don't use (integral) real for integer relation.
+          return Node::null();
+        }
         // Check sign
         switch (children[i].getKind())
         {
@@ -243,15 +279,24 @@ Node ArithProofRuleChecker::checkInternal(PfRule id,
                 << "Bad kind: " << children[i].getKind() << std::endl;
           }
         }
-        leftSum << nm->mkNode(Kind::MULT, args[i], children[i][0]);
-        rightSum << nm->mkNode(Kind::MULT, args[i], children[i][1]);
+        // if multiplying by one, don't introduce MULT
+        if (scalar == 1)
+        {
+          leftSum << children[i][0];
+          rightSum << children[i][1];
+        }
+        else
+        {
+          leftSum << nm->mkNode(Kind::MULT, args[i], children[i][0]);
+          rightSum << nm->mkNode(Kind::MULT, args[i], children[i][1]);
+        }
       }
       Node r = nm->mkNode(strict ? Kind::LT : Kind::LEQ,
                           leftSum.constructNode(),
                           rightSum.constructNode());
       return r;
     }
-    case PfRule::INT_TIGHT_LB:
+    case ProofRule::INT_TIGHT_LB:
     {
       // Children: (P:(> i c))
       //         where i has integer type.
@@ -271,10 +316,10 @@ Node ArithProofRuleChecker::checkInternal(PfRule id,
         Rational originalBound = children[0][1].getConst<Rational>();
         Rational newBound = leastIntGreaterThan(originalBound);
         Node rational = nm->mkConstInt(newBound);
-        return nm->mkNode(kind::GEQ, children[0][0], rational);
+        return nm->mkNode(Kind::GEQ, children[0][0], rational);
       }
     }
-    case PfRule::INT_TIGHT_UB:
+    case ProofRule::INT_TIGHT_UB:
     {
       // ======== Tightening Strict Integer Upper Bounds
       // Children: (P:(< i c))
@@ -295,36 +340,44 @@ Node ArithProofRuleChecker::checkInternal(PfRule id,
         Rational originalBound = children[0][1].getConst<Rational>();
         Rational newBound = greatestIntLessThan(originalBound);
         Node rational = nm->mkConstInt(newBound);
-        return nm->mkNode(kind::LEQ, children[0][0], rational);
+        return nm->mkNode(Kind::LEQ, children[0][0], rational);
       }
     }
-    case PfRule::ARITH_TRICHOTOMY:
+    case ProofRule::ARITH_TRICHOTOMY:
     {
       Node a = negateProofLiteral(children[0]);
       Node b = negateProofLiteral(children[1]);
-      Node c = args[0];
-      if (a[0] == b[0] && b[0] == c[0] && a[1] == b[1] && b[1] == c[1])
+      if (a[0] == b[0] && a[1] == b[1])
       {
         std::set<Kind> cmps;
         cmps.insert(a.getKind());
         cmps.insert(b.getKind());
-        cmps.insert(c.getKind());
+        Kind retk = Kind::UNDEFINED_KIND;
         if (cmps.count(Kind::EQUAL) == 0)
         {
-          Trace("arith::pf::check") << "Error: No = " << std::endl;
-          return Node::null();
+          retk = Kind::EQUAL;
         }
         if (cmps.count(Kind::GT) == 0)
         {
-          Trace("arith::pf::check") << "Error: No > " << std::endl;
-          return Node::null();
+          if (retk != Kind::UNDEFINED_KIND)
+          {
+            Trace("arith::pf::check")
+                << "Error: No GT and " << retk << std::endl;
+            return Node::null();
+          }
+          retk = Kind::GT;
         }
         if (cmps.count(Kind::LT) == 0)
         {
-          Trace("arith::pf::check") << "Error: No < " << std::endl;
-          return Node::null();
+          if (retk != Kind::UNDEFINED_KIND)
+          {
+            Trace("arith::pf::check")
+                << "Error: No LT and " << retk << std::endl;
+            return Node::null();
+          }
+          retk = Kind::LT;
         }
-        return args[0];
+        return nm->mkNode(retk, a[0], a[1]);
       }
       else
       {
@@ -332,22 +385,21 @@ Node ArithProofRuleChecker::checkInternal(PfRule id,
             << "Error: Different polynomials / values" << std::endl;
         Trace("arith::pf::check") << "  a: " << a << std::endl;
         Trace("arith::pf::check") << "  b: " << b << std::endl;
-        Trace("arith::pf::check") << "  c: " << c << std::endl;
         return Node::null();
       }
       // Check that all have the same constant:
     }
-    case PfRule::ARITH_OP_ELIM_AXIOM:
+    case ProofRule::ARITH_OP_ELIM_AXIOM:
     {
       Assert(children.empty());
       Assert(args.size() == 1);
       return OperatorElim::getAxiomFor(args[0]);
     }
-    case PfRule::ARITH_POLY_NORM:
+    case ProofRule::ARITH_POLY_NORM:
     {
       Assert(children.empty());
       Assert(args.size() == 1);
-      if (args[0].getKind() != kind::EQUAL)
+      if (args[0].getKind() != Kind::EQUAL)
       {
         return Node::null();
       }
@@ -356,6 +408,66 @@ Node ArithProofRuleChecker::checkInternal(PfRule id,
         return Node::null();
       }
       return args[0];
+    }
+    case ProofRule::ARITH_POLY_NORM_REL:
+    {
+      Assert(children.size() == 1);
+      Assert(args.size() == 1);
+      Kind k;
+      if (!getKind(args[0], k)
+          || (k != Kind::LT && k != Kind::LEQ && k != Kind::EQUAL
+              && k != Kind::GT && k != Kind::GEQ))
+      {
+        return Node::null();
+      }
+      if (children[0].getKind() != Kind::EQUAL)
+      {
+        return Node::null();
+      }
+      Node l = children[0][0];
+      Node r = children[0][1];
+      if ((l.getKind() != Kind::MULT && l.getKind() != Kind::BITVECTOR_MULT)
+          || (r.getKind() != Kind::MULT && r.getKind() != Kind::BITVECTOR_MULT))
+      {
+        return Node::null();
+      }
+      Node lr = l[1];
+      Node rr = r[1];
+      if ((lr.getKind() != Kind::SUB && lr.getKind() != Kind::BITVECTOR_SUB)
+          || (rr.getKind() != Kind::SUB && rr.getKind() != Kind::BITVECTOR_SUB))
+      {
+        return Node::null();
+      }
+      Node cx = l[0];
+      Node x1 = lr[0];
+      Node x2 = lr[1];
+      Node cy = r[0];
+      Node y1 = rr[0];
+      Node y2 = rr[1];
+      if ((cx.getKind() == Kind::CONST_INTEGER
+           || cx.getKind() == Kind::CONST_RATIONAL)
+          && (cy.getKind() == Kind::CONST_INTEGER
+              || cy.getKind() == Kind::CONST_RATIONAL))
+      {
+        Rational c1 = cx.getConst<Rational>();
+        Rational c2 = cy.getConst<Rational>();
+        if (k != Kind::EQUAL && c1.sgn() != c2.sgn())
+        {
+          return Node::null();
+        }
+      }
+      if (cx.getKind() == Kind::CONST_BITVECTOR
+          && cy.getKind() == Kind::CONST_BITVECTOR)
+      {
+        BitVector c1 = cx.getConst<BitVector>();
+        BitVector c2 = cy.getConst<BitVector>();
+        BitVector one = BitVector::mkOne(c1.getSize());
+        if (c1 != one || c2 != one)
+        {
+          return Node::null();
+        }
+      }
+      return nm->mkNode(k, x1, x2).eqNode(nm->mkNode(k, y1, y2));
     }
     default: return Node::null();
   }

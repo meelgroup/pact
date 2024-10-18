@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -43,6 +43,13 @@ void SolverEngineState::notifyExpectedStatus(const std::string& status)
   d_expectedStatus = Result(status, options().driver.filename);
   Assert(d_expectedStatus.getStatus() != Result::NONE);
 }
+
+void SolverEngineState::notifyDeclaration()
+{
+  // go to ASSERT
+  d_smtMode = SmtMode::ASSERT;
+}
+
 void SolverEngineState::notifyCheckSat()
 {
   // process the pending pops
@@ -54,13 +61,14 @@ void SolverEngineState::notifyCheckSat()
         "(try --incremental)");
   }
 
-  // Note that a query has been made and we are in assert mode
-  d_queryMade = true;
+  // Note we are in assert mode
   d_smtMode = SmtMode::ASSERT;
 }
 
 void SolverEngineState::notifyCheckSatResult(const Result& r)
 {
+  // Note that a query has been made
+  d_queryMade = true;
   // Remember the status
   d_status = r;
   // Check against expected status, if it is set
@@ -70,8 +78,9 @@ void SolverEngineState::notifyCheckSatResult(const Result& r)
     if (!d_expectedStatus.isUnknown() && !d_status.isUnknown()
         && d_status != d_expectedStatus)
     {
-      CVC5_FATAL() << "Expected result " << d_expectedStatus << " but got "
-                   << d_status;
+      std::stringstream ss;
+      ss << "Expected result " << d_expectedStatus << " but got " << d_status;
+      throw Exception(ss.str());
     }
   }
   // clear expected status
@@ -87,9 +96,10 @@ void SolverEngineState::notifyCheckSatResult(const Result& r)
 
 void SolverEngineState::notifyCheckSynthResult(const SynthResult& r)
 {
+  d_queryMade = true;
   if (r.getStatus() == SynthResult::SOLUTION)
   {
-    // successfully generated a synthesis solution, update to abduct state
+    // successfully generated a synthesis solution, update to synth state
     d_smtMode = SmtMode::SYNTH;
   }
   else
@@ -119,6 +129,19 @@ void SolverEngineState::notifyGetInterpol(bool success)
   {
     // successfully generated an interpolant, update to interpol state
     d_smtMode = SmtMode::INTERPOL;
+  }
+  else
+  {
+    // failed, we revert to the assert state
+    d_smtMode = SmtMode::ASSERT;
+  }
+}
+
+void SolverEngineState::notifyFindSynth(bool success)
+{
+  if (success)
+  {
+    d_smtMode = SmtMode::FIND_SYNTH;
   }
   else
   {

@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Gereon Kremer, Yoni Zohar, Aina Niemetz
+ *   Gereon Kremer, Yoni Zohar, Andrew Reynolds
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -29,6 +29,9 @@ namespace nl {
 /** The possible inference steps for the nonlinear extension */
 enum class InferStep
 {
+  /** Placeholder specifying no inference step */
+  NONE,
+
   /** Break if any lemma is pending */
   BREAK,
   /** Flush waiting lemmas to be pending */
@@ -88,6 +91,9 @@ enum class InferStep
   TRANS_MONOTONIC,
   /** Tangent planes from transcendental solver */
   TRANS_TANGENT_PLANES,
+
+  /** The inference step is unknown */
+  UNKNOWN
 };
 
 /** Streaming operator for InferStep */

@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -20,9 +20,9 @@
 #include "options/arith_options.h"
 #include "options/base_options.h"
 #include "options/bv_options.h"
+#include "options/ff_options.h"
 #include "options/quantifiers_options.h"
 #include "options/sep_options.h"
-#include "options/counting_options.h"
 #include "options/smt_options.h"
 #include "options/strings_options.h"
 #include "options/uf_options.h"
@@ -57,7 +57,7 @@ class ScopeCounter
 ProcessAssertions::ProcessAssertions(Env& env, SolverEngineStatistics& stats)
     : EnvObj(env), d_slvStats(stats), d_preprocessingPassContext(nullptr)
 {
-  d_true = NodeManager::currentNM()->mkConst(true);
+  d_true = nodeManager()->mkConst(true);
 }
 
 ProcessAssertions::~ProcessAssertions()
@@ -113,15 +113,7 @@ bool ProcessAssertions::apply(AssertionPipeline& ap)
     return true;
   }
 
-  // this must be applied to assertions before they are preprocessed, so that
-  // we do not synthesize rewrite rules for internally generated symbols.
-  if (options().quantifiers.sygusRewSynthInput)
-  {
-    // do candidate rewrite rule synthesis
-    applyPass("synth-rr", ap);
-  }
-
-  if (options().bv.bvGaussElim) //TODO (AS) || options().counting.hashsm == options::HashingMode::BV
+  if (options().bv.bvGaussElim)
   {
     applyPass("bv-gauss", ap);
   }
@@ -231,6 +223,13 @@ bool ProcessAssertions::apply(AssertionPipeline& ap)
     {
       applyPass("fun-def-fmf", ap);
     }
+    if (options().quantifiers.preSkolemQuant
+        != options::PreSkolemQuantMode::OFF)
+    {
+      // needed since quantifier preprocessing may introduce skolems that were
+      // solved for already
+      applyPass("apply-substs", ap);
+    }
   }
   if (!options().strings.stringLazyPreproc)
   {
@@ -250,7 +249,7 @@ bool ProcessAssertions::apply(AssertionPipeline& ap)
   }
 
   // rephrasing normal inputs as sygus problems
-  if (options().quantifiers.sygusInference)
+  if (options().quantifiers.sygusInference != options::SygusInferenceMode::OFF)
   {
     applyPass("sygus-infer", ap);
   }
@@ -323,10 +322,28 @@ bool ProcessAssertions::apply(AssertionPipeline& ap)
                << endl;
   Trace("smt") << " assertions     : " << ap.size() << endl;
 
+  // ff
+  if (options().ff.ffElimDisjunctiveBit)
+  {
+    applyPass("ff-disjunctive-bit", ap);
+  }
+  if (options().ff.ffBitsum || options().ff.ffSolver == options::FfSolver::SPLIT_GB)
+  {
+    applyPass("ff-bitsum", ap);
+  }
+
   // ensure rewritten
   applyPass("rewrite", ap);
-  // rewrite equalities based on theory-specific rewriting
-  applyPass("theory-rewrite-eq", ap);
+
+  // Note the two passes below are very similar. Ideally, they could be
+  // done in a single traversal, e.g. do both static (ppStaticRewrite) and
+  // normal (ppRewrite) in one pass. However, we do theory-preprocess
+  // separately since it is cached in TheoryPreprocessor, which is subsequently
+  // used for theory preprocessing lemmas as well, whereas a combined
+  // pass could not be used for this purpose.
+
+  // rewrite terms based on static theory-specific rewriting
+  applyPass("static-rewrite", ap);
   // apply theory preprocess, which includes ITE removal
   applyPass("theory-preprocess", ap);
   // notice that we do not apply substitutions as a last step here, since
@@ -454,7 +471,7 @@ void ProcessAssertions::dumpAssertions(const std::string& key,
 void ProcessAssertions::dumpAssertionsToStream(std::ostream& os,
                                                const AssertionPipeline& ap)
 {
-  PrintBenchmark pb(Printer::getPrinter(os));
+  PrintBenchmark pb(nodeManager(), Printer::getPrinter(os));
   std::vector<Node> assertions;
   // Notice that users may define ordinary and recursive functions. The latter
   // get added to the list of assertions as quantified formulas. Since we are
@@ -489,7 +506,16 @@ PreprocessingPassResult ProcessAssertions::applyPass(const std::string& pname,
                                                      AssertionPipeline& ap)
 {
   dumpAssertions("assertions::pre-" + pname, ap);
-  PreprocessingPassResult res = d_passes[pname]->apply(&ap);
+  PreprocessingPassResult res;
+  // note we do not apply preprocessing passes if we are already in conflict
+  if (!ap.isInConflict())
+  {
+    res = d_passes[pname]->apply(&ap);
+  }
+  else
+  {
+    res = PreprocessingPassResult::CONFLICT;
+  }
   dumpAssertions("assertions::post-" + pname, ap);
   return res;
 }

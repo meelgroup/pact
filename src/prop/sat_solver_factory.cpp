@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Mathias Preiner, Aina Niemetz, Gereon Kremer
+ *   Aina Niemetz, Mathias Preiner, Andrew Reynolds
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -15,7 +15,6 @@
 
 #include "prop/sat_solver_factory.h"
 
-#include "prop/approxmc.h"
 #include "prop/cadical.h"
 #include "prop/cryptominisat.h"
 #include "prop/kissat.h"
@@ -48,29 +47,24 @@ SatSolver* SatSolverFactory::createCryptoMinisat(StatisticsRegistry& registry,
 #endif
 }
 
-SatSolver* SatSolverFactory::createApproxmc(StatisticsRegistry& registry,
-                                            ResourceManager* resmgr,
-                                            const std::string& name)
+CDCLTSatSolver* SatSolverFactory::createCadical(Env& env,
+                                                StatisticsRegistry& registry,
+                                                ResourceManager* resmgr,
+                                                const std::string& name)
 {
-#ifdef CVC5_USE_APPROXMC
-  ApproxMCounter* res = new ApproxMCounter(registry, name);
+  CadicalSolver* res = new CadicalSolver(env, registry, name);
   res->init();
-  if (resmgr->limitOn())
-  {
-    std::cout << "Skip Limiting time for ApproxMC [TODO?]" << std::endl;
-  }
+  res->setResourceLimit(resmgr);
   return res;
-#else
-  Unreachable() << "cvc5 was not compiled with ApproxMC support.";
-#endif
 }
 
-SatSolver* SatSolverFactory::createCadical(StatisticsRegistry& registry,
-                                           ResourceManager* resmgr,
-                                           const std::string& name)
+CDCLTSatSolver* SatSolverFactory::createCadicalCDCLT(
+    Env& env,
+    StatisticsRegistry& registry,
+    ResourceManager* resmgr,
+    const std::string& name)
 {
-  CadicalSolver* res = new CadicalSolver(registry, name);
-  res->init();
+  CadicalSolver* res = new CadicalSolver(env, registry, name);
   res->setResourceLimit(resmgr);
   return res;
 }

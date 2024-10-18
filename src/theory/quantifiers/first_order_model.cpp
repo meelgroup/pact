@@ -1,10 +1,10 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Andres Noetzli, Mathias Preiner
+ *   Andrew Reynolds, Aina Niemetz, Andres Noetzli
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -48,6 +48,7 @@ FirstOrderModel::FirstOrderModel(Env& env,
                                  TermRegistry& tr)
     : EnvObj(env),
       d_model(nullptr),
+      d_qstate(qs),
       d_qreg(qr),
       d_treg(tr),
       d_eq_query(env, qs, this),
@@ -89,10 +90,13 @@ Node FirstOrderModel::getInternalRepresentative(Node a, Node q, size_t index)
 }
 
 void FirstOrderModel::assertQuantifier( Node n ){
-  if( n.getKind()==FORALL ){
+  if (n.getKind() == Kind::FORALL)
+  {
     d_forall_asserts.push_back( n );
-  }else if( n.getKind()==NOT ){
-    Assert(n[0].getKind() == FORALL);
+  }
+  else if (n.getKind() == Kind::NOT)
+  {
+    Assert(n[0].getKind() == Kind::FORALL);
   }
 }
 
@@ -280,7 +284,9 @@ bool FirstOrderModel::isQuantifierActive(TNode q) const
 
 bool FirstOrderModel::isQuantifierAsserted(TNode q) const
 {
-  return std::find( d_forall_asserts.begin(), d_forall_asserts.end(), q )!=d_forall_asserts.end();
+  // check if asserted true
+  Node qr = d_qstate.getValuation().getSatValue(q);
+  return qr.isConst() && qr.getConst<bool>();
 }
 
 Node FirstOrderModel::getModelBasisTerm(TypeNode tn)
@@ -332,7 +338,7 @@ Node FirstOrderModel::getModelBasisOpTerm(Node op)
     else
     {
       d_model_basis_op_term[op] =
-          NodeManager::currentNM()->mkNode(APPLY_UF, children);
+          nodeManager()->mkNode(Kind::APPLY_UF, children);
     }
   }
   return d_model_basis_op_term[op];
@@ -357,7 +363,7 @@ void FirstOrderModel::computeModelBasisArgAttribute(Node n)
   if (!n.hasAttribute(ModelBasisArgAttribute()))
   {
     // ensure that the model basis terms have been defined
-    if (n.getKind() == APPLY_UF)
+    if (n.getKind() == Kind::APPLY_UF)
     {
       getModelBasisOpTerm(n.getOperator());
     }

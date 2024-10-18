@@ -4,7 +4,7 @@
  *
  * This file is part of the cvc5 project.
  *
- * Copyright (c) 2009-2022 by the authors listed in the file AUTHORS
+ * Copyright (c) 2009-2024 by the authors listed in the file AUTHORS
  * in the top-level source directory and their institutional affiliations.
  * All rights reserved.  See the file COPYING in the top-level source
  * directory for licensing information.
@@ -42,17 +42,9 @@ CoveringsSolver::CoveringsSolver(Env& env, InferenceManager& im, NlModel& model)
       d_model(model),
       d_eqsubs(env)
 {
-  NodeManager* nm = NodeManager::currentNM();
+  NodeManager* nm = nodeManager();
   SkolemManager* sm = nm->getSkolemManager();
   d_ranVariable = sm->mkDummySkolem("__z", nm->realType(), "");
-#ifdef CVC5_POLY_IMP
-  if (env.isTheoryProofProducing())
-  {
-    ProofChecker* pc = env.getProofNodeManager()->getChecker();
-    // add checkers
-    d_proofChecker.registerTo(pc);
-  }
-#endif
 }
 
 CoveringsSolver::~CoveringsSolver() {}
@@ -75,10 +67,11 @@ void CoveringsSolver::initLastCall(const std::vector<Node>& assertions)
     std::vector<Node> processed = d_eqsubs.eliminateEqualities(assertions);
     if (d_eqsubs.hasConflict())
     {
-        Node lem = NodeManager::currentNM()->mkAnd(d_eqsubs.getConflict()).negate();
-        d_im.addPendingLemma(lem, InferenceId::ARITH_NL_COVERING_CONFLICT, nullptr);
-        Trace("nl-cov") << "Found conflict: " << lem << std::endl;
-        return;
+      Node lem = nodeManager()->mkAnd(d_eqsubs.getConflict()).negate();
+      d_im.addPendingLemma(
+          lem, InferenceId::ARITH_NL_COVERING_CONFLICT, nullptr);
+      Trace("nl-cov") << "Found conflict: " << lem << std::endl;
+      return;
     }
     if (TraceIsOn("nl-cov"))
     {
@@ -138,7 +131,7 @@ void CoveringsSolver::checkFull()
     Trace("nl-cov") << "UNSAT with MIS: " << mis << std::endl;
     d_eqsubs.postprocessConflict(mis);
     Trace("nl-cov") << "After postprocessing: " << mis << std::endl;
-    Node lem = NodeManager::currentNM()->mkAnd(mis).notNode();
+    Node lem = nodeManager()->mkAnd(mis).notNode();
     ProofGenerator* proof = d_CAC.closeProof(mis);
     d_im.addPendingLemma(lem, InferenceId::ARITH_NL_COVERING_CONFLICT, proof);
   }
@@ -164,7 +157,7 @@ void CoveringsSolver::checkPartial()
   }
   else
   {
-    auto* nm = NodeManager::currentNM();
+    auto* nm = nodeManager();
     Node first_var =
         d_CAC.getConstraints().varMapper()(d_CAC.getVariableOrdering()[0]);
     for (const auto& interval : covering)
@@ -260,8 +253,7 @@ void CoveringsSolver::addToModel(TNode var, TNode value) const
     else if (svalue.getKind() == Kind::CONST_RATIONAL)
     {
       Assert(svalue.getConst<Rational>().isIntegral());
-      svalue =
-          NodeManager::currentNM()->mkConstInt(svalue.getConst<Rational>());
+      svalue = nodeManager()->mkConstInt(svalue.getConst<Rational>());
     }
   }
   Trace("nl-cov") << "-> " << var << " = " << svalue << std::endl;
