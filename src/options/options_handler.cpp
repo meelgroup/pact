@@ -410,7 +410,7 @@ void OptionsHandler::showTraceTags(const std::string& flag, bool value)
   printTags(Configuration::getTraceTags());
 }
 
-void OptionsHandler::strictParsing(const std::string& flag, bool value) -
+void OptionsHandler::strictParsing(const std::string& flag, bool value)
 {
   if (value)
   {

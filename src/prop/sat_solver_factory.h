@@ -48,7 +48,9 @@ class SatSolverFactory
   static SatSolver* createCryptoMinisat(StatisticsRegistry& registry,
                                         ResourceManager* resmgr,
                                         const std::string& name = "");
-
+  static SatSolver* createApproxmc(StatisticsRegistry& registry,
+                                   ResourceManager* resmgr,
+                                   const std::string& name = "");
   static SatSolver* createKissat(StatisticsRegistry& registry,
                                  const std::string& name = "");
 }; /* class SatSolverFactory */

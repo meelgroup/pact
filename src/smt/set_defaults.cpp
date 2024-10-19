@@ -24,13 +24,13 @@
 #include "options/base_options.h"
 #include "options/booleans_options.h"
 #include "options/bv_options.h"
+#include "options/counting_options.h"
 #include "options/datatypes_options.h"
 #include "options/decision_options.h"
 #include "options/ff_options.h"
 #include "options/fp_options.h"
 #include "options/language.h"
 #include "options/main_options.h"
-#include "options/counting_options.h"
 #include "options/option_exception.h"
 #include "options/parallel_options.h"
 #include "options/parser_options.h"
@@ -146,16 +146,15 @@ void SetDefaults::setDefaultsPre(Options& opts)
   }
   if (opts.counting.enumerateCount || opts.counting.smtapproxMC)
   {
-    opts.writeBase().incrementalSolving = true;
-    opts.writeSmt().produceModels = true;
-    opts.writeSmt().checkModels = true;
-    opts.writeDriver().dumpModels = true;
-
+    opts.write_base().incrementalSolving = true;
+    opts.write_smt().produceModels = true;
+    opts.write_smt().checkModels = true;
+    opts.write_driver().dumpModels = true;
   }
   if (opts.counting.bitblastApproxMC)
   {
-    opts.writeBv().bvSatSolver = options::SatSolverMode::APPROXMC;
-    opts.writeBv().bitblastMode = options::BitblastMode::LAZY;
+    opts.write_bv().bvSatSolver = options::BvSatSolverMode::APPROXMC;
+    opts.write_bv().bitblastMode = options::BitblastMode::LAZY;
   }
   if (opts.smt.checkModels || opts.driver.dumpModels)
   {
@@ -962,7 +961,8 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
     }
   }
 #endif
-  if (logic.isTheoryEnabled(theory::THEORY_ARITH) && logic.areTranscendentalsUsed())
+  if (logic.isTheoryEnabled(theory::THEORY_ARITH)
+      && logic.areTranscendentalsUsed())
   {
     SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(
         arith, nlExt, options::NlExtMode::FULL, "logic with transcendentals");
@@ -1079,7 +1079,7 @@ bool SetDefaults::incompatibleWithProofs(Options& opts,
       reason << "(resolution) proofs in CaDiCaL";
       return true;
     }
-    if (opts.smt.proofMode!=options::ProofMode::PP_ONLY)
+    if (opts.smt.proofMode != options::ProofMode::PP_ONLY)
     {
       reason << "CaDiCaL";
       return true;
@@ -1752,47 +1752,47 @@ void SetDefaults::setDefaultDecisionMode(const LogicInfo& logic,
           logic.hasEverything()
           ? options::DecisionMode::JUSTIFICATION
           : (  // QF_BV
-              (!logic.isQuantified() && logic.isPure(THEORY_BV)) ||
-                      // QF_AUFBV or QF_ABV or QF_UFBV
-                      (!logic.isQuantified()
-                       && (logic.isTheoryEnabled(THEORY_ARRAYS)
-                           || logic.isTheoryEnabled(THEORY_UF))
-                       && logic.isTheoryEnabled(THEORY_BV))
-                      ||
-                      // QF_AUFLIA (and may be ends up enabling
-                      // QF_AUFLRA?)
-                      (!logic.isQuantified()
-                       && logic.isTheoryEnabled(THEORY_ARRAYS)
-                       && logic.isTheoryEnabled(THEORY_UF)
-                       && logic.isTheoryEnabled(THEORY_ARITH))
-                      ||
-                      // QF_LRA
-                      (!logic.isQuantified() && logic.isPure(THEORY_ARITH)
-                       && logic.isLinear() && !logic.isDifferenceLogic()
-                       && !logic.areIntegersUsed())
-                      ||
-                      // Quantifiers
-                      logic.isQuantified() ||
-                      // Strings
-                      logic.isTheoryEnabled(THEORY_STRINGS)
-                  ? options::DecisionMode::JUSTIFICATION
-                  : options::DecisionMode::INTERNAL);
+                (!logic.isQuantified() && logic.isPure(THEORY_BV)) ||
+                        // QF_AUFBV or QF_ABV or QF_UFBV
+                        (!logic.isQuantified()
+                         && (logic.isTheoryEnabled(THEORY_ARRAYS)
+                             || logic.isTheoryEnabled(THEORY_UF))
+                         && logic.isTheoryEnabled(THEORY_BV))
+                        ||
+                        // QF_AUFLIA (and may be ends up enabling
+                        // QF_AUFLRA?)
+                        (!logic.isQuantified()
+                         && logic.isTheoryEnabled(THEORY_ARRAYS)
+                         && logic.isTheoryEnabled(THEORY_UF)
+                         && logic.isTheoryEnabled(THEORY_ARITH))
+                        ||
+                        // QF_LRA
+                        (!logic.isQuantified() && logic.isPure(THEORY_ARITH)
+                         && logic.isLinear() && !logic.isDifferenceLogic()
+                         && !logic.areIntegersUsed())
+                        ||
+                        // Quantifiers
+                        logic.isQuantified() ||
+                        // Strings
+                        logic.isTheoryEnabled(THEORY_STRINGS)
+                    ? options::DecisionMode::JUSTIFICATION
+                    : options::DecisionMode::INTERNAL);
 
   bool stoponly =
       // ALL or its supersets
       logic.hasEverything() || logic.isTheoryEnabled(THEORY_STRINGS)
           ? false
           : (  // QF_AUFLIA
-              (!logic.isQuantified() && logic.isTheoryEnabled(THEORY_ARRAYS)
-               && logic.isTheoryEnabled(THEORY_UF)
-               && logic.isTheoryEnabled(THEORY_ARITH))
-                      ||
-                      // QF_LRA
-                      (!logic.isQuantified() && logic.isPure(THEORY_ARITH)
-                       && logic.isLinear() && !logic.isDifferenceLogic()
-                       && !logic.areIntegersUsed())
-                  ? true
-                  : false);
+                (!logic.isQuantified() && logic.isTheoryEnabled(THEORY_ARRAYS)
+                 && logic.isTheoryEnabled(THEORY_UF)
+                 && logic.isTheoryEnabled(THEORY_ARITH))
+                        ||
+                        // QF_LRA
+                        (!logic.isQuantified() && logic.isPure(THEORY_ARITH)
+                         && logic.isLinear() && !logic.isDifferenceLogic()
+                         && !logic.areIntegersUsed())
+                    ? true
+                    : false);
 
   if (stoponly)
   {

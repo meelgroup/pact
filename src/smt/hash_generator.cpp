@@ -21,11 +21,10 @@
 #define CVC5__SMT__HASHGEN_H
 
 #include <bits/stdc++.h>
-
-#include <cmath>
-
 #include <cvc5/cvc5.h>
 #include <cvc5/cvc5_export.h>
+
+#include <cmath>
 
 #include "base/check.h"
 
@@ -55,8 +54,8 @@ int computeNewBitwidth(int k, int slices, std::map<cvc5::Term, int> varMap)
  */
 cvc5::Term zeroExtendExpr(cvc5::Solver& slv, cvc5::Term var, int bits)
 {
-  cvc5::Op extend_op =
-      slv.mkOp(cvc5::BITVECTOR_ZERO_EXTEND, {static_cast<unsigned int>(bits)});
+  cvc5::Op extend_op = slv.mkOp(cvc5::Kind::BITVECTOR_ZERO_EXTEND,
+                                {static_cast<unsigned int>(bits)});
   cvc5::Term ext_bit = slv.mkTerm(extend_op, {var});
   return ext_bit;
 }
@@ -71,7 +70,7 @@ cvc5::Term extractExpr(cvc5::Solver& slv,
                        int lsbPos)
 {
   cvc5::Op extract_op = slv.mkOp(
-      cvc5::BITVECTOR_EXTRACT,
+      cvc5::Kind::BITVECTOR_EXTRACT,
       {static_cast<unsigned int>(lsbPos), static_cast<unsigned int>(msbPos)});
   cvc5::Term ext_bit = slv.mkTerm(extract_op, {var});
   return ext_bit;
