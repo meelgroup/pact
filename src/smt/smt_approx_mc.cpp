@@ -218,33 +218,30 @@ Term SmtApproxMc::generate_integer_hash(uint32_t hash_num)
 {
   TermManager tm;
   // Solver solver(tm);
-  cvc5::Solver* solver = d_slv->getSolver();
+  // cvc5::Solver* solver = d_slv->getSolver();
   uint32_t new_bv_width = getMinBW();
 
-  Term p = solver->mkBitVector(new_bv_width, primes[slice_size]);
+  Term p = tm.mkBitVector(new_bv_width, primes[slice_size]);
 
   uint32_t c_i = Random::getRandom().pick(0, primes[slice_size] - 1);
 
-  Term axpb = solver->mkBitVector(new_bv_width, 0);
-  Term one = solver->mkBitVector(new_bv_width, 1);
-  Term maxx = solver->mkBitVector(new_bv_width, pow(2, slice_size + 1));
-  Term c = solver->mkBitVector(new_bv_width, c_i);
+  Term axpb = tm.mkBitVector(new_bv_width, 0);
+  Term one = tm.mkBitVector(new_bv_width, 1);
+  Term maxx = tm.mkBitVector(new_bv_width, pow(2, slice_size + 1));
+  Term c = tm.mkBitVector(new_bv_width, c_i);
 
-  Sort bvsort = solver->mkBitVectorSort(new_bv_width);
+  Sort bvsort = tm.mkBitVectorSort(new_bv_width);
   std::string var_name = "hash" + std::to_string(hash_num);
-  Term new_var = solver->mkConst(bvsort, var_name);
+  Term new_var = tm.mkConst(bvsort, var_name);
   projection_var_terms.push_back(new_var);
   projection_vars =
       d_slv->getSolver()->termVectorToNodes1(projection_var_terms);
-  Term new_var_mult_p =
-      solver->mkTerm(cvc5::Kind::BITVECTOR_MULT, {new_var, p});
-  Term new_var_plusone =
-      solver->mkTerm(cvc5::Kind::BITVECTOR_ADD, {new_var, one});
+  Term new_var_mult_p = tm.mkTerm(cvc5::Kind::BITVECTOR_MULT, {new_var, p});
+  Term new_var_plusone = tm.mkTerm(cvc5::Kind::BITVECTOR_ADD, {new_var, one});
   Term new_var_plusone_mult_p =
-      solver->mkTerm(cvc5::Kind::BITVECTOR_MULT, {new_var_plusone, p});
-  Term hash_const_less =
-      solver->mkTerm(cvc5::Kind::BITVECTOR_ULT, {new_var, maxx});
-  c = solver->mkTerm(cvc5::Kind::BITVECTOR_ADD, {c, new_var_mult_p});
+      tm.mkTerm(cvc5::Kind::BITVECTOR_MULT, {new_var_plusone, p});
+  Term hash_const_less = tm.mkTerm(cvc5::Kind::BITVECTOR_ULT, {new_var, maxx});
+  c = tm.mkTerm(cvc5::Kind::BITVECTOR_ADD, {c, new_var_mult_p});
 
   Trace("smap-hash") << pow(2, slice_size) << "Adding Hash: (";
 
@@ -267,27 +264,27 @@ Term SmtApproxMc::generate_integer_hash(uint32_t hash_num)
       Trace("smap-hash") << a_i << x.getSymbol() << "[" << this_slice_start
                          << ":" << this_slice_end << "] + ";
 
-      Op x_bit_op = solver->mkOp(cvc5::Kind::BITVECTOR_EXTRACT,
-                                 {this_slice_end, this_slice_start});
-      Term x_sliced = solver->mkTerm(x_bit_op, {x});
+      Op x_bit_op = tm.mkOp(cvc5::Kind::BITVECTOR_EXTRACT,
+                            {this_slice_end, this_slice_start});
+      Term x_sliced = tm.mkTerm(x_bit_op, {x});
       Op x_zero_ex_op =
-          solver->mkOp(cvc5::Kind::BITVECTOR_ZERO_EXTEND, {extend_x_by_bits});
-      x_sliced = solver->mkTerm(x_zero_ex_op, {x_sliced});
-      Term a = solver->mkBitVector(new_bv_width, a_i);
-      Term ax = solver->mkTerm(cvc5::Kind::BITVECTOR_MULT, {a, x_sliced});
-      axpb = solver->mkTerm(cvc5::Kind::BITVECTOR_ADD, {ax, axpb});
+          tm.mkOp(cvc5::Kind::BITVECTOR_ZERO_EXTEND, {extend_x_by_bits});
+      x_sliced = tm.mkTerm(x_zero_ex_op, {x_sliced});
+      Term a = tm.mkBitVector(new_bv_width, a_i);
+      Term ax = tm.mkTerm(cvc5::Kind::BITVECTOR_MULT, {a, x_sliced});
+      axpb = tm.mkTerm(cvc5::Kind::BITVECTOR_ADD, {ax, axpb});
     }
   }
 
   Trace("smap-hash") << " 0) = " << primes[slice_size] << "h" << hash_num
                      << " + " << c_i << "\n";
 
-  Term hash_const = solver->mkTerm(cvc5::Kind::EQUAL, {axpb, c});
+  Term hash_const = tm.mkTerm(cvc5::Kind::EQUAL, {axpb, c});
   //   hash_const_less =
-  //     solver->mkTerm(cvc5::Kind::BITVECTOR_ULE, {c,maxx});
+  //     tm.mkTerm(cvc5::Kind::BITVECTOR_ULE, {c,maxx});
   Trace("smap-print-hash") << "\n"
                            << "(assert " << hash_const << ")" << "\n";
-  hash_const = solver->mkTerm(cvc5::Kind::AND, {hash_const, hash_const_less});
+  hash_const = tm.mkTerm(cvc5::Kind::AND, {hash_const, hash_const_less});
   Trace("smap-print-hash") << "\n"
                            << "(assert " << hash_const_less << ")" << "\n";
   Trace("smap-print-hash") << "\n"
@@ -298,15 +295,16 @@ Term SmtApproxMc::generate_integer_hash(uint32_t hash_num)
 
 Term SmtApproxMc::generate_ashwin_hash(uint32_t bitwidth)
 {
-  cvc5::Solver* solver = d_slv->getSolver();
+  TermManager tm;
+
   uint32_t a_i;
 
   uint32_t c_i = Random::getRandom().pick(0, pow(2, bitwidth) - 1);
 
-  Term axpb = solver->mkBitVector(bitwidth, 0);
-  Term c = solver->mkBitVector(bitwidth, c_i);
+  Term axpb = tm.mkBitVector(bitwidth, 0);
+  Term c = tm.mkBitVector(bitwidth, c_i);
 
-  Sort bvsort = solver->mkBitVectorSort(bitwidth);
+  Sort bvsort = tm.mkBitVectorSort(bitwidth);
 
   projection_vars =
       d_slv->getSolver()->termVectorToNodes1(projection_var_terms);
@@ -334,13 +332,13 @@ Term SmtApproxMc::generate_ashwin_hash(uint32_t bitwidth)
       Trace("smap-hash") << a_i << x.getSymbol() << "[" << this_slice_start
                          << ":" << this_slice_end << "] + ";
       Trace("smap") << "adding slicing operator\n";
-      Op x_bit_op = solver->mkOp(cvc5::Kind::BITVECTOR_EXTRACT,
-                                 {this_slice_end, this_slice_start});
-      Term x_sliced = solver->mkTerm(x_bit_op, {x});
-      Term a = solver->mkBitVector(bitwidth, a_i);
-      Term ax = solver->mkTerm(cvc5::Kind::BITVECTOR_MULT, {a, x_sliced});
+      Op x_bit_op = tm.mkOp(cvc5::Kind::BITVECTOR_EXTRACT,
+                            {this_slice_end, this_slice_start});
+      Term x_sliced = tm.mkTerm(x_bit_op, {x});
+      Term a = tm.mkBitVector(bitwidth, a_i);
+      Term ax = tm.mkTerm(cvc5::Kind::BITVECTOR_MULT, {a, x_sliced});
       Trace("smap") << "adding addition operator\n";
-      axpb = solver->mkTerm(cvc5::Kind::BITVECTOR_ADD, {ax, axpb});
+      axpb = tm.mkTerm(cvc5::Kind::BITVECTOR_ADD, {ax, axpb});
     }
   }
 
@@ -349,7 +347,7 @@ Term SmtApproxMc::generate_ashwin_hash(uint32_t bitwidth)
   Trace("smap-hash") << " 0) = " << c_i << "\n";
   Trace("smap") << "creating equal term\n";
 
-  Term hash_const = solver->mkTerm(cvc5::Kind::EQUAL, {axpb, c});
+  Term hash_const = tm.mkTerm(cvc5::Kind::EQUAL, {axpb, c});
   Trace("smap-print-hash") << "\n"
                            << "(assert " << hash_const << ")" << "\n";
   return hash_const;
@@ -357,20 +355,20 @@ Term SmtApproxMc::generate_ashwin_hash(uint32_t bitwidth)
 
 Term SmtApproxMc::generate_lemire_hash(uint32_t bitwidth)
 {
+  TermManager tm;
   uint32_t a_i;
-  cvc5::Solver* solver = d_slv->getSolver();
 
   // new_bv_width is the bitwidth of ax term which is 2w
   uint32_t new_bv_width = bitwidth * 2;
 
   uint32_t c_i = Random::getRandom().pick(0, pow(2, bitwidth) - 1);
 
-  Term axpb = solver->mkBitVector(new_bv_width, 0);
-  Term c = solver->mkBitVector(bitwidth, c_i);
+  Term axpb = tm.mkBitVector(new_bv_width, 0);
+  Term c = tm.mkBitVector(bitwidth, c_i);
 
-  Sort bvsort = solver->mkBitVectorSort(new_bv_width);
+  Sort bvsort = tm.mkBitVectorSort(new_bv_width);
   // std::string var_name = "hash" + std::to_string(hash_num);
-  // Term new_var = solver->mkConst(bvsort, var_name);
+  // Term new_var = tm.mkConst(bvsort, var_name);
   // projection_var_terms.push_back(new_var);
   projection_vars =
       d_slv->getSolver()->termVectorToNodes1(projection_var_terms);
@@ -396,31 +394,31 @@ Term SmtApproxMc::generate_lemire_hash(uint32_t bitwidth)
       Trace("smap-hash") << a_i << x.getSymbol() << "[" << this_slice_start
                          << ":" << this_slice_end << "] + ";
       Trace("smap") << "adding slicing operator\n";
-      Op x_bit_op = solver->mkOp(cvc5::Kind::BITVECTOR_EXTRACT,
-                                 {this_slice_end, this_slice_start});
-      Term x_sliced = solver->mkTerm(x_bit_op, {x});
+      Op x_bit_op = tm.mkOp(cvc5::Kind::BITVECTOR_EXTRACT,
+                            {this_slice_end, this_slice_start});
+      Term x_sliced = tm.mkTerm(x_bit_op, {x});
       Op x_zero_ex_op =
-          solver->mkOp(cvc5::Kind::BITVECTOR_ZERO_EXTEND, {extend_x_by_bits});
-      x_sliced = solver->mkTerm(x_zero_ex_op, {x_sliced});
-      Term a = solver->mkBitVector(new_bv_width, a_i);
+          tm.mkOp(cvc5::Kind::BITVECTOR_ZERO_EXTEND, {extend_x_by_bits});
+      x_sliced = tm.mkTerm(x_zero_ex_op, {x_sliced});
+      Term a = tm.mkBitVector(new_bv_width, a_i);
       Trace("smap") << "adding multiplication operator" << new_bv_width << " "
                     << extend_x_by_bits + bitwidth << "\n";
-      Term ax = solver->mkTerm(cvc5::Kind::BITVECTOR_MULT, {a, x_sliced});
+      Term ax = tm.mkTerm(cvc5::Kind::BITVECTOR_MULT, {a, x_sliced});
       Trace("smap") << "adding addition operator\n";
-      axpb = solver->mkTerm(cvc5::Kind::BITVECTOR_ADD, {ax, axpb});
+      axpb = tm.mkTerm(cvc5::Kind::BITVECTOR_ADD, {ax, axpb});
     }
   }
 
   Trace("smap") << "adding div operarion\n";
 
   Op axpb_div_op =
-      solver->mkOp(cvc5::Kind::BITVECTOR_EXTRACT, {bitwidth * 2 - 1, bitwidth});
+      tm.mkOp(cvc5::Kind::BITVECTOR_EXTRACT, {bitwidth * 2 - 1, bitwidth});
   Trace("smap") << "creating div term\n";
-  Term axpb_div = solver->mkTerm(axpb_div_op, {axpb});
+  Term axpb_div = tm.mkTerm(axpb_div_op, {axpb});
   Trace("smap-hash") << " 0) = " << primes[bitwidth] << " + " << c_i << "\n";
   Trace("smap") << "creating equal term\n";
 
-  Term hash_const = solver->mkTerm(cvc5::Kind::EQUAL, {axpb_div, c});
+  Term hash_const = tm.mkTerm(cvc5::Kind::EQUAL, {axpb_div, c});
   if (print_hash_at_file)
   {
     logFile << "(assert " << hash_const << ")" << "\n";
@@ -436,19 +434,20 @@ Term SmtApproxMc::generate_lemire_hash(uint32_t bitwidth)
 
 Term SmtApproxMc::generate_hash(uint32_t bitwidth = 0)
 {
+  TermManager tm;
+
   if (bitwidth == 0) bitwidth = slice_size;
   Trace("smap-hash") << "Generating hash for bitwidth " << bitwidth << "\n";
   Assert(bitwidth > 0) << "Bitwidth should be greater than 0";
-  cvc5::Solver* solver = d_slv->getSolver();
 
   uint32_t new_bv_width = getMinBW(bitwidth);
 
-  Term p = solver->mkBitVector(new_bv_width, primes[bitwidth]);
+  Term p = tm.mkBitVector(new_bv_width, primes[bitwidth]);
 
   uint32_t c_i = Random::getRandom().pick(0, primes[bitwidth] - 1);
 
-  Term axpb = solver->mkBitVector(new_bv_width, 0);
-  Term c = solver->mkBitVector(new_bv_width, c_i);
+  Term axpb = tm.mkBitVector(new_bv_width, 0);
+  Term c = tm.mkBitVector(new_bv_width, c_i);
 
   Trace("smap-hash") << "Adding a hash constraint (size "
                      << bvs_in_formula.size() << ") : (";
@@ -480,23 +479,23 @@ Term SmtApproxMc::generate_hash(uint32_t bitwidth = 0)
       Trace("smap-hash") << a_i << x.getSymbol() << "[" << this_slice_start
                          << ":" << this_slice_end << "] + ";
 
-      Op x_bit_op = solver->mkOp(cvc5::Kind::BITVECTOR_EXTRACT,
-                                 {this_slice_end, this_slice_start});
-      Term x_sliced = solver->mkTerm(x_bit_op, {x});
+      Op x_bit_op = tm.mkOp(cvc5::Kind::BITVECTOR_EXTRACT,
+                            {this_slice_end, this_slice_start});
+      Term x_sliced = tm.mkTerm(x_bit_op, {x});
       Op x_zero_ex_op =
-          solver->mkOp(cvc5::Kind::BITVECTOR_ZERO_EXTEND, {extend_x_by_bits});
-      x_sliced = solver->mkTerm(x_zero_ex_op, {x_sliced});
-      Term a = solver->mkBitVector(new_bv_width, a_i);
-      Term ax = solver->mkTerm(cvc5::Kind::BITVECTOR_MULT, {a, x_sliced});
-      // ax = solver->mkTerm(cvc5::Kind::BITVECTOR_UREM, {ax,p});
-      axpb = solver->mkTerm(cvc5::Kind::BITVECTOR_ADD, {ax, axpb});
+          tm.mkOp(cvc5::Kind::BITVECTOR_ZERO_EXTEND, {extend_x_by_bits});
+      x_sliced = tm.mkTerm(x_zero_ex_op, {x_sliced});
+      Term a = tm.mkBitVector(new_bv_width, a_i);
+      Term ax = tm.mkTerm(cvc5::Kind::BITVECTOR_MULT, {a, x_sliced});
+      // ax = tm.mkTerm(cvc5::Kind::BITVECTOR_UREM, {ax,p});
+      axpb = tm.mkTerm(cvc5::Kind::BITVECTOR_ADD, {ax, axpb});
     }
   }
 
-  axpb = solver->mkTerm(cvc5::Kind::BITVECTOR_UREM, {axpb, p});
+  axpb = tm.mkTerm(cvc5::Kind::BITVECTOR_UREM, {axpb, p});
   Trace("smap-hash") << " 0) mod " << primes[bitwidth] << " = " << c_i << "\n";
 
-  Term hash_const = solver->mkTerm(cvc5::Kind::EQUAL, {axpb, c});
+  Term hash_const = tm.mkTerm(cvc5::Kind::EQUAL, {axpb, c});
   Trace("smap-print-hash") << "chash " << "(assert " << hash_const << ")"
                            << "\n";
   if (print_hash_at_file)
@@ -1040,27 +1039,28 @@ vector<Node> SmtApproxMc::generateNHashes(uint32_t numhashes)
 {
   vector<Term> hashes;
   vector<Node> hashes_nodes;
-  cvc5::Solver* solver = d_slv->getSolver();
-  Term bv_one = solver->mkBitVector(1u, 1u);
+  TermManager tm;
+
+  Term bv_one = tm.mkBitVector(1u, 1u);
 
   Assert(primes.size() >= (uint64_t)numHashes)
       << "Prime size = " << primes.size() << " < numHashes = " << numhashes;
   for (uint32_t num = 0; num < numhashes; ++num)
   {
     std::string modulus = std::to_string(primes[num]);
-    Sort f5 = solver->mkFiniteFieldSort(modulus);
+    Sort f5 = tm.mkFiniteFieldSort(modulus);
 
     for (uint32_t bitwidth = 0; bitwidth < max_bitwidth; ++bitwidth)
     {
       std::string value_here = std::to_string(int(pow(2, bitwidth)));
-      ff[bitwidth] = solver->mkFiniteFieldElem(value_here, f5);
+      ff[bitwidth] = tm.mkFiniteFieldElem(value_here, f5);
     }
     std::string b_s =
         std::to_string(Random::getRandom().pick(1, primes[num] - 1));
     std::string c_s =
         std::to_string(Random::getRandom().pick(1, primes[num] - 1));
-    Term axpb = solver->mkFiniteFieldElem(b_s, f5);
-    Term c = solver->mkFiniteFieldElem(c_s, f5);
+    Term axpb = tm.mkFiniteFieldElem(b_s, f5);
+    Term c = tm.mkFiniteFieldElem(c_s, f5);
     if (verb > 0) std::cout << "Adding a hash constraint (";
     for (cvc5::Term x : bvs_in_formula)
     {
@@ -1068,7 +1068,7 @@ vector<Node> SmtApproxMc::generateNHashes(uint32_t numhashes)
 
       for (uint32_t slice = 0; slice < num_slices; ++slice)
       {
-        Term x_ff = solver->mkFiniteFieldElem("0", f5);
+        Term x_ff = tm.mkFiniteFieldElem("0", f5);
 
         uint32_t this_slice_start = slice * slice_size;
 
@@ -1081,27 +1081,26 @@ vector<Node> SmtApproxMc::generateNHashes(uint32_t numhashes)
         for (uint bit = this_slice_start; bit < this_slice_start + slice_size;
              ++bit)
         {
-          Op x_bit_op = solver->mkOp(cvc5::Kind::BITVECTOR_EXTRACT, {bit, bit});
-          Term x_bit_bv = solver->mkTerm(x_bit_op, {x});
-          Term eq_test = solver->mkTerm(cvc5::Kind::EQUAL, {x_bit_bv, bv_one});
-          Term ite_t =
-              solver->mkTerm(cvc5::Kind::ITE, {eq_test, ff[bit], ff[0]});
+          Op x_bit_op = tm.mkOp(cvc5::Kind::BITVECTOR_EXTRACT, {bit, bit});
+          Term x_bit_bv = tm.mkTerm(x_bit_op, {x});
+          Term eq_test = tm.mkTerm(cvc5::Kind::EQUAL, {x_bit_bv, bv_one});
+          Term ite_t = tm.mkTerm(cvc5::Kind::ITE, {eq_test, ff[bit], ff[0]});
 
-          x_ff = solver->mkTerm(cvc5::Kind::FINITE_FIELD_ADD, {x_ff, ite_t});
+          x_ff = tm.mkTerm(cvc5::Kind::FINITE_FIELD_ADD, {x_ff, ite_t});
         }
 
-        Term a = solver->mkFiniteFieldElem(a_s, f5);
-        Term ax = solver->mkTerm(cvc5::Kind::FINITE_FIELD_MULT, {a, x_ff});
-        axpb = solver->mkTerm(cvc5::Kind::FINITE_FIELD_ADD, {ax, axpb});
+        Term a = tm.mkFiniteFieldElem(a_s, f5);
+        Term ax = tm.mkTerm(cvc5::Kind::FINITE_FIELD_MULT, {a, x_ff});
+        axpb = tm.mkTerm(cvc5::Kind::FINITE_FIELD_ADD, {ax, axpb});
       }
     }
     if (verb > 0)
       std::cout << b_s << ") mod " << primes[num] << " = " << c_s << std::endl;
 
-    Term hash_const = solver->mkTerm(cvc5::Kind::EQUAL, {axpb, c});
+    Term hash_const = tm.mkTerm(cvc5::Kind::EQUAL, {axpb, c});
     hashes.push_back(hash_const);
   }
-  hashes_nodes = solver->termVectorToNodes1(hashes);
+  hashes_nodes = d_slv->getSolver()->termVectorToNodes1(hashes);
   return hashes_nodes;
 }
 
