@@ -28,6 +28,7 @@
 #include "expr/subtype_elim_node_converter.h"
 #include "expr/sygus_term_enumerator.h"
 #include "options/base_options.h"
+#include "options/counting_options.h"
 #include "options/expr_options.h"
 #include "options/language.h"
 #include "options/main_options.h"
@@ -772,6 +773,7 @@ int32_t SolverEngine::boundedSat(uint64_t bound,
   uint64_t count = 0;
   Result res;
   const Options& opts = d_env->getOptions();
+
   push();
   do
   {
@@ -788,7 +790,7 @@ int32_t SolverEngine::boundedSat(uint64_t bound,
                           << count + 1 << "," << elapsed_time_in_ms
                           << std::endl;
 
-    if (getOptions().counting.listint && res.getStatus() == Result::SAT)
+    if (opts.counting.listint && res.getStatus() == Result::SAT)
     {
       // block the model
       for (const Node& t : terms_to_block)
