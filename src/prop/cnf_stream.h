@@ -298,6 +298,11 @@ class CnfStream : protected EnvObj
    * variable.
    * @return the literal corresponding to the formula
    */
+
+  bool assertXorClause(TNode node, SatClause& clause);
+  bool assertXorClause(TNode node, SatLiteral a, SatLiteral b);
+  bool assertXorClause(TNode node, SatLiteral a, SatLiteral b, SatLiteral c);
+
   SatLiteral newLiteral(TNode node,
                         bool isTheoryAtom = false,
                         bool notifyTheory = false,

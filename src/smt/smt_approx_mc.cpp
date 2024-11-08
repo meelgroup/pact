@@ -461,7 +461,7 @@ Term SmtApproxMc::generate_xor_hash()
 
   uint32_t c = Random::getRandom().pick(0, 1);
   Term cterm = tm.mkBitVector(1, c);
-  Trace("smap-hash") << "=" << c << "\n";
+  Trace("smap-hash") << "0 = " << c << "\n";
 
   Term hash_const = tm.mkTerm(cvc5::Kind::EQUAL, {xorl, cterm});
   return hash_const;
@@ -929,7 +929,8 @@ uint64_t SmtApproxMc::smtApproxMcCore()
     start_of_iter = false;
     if (numHashes < 0)
     {
-      if (!two_factor_prime)
+      if (!two_factor_prime
+          || d_slv->getOptions().counting.hashsm == options::HashingMode::XOR)
       {
         if (abs(numHashes) == oldhashes)
         {
@@ -1052,8 +1053,9 @@ uint64_t SmtApproxMc::smtApproxMcCore()
 
   for (int i = 0; i < numHashes; ++i)
   {
-    if (project_on_booleans)
-      count *= 2;
+    if (project_on_booleans
+        || d_slv->getOptions().counting.hashsm == options::HashingMode::XOR)
+      final_count *= 2;
     else if (d_slv->getOptions().counting.hashsm == options::HashingMode::LEM)
       final_count *= pow(2, slice_size);
     else
