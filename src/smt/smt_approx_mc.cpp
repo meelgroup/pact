@@ -254,7 +254,7 @@ Term SmtApproxMc::generate_integer_hash(uint32_t hash_num)
     {
       uint32_t this_slice_start = slice * slice_size;
       uint32_t this_slice_end = (slice + 1) * slice_size - 1;
-      uint extend_x_by_bits = 2 + slice_size;
+      uint32_t extend_x_by_bits = 2 + slice_size;
       if (this_slice_end >= this_bv_width)
       {
         extend_x_by_bits = this_slice_end - this_bv_width + 3 + slice_size;
@@ -384,7 +384,7 @@ Term SmtApproxMc::generate_lemire_hash(uint32_t bitwidth)
     {
       uint32_t this_slice_start = slice * bitwidth;
       uint32_t this_slice_end = (slice + 1) * bitwidth - 1;
-      uint extend_x_by_bits = bitwidth;
+      uint32_t extend_x_by_bits = bitwidth;
       if (this_slice_end >= this_bv_width)
       {
         extend_x_by_bits = this_slice_end - this_bv_width + bitwidth - 1;
@@ -554,7 +554,7 @@ double SmtApproxMc::calc_error_bound(uint32_t t, double p)
   return sum;
 }
 
-uint64_t SmtApproxMc::two_factor_check(uint slice)
+uint64_t SmtApproxMc::two_factor_check(uint32_t slice)
 {
   uint64_t bound = getPivot() + 1, multiplier = 1;
   uint32_t i = 1;
@@ -1123,7 +1123,8 @@ vector<Node> SmtApproxMc::generateNHashes(uint32_t numhashes)
           std::cout << a_s << x.getSymbol() << "[" << this_slice_start << ":"
                     << this_slice_start + slice_size - 1 << "] + ";
 
-        for (uint bit = this_slice_start; bit < this_slice_start + slice_size;
+        for (uint32_t bit = this_slice_start;
+             bit < this_slice_start + slice_size;
              ++bit)
         {
           Op x_bit_op = tm.mkOp(cvc5::Kind::BITVECTOR_EXTRACT, {bit, bit});
