@@ -177,7 +177,7 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
 Term SmtApproxMc::generate_boolean_hash()
 {
   // cvc5::Solver* solver = d_slv->getSolver();
-  TermManager tm;
+  TermManager& tm = d_slv->getSolver()->getTermManager();
   Solver solver(tm);
   Term xorcons = tm.mkBoolean(Random::getRandom().pick(0, 1));
   for (cvc5::Term x : booleans_in_projset)
@@ -216,7 +216,7 @@ uint64_t SmtApproxMc::getMinBW(int bitwidth = 0)
 
 Term SmtApproxMc::generate_integer_hash(uint32_t hash_num)
 {
-  TermManager tm;
+  TermManager& tm = d_slv->getSolver()->getTermManager();
   // Solver solver(tm);
   // cvc5::Solver* solver = d_slv->getSolver();
   uint32_t new_bv_width = getMinBW();
@@ -295,7 +295,7 @@ Term SmtApproxMc::generate_integer_hash(uint32_t hash_num)
 
 Term SmtApproxMc::generate_ashwin_hash(uint32_t bitwidth)
 {
-  TermManager tm;
+  TermManager& tm = d_slv->getSolver()->getTermManager();
 
   uint32_t a_i;
 
@@ -355,7 +355,7 @@ Term SmtApproxMc::generate_ashwin_hash(uint32_t bitwidth)
 
 Term SmtApproxMc::generate_lemire_hash(uint32_t bitwidth)
 {
-  TermManager tm;
+  TermManager& tm = d_slv->getSolver()->getTermManager();
   uint32_t a_i;
 
   // new_bv_width is the bitwidth of ax term which is 2w
@@ -432,9 +432,44 @@ Term SmtApproxMc::generate_lemire_hash(uint32_t bitwidth)
   return hash_const;
 }
 
+Term SmtApproxMc::generate_xor_hash()
+{
+  TermManager& tm = d_slv->getSolver()->getTermManager();
+
+  Trace("smap-hash") << "Generating XOR hash\n";
+
+  Trace("smap-hash") << "Adding an XOR hash constraint (size "
+                     << bvs_in_formula.size() << ") : (";
+
+  Term xorl = tm.mkBitVector(1, 0);
+  for (cvc5::Term x : bvs_in_projset)
+  {
+    uint32_t this_bv_width = x.getSort().getBitVectorSize();
+
+    for (uint32_t i = 0; i < this_bv_width; ++i)
+    {
+      uint32_t a_i = Random::getRandom().pick(0, 1);
+      Op x_bit_op = tm.mkOp(cvc5::Kind::BITVECTOR_EXTRACT, {i, i});
+      Term x_sliced = tm.mkTerm(x_bit_op, {x});
+      if (a_i == 1)
+      {
+        Trace("smap-hash") << x.getSymbol() << "[" << i << "] x ";
+        xorl = tm.mkTerm(cvc5::Kind::BITVECTOR_XOR, {xorl, x_sliced});
+      }
+    }
+  }
+
+  uint32_t c = Random::getRandom().pick(0, 1);
+  Term cterm = tm.mkBitVector(1, c);
+  Trace("smap-hash") << "=" << c << "\n";
+
+  Term hash_const = tm.mkTerm(cvc5::Kind::EQUAL, {xorl, cterm});
+  return hash_const;
+}
+
 Term SmtApproxMc::generate_hash(uint32_t bitwidth = 0)
 {
-  TermManager tm;
+  TermManager& tm = d_slv->getSolver()->getTermManager();
 
   if (bitwidth == 0) bitwidth = slice_size;
   Trace("smap-hash") << "Generating hash for bitwidth " << bitwidth << "\n";
@@ -525,6 +560,9 @@ uint64_t SmtApproxMc::two_factor_check(uint slice)
   uint32_t i = 1;
   uint64_t bounded_sat_count = 1, last_count = 1;
   Term hash;
+  if (d_slv->getOptions().counting.hashsm == options::HashingMode::XOR)
+    return 1;
+
   for (i = slice; i > 0; i--)
   {
     if (d_slv->getOptions().counting.hashsm == options::HashingMode::ASH)
@@ -947,6 +985,11 @@ uint64_t SmtApproxMc::smtApproxMcCore()
         {
           hash = generate_lemire_hash(slice_size);
         }
+        else if (d_slv->getOptions().counting.hashsm
+                 == options::HashingMode::XOR)
+        {
+          hash = generate_xor_hash();
+        }
         else
         {
           Assert(d_slv->getOptions().counting.hashsm
@@ -1039,7 +1082,7 @@ vector<Node> SmtApproxMc::generateNHashes(uint32_t numhashes)
 {
   vector<Term> hashes;
   vector<Node> hashes_nodes;
-  TermManager tm;
+  TermManager& tm = d_slv->getSolver()->getTermManager();
 
   Term bv_one = tm.mkBitVector(1u, 1u);
 

@@ -113,6 +113,8 @@ name   = "ModelCounting"
   name = "ff"
 [[option.mode.LEM]]
   name = "lem"
+[[option.mode.XOR]]
+  name = "xor"
 [[option.mode.ASH]]
   name = "ash"
 [[option.mode.INT]]
