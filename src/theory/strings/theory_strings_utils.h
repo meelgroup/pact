@@ -72,7 +72,11 @@ Node mkPrefix(Node t, Node n);
 Node mkSuffix(Node t, Node n);
 
 /**
- * Returns (suf t n), which is (str.substr t (- (str.len t) n) n).
+ * Returns (str.substr t 0 (- (str.len t) n)).
+ */
+Node mkPrefixExceptLen(Node t, Node n);
+/**
+ * Returns (str.substr t (- (str.len t) n) n).
  */
 Node mkSuffixOfLen(Node t, Node n);
 
@@ -224,7 +228,7 @@ unsigned getLoopMinOccurrences(TNode node);
  * FORALL returned by this method. This ensures that E-matching is not applied
  * to the quantified formula.
  */
-Node mkForallInternal(Node bvl, Node body);
+Node mkForallInternal(NodeManager* nm, Node bvl, Node body);
 
 /**
  * Make abstract value for string-like term n whose length is given by len.

@@ -39,37 +39,13 @@ struct UnpurifiedFormAttributeId
 };
 typedef expr::Attribute<UnpurifiedFormAttributeId, Node> UnpurifiedFormAttribute;
 
-const char* toString(InternalSkolemId id)
-{
-  switch (id)
-  {
-    case InternalSkolemId::SEQ_MODEL_BASE_ELEMENT:
-      return "SEQ_MODEL_BASE_ELEMENT";
-    case InternalSkolemId::IEVAL_NONE: return "IEVAL_NONE";
-    case InternalSkolemId::IEVAL_SOME: return "IEVAL_SOME";
-    case InternalSkolemId::SYGUS_ANY_CONSTANT: return "SYGUS_ANY_CONSTANT";
-    case InternalSkolemId::QUANTIFIERS_SYNTH_FUN_EMBED:
-      return "QUANTIFIERS_SYNTH_FUN_EMBED";
-    case InternalSkolemId::HO_TYPE_MATCH_PRED: return "HO_TYPE_MATCH_PRED";
-    case InternalSkolemId::MBQI_INPUT: return "MBQI_INPUT";
-    case InternalSkolemId::ABSTRACT_VALUE: return "ABSTRACT_VALUE";
-    case InternalSkolemId::QE_CLOSED_INPUT: return "QE_CLOSED_INPUT";
-    default: return "?";
-  }
-}
-
-std::ostream& operator<<(std::ostream& out, InternalSkolemId id)
-{
-  out << toString(id);
-  return out;
-}
-
 SkolemManager::SkolemManager() : d_skolemCounter(0) {}
 
 Node SkolemManager::mkPurifySkolem(Node t)
 {
+  SkolemManager* skm = t.getNodeManager()->getSkolemManager();
   // We do not recursively compute the original form of t here
-  Node k = mkSkolemFunction(SkolemId::PURIFY, {t});
+  Node k = skm->mkSkolemFunction(SkolemId::PURIFY, {t});
   Trace("sk-manager-skolem") << "skolem: " << k << " purify " << t << std::endl;
   return k;
 }
@@ -96,14 +72,6 @@ Node SkolemManager::mkSkolemFunction(SkolemId id,
 {
   TypeNode ctn = getTypeFor(id, cacheVals);
   Assert(!ctn.isNull());
-  if (isCommutativeSkolemId(id))
-  {
-    // sort arguments if commutative, which should not impact its type
-    std::vector<Node> cvs = cacheVals;
-    std::sort(cvs.begin(), cvs.end());
-    Assert(getTypeFor(id, cvs) == ctn);
-    return mkSkolemFunctionTyped(id, ctn, cvs);
-  }
   return mkSkolemFunctionTyped(id, ctn, cacheVals);
 }
 
@@ -225,6 +193,28 @@ SkolemId SkolemManager::getId(TNode k) const
   return SkolemId::NONE;
 }
 
+std::vector<Node> SkolemManager::getIndices(TNode k) const
+{
+  std::vector<Node> vec;
+  SkolemId id;
+  Node cacheVal;
+  if (isSkolemFunction(k, id, cacheVal))
+  {
+    if (!cacheVal.isNull())
+    {
+      if (cacheVal.getKind() == Kind::SEXPR)
+      {
+        vec.insert(vec.end(), cacheVal.begin(), cacheVal.end());
+      }
+      else
+      {
+        vec.push_back(cacheVal);
+      }
+    }
+  }
+  return vec;
+}
+
 InternalSkolemId SkolemManager::getInternalId(TNode k) const
 {
   SkolemId id;
@@ -245,7 +235,7 @@ InternalSkolemId SkolemManager::getInternalId(TNode k) const
 Node SkolemManager::mkDummySkolem(const std::string& prefix,
                                   const TypeNode& type,
                                   const std::string& comment,
-                                  int flags)
+                                  SkolemFlags flags)
 {
   return mkSkolemNode(Kind::DUMMY_SKOLEM, prefix, type, flags);
 }
@@ -266,89 +256,83 @@ Node SkolemManager::getOriginalForm(Node n)
   OriginalFormAttribute ofa;
   UnpurifiedFormAttribute ufa;
   NodeManager* nm = NodeManager::currentNM();
-  std::unordered_map<TNode, Node> visited;
-  std::unordered_map<TNode, Node>::iterator it;
+  std::unordered_set<TNode> visited;
+  std::unordered_set<TNode>::iterator it;
   std::vector<TNode> visit;
   TNode cur;
   visit.push_back(n);
   do
   {
     cur = visit.back();
-    visit.pop_back();
-    it = visited.find(cur);
-
-    if (it == visited.end())
+    if (cur.hasAttribute(ofa))
     {
-      if (cur.hasAttribute(ofa))
+      visit.pop_back();
+      continue;
+    }
+    else if (cur.hasAttribute(ufa))
+    {
+      // if it has an unpurified form, compute the original form of it
+      Node ucur = cur.getAttribute(ufa);
+      if (ucur.hasAttribute(ofa))
       {
-        visited[cur] = cur.getAttribute(ofa);
-      }
-      else if (cur.hasAttribute(ufa))
-      {
-        // if it has an unpurified form, compute the original form of it
-        Node ucur = cur.getAttribute(ufa);
-        if (ucur.hasAttribute(ofa))
-        {
-          // Already computed, set. This always happens after cur is visited
-          // again after computing the original form of its unpurified form.
-          Node ucuro = ucur.getAttribute(ofa);
-          cur.setAttribute(ofa, ucuro);
-          visited[cur] = ucuro;
-        }
-        else
-        {
-          // visit ucur then visit cur again
-          visit.push_back(cur);
-          visit.push_back(ucur);
-        }
+        // Already computed, set. This always happens after cur is visited
+        // again after computing the original form of its unpurified form.
+        Node ucuro = ucur.getAttribute(ofa);
+        cur.setAttribute(ofa, ucuro);
+        visit.pop_back();
       }
       else
       {
-        visited[cur] = Node::null();
-        visit.push_back(cur);
-        if (cur.getMetaKind() == metakind::PARAMETERIZED)
-        {
-          visit.push_back(cur.getOperator());
-        }
-        for (const Node& cn : cur)
-        {
-          visit.push_back(cn);
-        }
+        // visit ucur then visit cur again
+        visit.push_back(ucur);
       }
+      continue;
     }
-    else if (it->second.isNull())
+    else if (cur.getNumChildren() == 0)
     {
-      Node ret = cur;
-      bool childChanged = false;
-      std::vector<Node> children;
+      cur.setAttribute(ofa, cur);
+      visit.pop_back();
+      continue;
+    }
+    it = visited.find(cur);
+    if (it == visited.end())
+    {
+      visited.insert(cur);
       if (cur.getMetaKind() == metakind::PARAMETERIZED)
       {
-        it = visited.find(cur.getOperator());
-        Assert(it != visited.end());
-        Assert(!it->second.isNull());
-        childChanged = childChanged || cur.getOperator() != it->second;
-        children.push_back(it->second);
+        visit.push_back(cur.getOperator());
       }
-      for (const Node& cn : cur)
-      {
-        it = visited.find(cn);
-        Assert(it != visited.end());
-        Assert(!it->second.isNull());
-        childChanged = childChanged || cn != it->second;
-        children.push_back(it->second);
-      }
-      if (childChanged)
-      {
-        ret = nm->mkNode(cur.getKind(), children);
-      }
-      cur.setAttribute(ofa, ret);
-      visited[cur] = ret;
+      visit.insert(visit.end(), cur.begin(), cur.end());
+      continue;
     }
+    visit.pop_back();
+    Node ret = cur;
+    bool childChanged = false;
+    std::vector<Node> children;
+    if (cur.getMetaKind() == metakind::PARAMETERIZED)
+    {
+      const Node& oon = cur.getOperator().getAttribute(ofa);
+      Assert(!oon.isNull());
+      childChanged = childChanged || cur.getOperator() != oon;
+      children.push_back(oon);
+    }
+    for (const Node& cn : cur)
+    {
+      const Node& ocn = cn.getAttribute(ofa);
+      Assert(!ocn.isNull());
+      childChanged = childChanged || cn != ocn;
+      children.push_back(ocn);
+    }
+    if (childChanged)
+    {
+      ret = nm->mkNode(cur.getKind(), children);
+    }
+    cur.setAttribute(ofa, ret);
+
   } while (!visit.empty());
-  Assert(visited.find(n) != visited.end());
-  Assert(!visited.find(n)->second.isNull());
-  Trace("sk-manager-debug") << "..return " << visited[n] << std::endl;
-  return visited[n];
+  const Node& on = n.getAttribute(ofa);
+  Trace("sk-manager-debug") << "..return " << on << std::endl;
+  return on;
 }
 
 Node SkolemManager::getUnpurifiedForm(Node k)
@@ -364,19 +348,20 @@ Node SkolemManager::getUnpurifiedForm(Node k)
 Node SkolemManager::mkSkolemNode(Kind k,
                                  const std::string& prefix,
                                  const TypeNode& type,
-                                 int flags)
+                                 SkolemFlags flags)
 {
   NodeManager* nm = NodeManager::currentNM();
   Node n = NodeBuilder(nm, k);
-  if ((flags & SKOLEM_EXACT_NAME) == 0)
+  if ((flags & SkolemFlags::SKOLEM_EXACT_NAME)
+      == SkolemFlags::SKOLEM_EXACT_NAME)
+  {
+    n.setAttribute(expr::VarNameAttr(), prefix);
+  }
+  else
   {
     std::stringstream name;
     name << prefix << '_' << ++d_skolemCounter;
     n.setAttribute(expr::VarNameAttr(), name.str());
-  }
-  else
-  {
-    n.setAttribute(expr::VarNameAttr(), prefix);
   }
   n.setAttribute(expr::TypeAttr(), type);
   n.setAttribute(expr::TypeCheckedAttr(), true);
@@ -396,6 +381,8 @@ TypeNode SkolemManager::getTypeFor(SkolemId id,
       return cacheVals[0].getType();
       break;
     case SkolemId::GROUND_TERM:
+    case SkolemId::ARITH_VTS_INFINITY:
+    case SkolemId::ARITH_VTS_INFINITY_FREE:
     {
       Assert(cacheVals[0].getKind() == Kind::SORT_TO_TERM);
       return cacheVals[0].getConst<SortToTerm>().getType();
@@ -407,7 +394,10 @@ TypeNode SkolemManager::getTypeFor(SkolemId id,
       return nm->mkFunctionType(rtype, rtype);
     }
     // real skolems
-    case SkolemId::TRANSCENDENTAL_PURIFY_ARG: return nm->realType();
+    case SkolemId::TRANSCENDENTAL_PURIFY_ARG:
+    case SkolemId::TRANSCENDENTAL_SINE_PHASE_SHIFT:
+    case SkolemId::ARITH_VTS_DELTA:
+    case SkolemId::ARITH_VTS_DELTA_FREE: return nm->realType();
     // int -> int function
     case SkolemId::INT_DIV_BY_ZERO:
     case SkolemId::MOD_BY_ZERO:
@@ -457,7 +447,13 @@ TypeNode SkolemManager::getTypeFor(SkolemId id,
     case SkolemId::QUANTIFIERS_SKOLEMIZE:
     {
       Assert(cacheVals.size() == 2);
-      return cacheVals[1].getType();
+      Assert(cacheVals[0].getKind() == Kind::FORALL);
+      Assert(cacheVals[1].getKind() == Kind::CONST_INTEGER);
+      const Rational& r = cacheVals[1].getConst<Rational>();
+      Assert(r.getNumerator().fitsUnsignedInt());
+      size_t i = r.getNumerator().toUnsignedInt();
+      Assert(i < cacheVals[0][0].getNumChildren());
+      return cacheVals[0][0][i].getType();
     }
     break;
     // skolems that return the set element type
@@ -546,6 +542,16 @@ TypeNode SkolemManager::getTypeFor(SkolemId id,
       TypeNode t = cacheVals[1].getConst<SortToTerm>().getType();
       return nm->mkSelectorType(dtt, t);
     }
+    case SkolemId::HO_DEQ_DIFF:
+    {
+      const Rational& r = cacheVals[2].getConst<Rational>();
+      Assert(r.getNumerator().fitsUnsignedInt());
+      size_t i = r.getNumerator().toUnsignedInt();
+      Assert(cacheVals[0].getType().isFunction());
+      std::vector<TypeNode> argTypes = cacheVals[0].getType().getArgTypes();
+      Assert(i < argTypes.size());
+      return argTypes[i];
+    }
     // fp skolems
     case SkolemId::FP_MIN_ZERO:
     case SkolemId::FP_MAX_ZERO:
@@ -576,6 +582,29 @@ TypeNode SkolemManager::getTypeFor(SkolemId id,
       Assert(type.isFloatingPoint());
       return nm->mkFunctionType({type}, nm->realType());
     }
+    case SkolemId::BV_TO_INT_UF:
+    {
+      Assert(cacheVals.size() == 1);
+      // fetch the original function
+      Node bvUF = cacheVals[0];
+      Assert(cacheVals[0].getType().isFunction());
+      // old and new types of domain and result
+      TypeNode tn = bvUF.getType();
+      TypeNode bvRange = tn.getRangeType();
+      std::vector<TypeNode> bvDomain = tn.getArgTypes();
+      std::vector<TypeNode> intDomain;
+
+      // if the original range is a bit-vector sort,
+      // the new range should be an integer sort.
+      // Otherwise, we keep the original range.
+      // Similarly for the domain sorts.
+      TypeNode intRange = bvRange.isBitVector() ? nm->integerType() : bvRange;
+      for (const TypeNode& d : bvDomain)
+      {
+        intDomain.push_back(d.isBitVector() ? nm->integerType() : d);
+      }
+      return nm->mkFunctionType(intDomain, intRange);
+    }
     //
     default: break;
   }
@@ -597,6 +626,7 @@ size_t SkolemManager::getNumIndicesForSkolemId(SkolemId id) const
     case SkolemId::GROUND_TERM:
     case SkolemId::TRANSCENDENTAL_PURIFY:
     case SkolemId::TRANSCENDENTAL_PURIFY_ARG:
+    case SkolemId::TRANSCENDENTAL_SINE_PHASE_SHIFT:
     case SkolemId::STRINGS_REPLACE_ALL_RESULT:
     case SkolemId::STRINGS_ITOS_RESULT:
     case SkolemId::STRINGS_STOI_RESULT:
@@ -617,6 +647,7 @@ size_t SkolemManager::getNumIndicesForSkolemId(SkolemId id) const
     case SkolemId::SETS_FOLD_UNION:
     case SkolemId::FP_MIN_ZERO:
     case SkolemId::FP_MAX_ZERO:
+    case SkolemId::BV_TO_INT_UF:
     case SkolemId::FP_TO_REAL: return 1;
 
     // Number of skolem indices: 2

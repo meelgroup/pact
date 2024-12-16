@@ -156,29 +156,39 @@ Node mkPrefix(Node t, Node n)
 
 Node mkSuffix(Node t, Node n)
 {
-  NodeManager* nm = NodeManager::currentNM();
-  return nm->mkNode(
+  return NodeManager::mkNode(
       Kind::STRING_SUBSTR,
       t,
       n,
-      nm->mkNode(Kind::SUB, nm->mkNode(Kind::STRING_LENGTH, t), n));
+      NodeManager::mkNode(
+          Kind::SUB, NodeManager::mkNode(Kind::STRING_LENGTH, t), n));
 }
-Node mkSuffixOfLen(Node t, Node n)
+
+Node mkPrefixExceptLen(Node t, Node n)
 {
   NodeManager* nm = NodeManager::currentNM();
   Node lent = nm->mkNode(Kind::STRING_LENGTH, t);
-  return nm->mkNode(Kind::STRING_SUBSTR, t, nm->mkNode(Kind::SUB, lent, n), n);
+  return nm->mkNode(Kind::STRING_SUBSTR,
+                    t,
+                    nm->mkConstInt(Rational(0)),
+                    nm->mkNode(Kind::SUB, lent, n));
+}
+
+Node mkSuffixOfLen(Node t, Node n)
+{
+  Node lent = NodeManager::mkNode(Kind::STRING_LENGTH, t);
+  return NodeManager::mkNode(
+      Kind::STRING_SUBSTR, t, NodeManager::mkNode(Kind::SUB, lent, n), n);
 }
 
 Node mkUnit(TypeNode tn, Node n)
 {
-  NodeManager* nm = NodeManager::currentNM();
   if (tn.isString())
   {
-    return nm->mkNode(Kind::STRING_UNIT, n);
+    return NodeManager::mkNode(Kind::STRING_UNIT, n);
   }
   Assert(tn.isSequence());
-  return nm->mkNode(Kind::SEQ_UNIT, n);
+  return NodeManager::mkNode(Kind::SEQ_UNIT, n);
 }
 
 Node getConstantComponent(Node t)
@@ -224,10 +234,9 @@ Node mkSubstrChain(Node base,
                    const std::vector<Node>& ss,
                    const std::vector<Node>& ls)
 {
-  NodeManager* nm = NodeManager::currentNM();
   for (unsigned i = 0, size = ss.size(); i < size; i++)
   {
-    base = nm->mkNode(Kind::STRING_SUBSTR, base, ss[i], ls[i]);
+    base = NodeManager::mkNode(Kind::STRING_SUBSTR, base, ss[i], ls[i]);
   }
   return base;
 }
@@ -237,10 +246,9 @@ Node mkConcatForConstSequence(const Node& c)
   Assert(c.getKind() == Kind::CONST_SEQUENCE);
   const std::vector<Node>& charVec = c.getConst<Sequence>().getVec();
   std::vector<Node> vec;
-  NodeManager* nm = NodeManager::currentNM();
   for (const Node& cc : charVec)
   {
-    vec.push_back(nm->mkNode(Kind::SEQ_UNIT, cc));
+    vec.push_back(NodeManager::mkNode(Kind::SEQ_UNIT, cc));
   }
   return mkConcat(vec, c.getType());
 }
@@ -364,7 +372,6 @@ void getRegexpComponents(Node r, std::vector<Node>& result)
 {
   Assert(r.getType().isRegExp());
 
-  NodeManager* nm = NodeManager::currentNM();
   if (r.getKind() == Kind::REGEXP_CONCAT)
   {
     for (const Node& n : r)
@@ -377,8 +384,8 @@ void getRegexpComponents(Node r, std::vector<Node>& result)
     size_t rlen = Word::getLength(r[0]);
     for (size_t i = 0; i < rlen; i++)
     {
-      result.push_back(
-          nm->mkNode(Kind::STRING_TO_REGEXP, Word::substr(r[0], i, 1)));
+      result.push_back(NodeManager::mkNode(Kind::STRING_TO_REGEXP,
+                                           Word::substr(r[0], i, 1)));
     }
   }
   else
@@ -468,9 +475,9 @@ unsigned getLoopMinOccurrences(TNode node)
   return node.getOperator().getConst<RegExpLoop>().d_loopMinOcc;
 }
 
-Node mkForallInternal(Node bvl, Node body)
+Node mkForallInternal(NodeManager* nm, Node bvl, Node body)
 {
-  return quantifiers::BoundedIntegers::mkBoundedForall(bvl, body);
+  return quantifiers::BoundedIntegers::mkBoundedForall(nm, bvl, body);
 }
 
 /**

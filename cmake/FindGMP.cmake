@@ -125,7 +125,7 @@ if(NOT GMP_FOUND_SYSTEM)
     GMP-EP
     ${COMMON_EP_CONFIG}
     URL https://ftp.gnu.org/gnu/gmp/gmp-${GMP_VERSION}.tar.bz2
-    URL_HASH SHA1=32d21c4fae046de45e8fce37bf4002236d283b71
+    URL_HASH SHA256=ac28211a7cfb609bae2e2c8d6058d66c8fe96434f740cf6fe2e47b000d1c20cb
     CONFIGURE_COMMAND
       ${CONFIGURE_ENV}
           ${CONFIGURE_CMD_WRAPPER} ${SHELL} <SOURCE_DIR>/configure
@@ -180,5 +180,18 @@ else()
       TYPE BIN
       FILES_MATCHING PATTERN libgmp*
     )
+  endif()
+  if(NOT SKIP_SET_RPATH AND BUILD_SHARED_LIBS AND APPLE)
+    install(CODE "
+      file(GLOB GMP_DYLIBS \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/libgmp*.dylib\")
+      foreach(GMP_DYLIB \${GMP_DYLIBS})
+        execute_process(COMMAND \${CMAKE_COMMAND}
+          -DRPATH=@loader_path
+          -DINSTALL_NAME_TOOL=${CMAKE_INSTALL_NAME_TOOL}
+          -DDYLIB_PATH=\${GMP_DYLIB}
+          -DDEPS_BASE=${DEPS_BASE}
+          -P ${CMAKE_SOURCE_DIR}/cmake/update_rpath_macos.cmake)
+      endforeach()
+    ")
   endif()
 endif()

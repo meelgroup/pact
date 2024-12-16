@@ -511,7 +511,7 @@ TypeNode SeqNthTypeRule::computeType(NodeManager* nodeManager,
 {
   Assert(n.getKind() == Kind::SEQ_NTH);
   TypeNode t = n[0].getTypeOrNull();
-  if (check && !isMaybeStringLike(t))
+  if (check && !t.isMaybeKind(Kind::SEQUENCE_TYPE))
   {
     if (errOut)
     {
@@ -536,12 +536,29 @@ TypeNode SeqNthTypeRule::computeType(NodeManager* nodeManager,
     // if selecting from abstract, we don't know the type
     return nodeManager->mkAbstractType(Kind::ABSTRACT_TYPE);
   }
-  if (t.isSequence())
+  // must check sequence here to ensure not a string
+  if (!t.isSequence())
   {
-    return t.getSequenceElementType();
+    if (errOut)
+    {
+      (*errOut) << "expecting a sequence term in nth";
+    }
+    return TypeNode::null();
   }
-  Assert(t.isString());
-  return nodeManager->integerType();
+  return t.getSequenceElementType();
+}
+
+TypeNode SeqEmptyOfTypeTypeRule::preComputeType(NodeManager* nm, TNode n)
+{
+  return TypeNode::null();
+}
+
+TypeNode SeqEmptyOfTypeTypeRule::computeType(NodeManager* nm,
+                                             TNode n,
+                                             bool check,
+                                             std::ostream* errOut)
+{
+  return nm->mkAbstractType(Kind::SEQUENCE_TYPE);
 }
 
 Cardinality SequenceProperties::computeCardinality(TypeNode type)

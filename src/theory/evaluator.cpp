@@ -505,10 +505,14 @@ EvalResult Evaluator::evalInternal(
           {
             if (results[currNode[i]].d_rat.isZero())
             {
-              if (k == Kind::DIVISION_TOTAL || k == Kind::INTS_DIVISION_TOTAL
-                  || k == Kind::INTS_MODULUS_TOTAL)
+              if (k == Kind::DIVISION_TOTAL || k == Kind::INTS_DIVISION_TOTAL)
               {
                 res = Rational(0);
+                continue;
+              }
+              else if (k == Kind::INTS_MODULUS_TOTAL)
+              {
+                // result is unchanged
                 continue;
               }
               else
@@ -601,7 +605,12 @@ EvalResult Evaluator::evalInternal(
         {
           const Rational& x = results[currNode[0]].d_rat;
           bool valid = false;
-          if (x.getNumerator().fitsUnsignedInt())
+          if (x.sgn() < 0)
+          {
+            results[currNode] = EvalResult(Rational(0));
+            valid = true;
+          }
+          else if (x.getNumerator().fitsUnsignedInt())
           {
             uint32_t value = x.getNumerator().toUnsignedInt();
             if (value <= 256)
@@ -626,8 +635,15 @@ EvalResult Evaluator::evalInternal(
         case Kind::INTS_LOG2:
         {
           const Rational& x = results[currNode[0]].d_rat;
-          results[currNode] =
-              EvalResult(Rational(x.getNumerator().length() - 1));
+          if (x.sgn() < 0)
+          {
+            results[currNode] = EvalResult(Rational(0));
+          }
+          else
+          {
+            results[currNode] =
+                EvalResult(Rational(x.getNumerator().length() - 1));
+          }
           break;
         }
         case Kind::CONST_STRING:

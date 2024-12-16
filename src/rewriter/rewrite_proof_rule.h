@@ -1,6 +1,6 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Hans-Jörg Schurr
+ *   Andrew Reynolds, Hans-Joerg Schurr
  *
  * This file is part of the cvc5 project.
  *
@@ -128,7 +128,12 @@ class RewriteProofRule
   Node getConclusionFor(
       const std::vector<Node>& ss,
       std::vector<std::pair<Kind, std::vector<Node>>>& witnessTerms) const;
-
+  /**
+   * @return the list of applications of Kind::TYPE_OF that appear in the
+   * conclusion or a premise. These require special handling by the
+   * printer.
+   */
+  std::vector<Node> getExplicitTypeOfList() const;
   /**
    * Is variable explicit? An explicit variable is one that does not occur
    * in a condition and thus its value must be specified in a proof
@@ -152,16 +157,25 @@ class RewriteProofRule
   Kind getListContext(Node v) const;
   /** Was this rule marked as being applied to fixed point? */
   bool isFixedPoint() const;
-  /** Is this rule in flat form? */
-  bool isFlatForm() const;
+  /**
+   * Get condition definitions given an application vs -> ss of this rule.
+   * This is used to handle variables that do not occur in the left hand side
+   * of rewrite rules and are defined in conditions of this rule.
+   * @param vs The matched variables of this rule.
+   * @param ss The terms to substitute in this rule for each vs.
+   * @param dvs The variables for which a definition can now be inferred.
+   * @param dss The terms that each dvs are defined as, for each dvs.
+   */
+  void getConditionalDefinitions(const std::vector<Node>& vs,
+                                 const std::vector<Node>& ss,
+                                 std::vector<Node>& dvs,
+                                 std::vector<Node>& dss) const;
 
  private:
   /** The id of the rule */
   ProofRewriteRule d_id;
   /** The conditions of the rule */
   std::vector<Node> d_cond;
-  /** The obligation generator formulas of the rule */
-  std::vector<Node> d_obGen;
   /** The conclusion of the rule (an equality) */
   Node d_conc;
   /** Is the rule applied in some fixed point context? */
@@ -179,6 +193,8 @@ class RewriteProofRule
    * "holes" in a proof.
    */
   std::unordered_set<Node> d_noOccVars;
+  /** Maps variables to the term they are defined to be */
+  std::map<Node, Node> d_condDefinedVars;
   /** The context for list variables (see expr::getListVarContext). */
   std::map<Node, Node> d_listVarCtx;
   /** The match trie (for fixed point matching) */

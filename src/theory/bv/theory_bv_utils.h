@@ -141,7 +141,7 @@ Node mkAnd(const std::vector<NodeTemplate<ref_count>>& conjunctions)
   /* All the same, or just one  */
   if (all.size() == 1) { return conjunctions[0]; }
 
-  NodeBuilder conjunction(Kind::AND);
+  NodeBuilder conjunction(NodeManager::currentNM(), Kind::AND);
   for (TNode n : all) { conjunction << n; }
   return conjunction;
 }
@@ -160,7 +160,7 @@ Node mkOr(const std::vector<NodeTemplate<ref_count>>& nodes)
   /* All the same, or just one  */
   if (all.size() == 1) { return nodes[0]; }
 
-  NodeBuilder disjunction(Kind::OR);
+  NodeBuilder disjunction(NodeManager::currentNM(), Kind::OR);
   for (TNode n : all) { disjunction << n; }
   return disjunction;
 }
@@ -175,7 +175,7 @@ Node mkSignExtend(TNode node, unsigned amount);
 Node mkExtract(TNode node, unsigned high, unsigned low);
 /* Create extract node of bit-width 1 where the resulting node represents
  * the bit at given index.  */
-Node mkBitOf(TNode node, unsigned index);
+Node mkBit(TNode node, unsigned index);
 
 /* Create n-ary concat node of given children.  */
 Node mkConcat(TNode t1, TNode t2);

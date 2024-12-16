@@ -34,6 +34,12 @@ TheoryUfRewriter::TheoryUfRewriter(NodeManager* nm, Rewriter* rr)
 {
   registerProofRewriteRule(ProofRewriteRule::BETA_REDUCE,
                            TheoryRewriteCtx::PRE_DSL);
+  registerProofRewriteRule(ProofRewriteRule::LAMBDA_ELIM,
+                           TheoryRewriteCtx::PRE_DSL);
+  registerProofRewriteRule(ProofRewriteRule::BV_TO_NAT_ELIM,
+                           TheoryRewriteCtx::PRE_DSL);
+  registerProofRewriteRule(ProofRewriteRule::INT_TO_BV_ELIM,
+                           TheoryRewriteCtx::PRE_DSL);
 }
 
 RewriteResponse TheoryUfRewriter::postRewrite(TNode node)
@@ -72,7 +78,7 @@ RewriteResponse TheoryUfRewriter::postRewrite(TNode node)
         std::vector<TNode> args;
         args.push_back(lambdaRew);
         args.insert(args.end(), node.begin(), node.end());
-        NodeManager* nm = NodeManager::currentNM();
+        NodeManager* nm = nodeManager();
         Node ret = nm->mkNode(Kind::APPLY_UF, args);
         Assert(ret != node);
         return RewriteResponse(REWRITE_AGAIN_FULL, ret);
@@ -188,12 +194,15 @@ Node TheoryUfRewriter::rewriteViaRule(ProofRewriteRule id, const Node& n)
   {
     case ProofRewriteRule::BETA_REDUCE:
     {
-      if (n.getKind() != Kind::APPLY_UF
-          || n.getOperator().getKind() != Kind::LAMBDA)
+      if (n.getKind() != Kind::APPLY_UF)
       {
         return Node::null();
       }
-      Node lambda = n.getOperator();
+      Node lambda = uf::FunctionConst::toLambda(n.getOperator());
+      if (lambda.isNull())
+      {
+        return Node::null();
+      }
       std::vector<TNode> vars(lambda[0].begin(), lambda[0].end());
       std::vector<TNode> subs(n.begin(), n.end());
       if (vars.size() != subs.size())
@@ -209,6 +218,34 @@ Node TheoryUfRewriter::rewriteViaRule(ProofRewriteRule id, const Node& n)
       return ret;
     }
     break;
+    case ProofRewriteRule::LAMBDA_ELIM:
+    {
+      if (n.getKind() == Kind::LAMBDA)
+      {
+        Node felim = canEliminateLambda(n);
+        if (!felim.isNull())
+        {
+          return felim;
+        }
+      }
+    }
+    break;
+    case ProofRewriteRule::BV_TO_NAT_ELIM:
+    {
+      if (n.getKind() == Kind::BITVECTOR_TO_NAT)
+      {
+        return arith::eliminateBv2Nat(n);
+      }
+    }
+    break;
+    case ProofRewriteRule::INT_TO_BV_ELIM:
+    {
+      if (n.getKind() == Kind::INT_TO_BITVECTOR)
+      {
+        return arith::eliminateInt2Bv(n);
+      }
+    }
+    break;
     default: break;
   }
   return Node::null();
@@ -220,7 +257,7 @@ Node TheoryUfRewriter::getHoApplyForApplyUf(TNode n)
   Node curr = n.getOperator();
   for (unsigned i = 0; i < n.getNumChildren(); i++)
   {
-    curr = NodeManager::currentNM()->mkNode(Kind::HO_APPLY, curr, n[i]);
+    curr = NodeManager::mkNode(Kind::HO_APPLY, curr, n[i]);
   }
   return curr;
 }
@@ -231,7 +268,7 @@ Node TheoryUfRewriter::getApplyUfForHoApply(TNode n)
   // if operator is standard
   if (canUseAsApplyUfOperator(curr))
   {
-    return NodeManager::currentNM()->mkNode(Kind::APPLY_UF, children);
+    return n.getNodeManager()->mkNode(Kind::APPLY_UF, children);
   }
   // cannot construct APPLY_UF if operator is partially applied or is not
   // standard
@@ -294,25 +331,10 @@ Node TheoryUfRewriter::rewriteLambda(Node node)
   Trace("builtin-rewrite-debug")
       << "...failed to get array representation." << std::endl;
   // see if it can be eliminated, (lambda ((x T)) (f x)) ---> f
-  if (node[1].getKind() == Kind::APPLY_UF)
+  Node felim = canEliminateLambda(node);
+  if (!felim.isNull())
   {
-    size_t nvar = node[0].getNumChildren();
-    if (node[1].getNumChildren() == nvar)
-    {
-      bool matchesList = true;
-      for (size_t i = 0; i < nvar; i++)
-      {
-        if (node[0][i] != node[1][i])
-        {
-          matchesList = false;
-          break;
-        }
-      }
-      if (matchesList)
-      {
-        return node[1].getOperator();
-      }
-    }
+    return felim;
   }
   return node;
 }
@@ -377,6 +399,33 @@ RewriteResponse TheoryUfRewriter::rewriteIntToBV(TNode node)
   }
   return RewriteResponse(REWRITE_DONE, node);
 }
+
+Node TheoryUfRewriter::canEliminateLambda(const Node& node)
+{
+  Assert(node.getKind() == Kind::LAMBDA);
+  if (node[1].getKind() == Kind::APPLY_UF)
+  {
+    size_t nvar = node[0].getNumChildren();
+    if (node[1].getNumChildren() == nvar)
+    {
+      bool matchesList = true;
+      for (size_t i = 0; i < nvar; i++)
+      {
+        if (node[0][i] != node[1][i])
+        {
+          matchesList = false;
+          break;
+        }
+      }
+      if (matchesList)
+      {
+        return node[1].getOperator();
+      }
+    }
+  }
+  return Node::null();
+}
+
 }  // namespace uf
 }  // namespace theory
 }  // namespace cvc5::internal

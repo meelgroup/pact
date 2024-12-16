@@ -1,6 +1,6 @@
 /******************************************************************************
  * Top contributors (to current version):
- *   Andrew Reynolds, Hans-Jörg Schurr, Hanna Lachnitt
+ *   Andrew Reynolds, Hans-Joerg Schurr, Hanna Lachnitt
  *
  * This file is part of the cvc5 project.
  *
@@ -15,7 +15,7 @@
 
 #include "theory/builtin/proof_checker.h"
 
-#include "expr/nary_term_util.h"
+#include "expr/aci_norm.h"
 #include "expr/skolem_manager.h"
 #include "rewriter/rewrite_db.h"
 #include "rewriter/rewrite_db_term_process.h"
@@ -49,7 +49,6 @@ void BuiltinProofRuleChecker::registerTo(ProofChecker* pc)
   pc->registerChecker(ProofRule::SUBS, this);
   pc->registerChecker(ProofRule::EVALUATE, this);
   pc->registerChecker(ProofRule::ACI_NORM, this);
-  pc->registerChecker(ProofRule::ANNOTATION, this);
   pc->registerChecker(ProofRule::ITE_EQ, this);
   pc->registerChecker(ProofRule::ENCODE_EQ_INTRO, this);
   pc->registerChecker(ProofRule::DSL_REWRITE, this);
@@ -421,15 +420,8 @@ Node BuiltinProofRuleChecker::checkInternal(ProofRule id,
   {
     Assert(children.empty());
     Assert(args.size() == 1);
-    rewriter::RewriteDbNodeConverter rconv(nodeManager());
-    // run a single (small) step conversion
-    Node ac = rconv.postConvert(args[0]);
+    Node ac = getEncodeEqIntro(nodeManager(), args[0]);
     return args[0].eqNode(ac);
-  }
-  else if (id == ProofRule::ANNOTATION)
-  {
-    Assert(children.size() == 1);
-    return children[0];
   }
   else if (id == ProofRule::DSL_REWRITE)
   {
@@ -485,6 +477,13 @@ Node BuiltinProofRuleChecker::checkInternal(ProofRule id,
   }
   // no rule
   return Node::null();
+}
+
+Node BuiltinProofRuleChecker::getEncodeEqIntro(NodeManager* nm, const Node& n)
+{
+  rewriter::RewriteDbNodeConverter rconv(nm);
+  // run a single (small) step conversion
+  return rconv.postConvert(n);
 }
 
 bool BuiltinProofRuleChecker::getTheoryId(TNode n, TheoryId& tid)

@@ -42,8 +42,9 @@ HigherOrderTrigger::HigherOrderTrigger(
     TermRegistry& tr,
     Node q,
     std::vector<Node>& nodes,
-    std::map<Node, std::vector<Node> >& ho_apps)
-    : Trigger(env, qs, qim, qr, tr, q, nodes), d_ho_var_apps(ho_apps)
+    std::map<Node, std::vector<Node> >& ho_apps,
+    bool isUser)
+    : Trigger(env, qs, qim, qr, tr, q, nodes, isUser), d_ho_var_apps(ho_apps)
 {
   NodeManager* nm = NodeManager::currentNM();
   // process the higher-order variable applications
@@ -429,7 +430,7 @@ bool HigherOrderTrigger::sendInstantiationArg(std::vector<Node>& m,
       Node body =
           NodeManager::currentNM()->mkNode(Kind::APPLY_UF, d_lchildren[vnum]);
       Trace("ho-unif-debug2") << "  got " << body << std::endl;
-      Node lam = NodeManager::currentNM()->mkNode(Kind::LAMBDA, lbvl, body);
+      Node lam = NodeManager::mkNode(Kind::LAMBDA, lbvl, body);
       m[vnum] = lam;
       Trace("ho-unif-debug2") << "  try " << vnum << " -> " << lam << std::endl;
     }

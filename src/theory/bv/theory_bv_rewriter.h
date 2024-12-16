@@ -41,11 +41,34 @@ class TheoryBVRewriter : public TheoryRewriter
    * cannot be rewritten.
    */
   Node rewriteViaRule(ProofRewriteRule id, const Node& n) override;
+
+  /**
+   * Override TheoryRewriter::expandDefinition in order to
+   * eliminate overflow operators
+   */
+  Node expandDefinition(Node node) override;
+
+  /**
+   * This function is called when int-blasting is disabled.
+   * It eliminates the following operators:
+   * uaddo, saddo, umulo, smulo, usubu, ssubo.
+   *
+   * When int-blasting is on, we do not want to eliminate them,
+   * but instead translate them directly.
+   *
+   * The other overflow operators, namely
+   * nego and sdivo, are eliminated by the rewriter,
+   * regardless of whether int-blasting is enabled
+   * or disabled, because their elimination
+   * produces simple equalities.
+   */
+  Node eliminateOverflows(Node node);
+
  private:
   static RewriteResponse IdentityRewrite(TNode node, bool prerewrite = false);
   static RewriteResponse UndefinedRewrite(TNode node, bool prerewrite = false);
 
-  static RewriteResponse RewriteBitOf(TNode node, bool prerewrite = false);
+  static RewriteResponse RewriteBit(TNode node, bool prerewrite = false);
   static RewriteResponse RewriteEqual(TNode node, bool prerewrite = false);
   static RewriteResponse RewriteUlt(TNode node, bool prerewrite = false);
   static RewriteResponse RewriteUltBv(TNode node, bool prerewrite = false);
@@ -90,12 +113,6 @@ class TheoryBVRewriter : public TheoryRewriter
   static RewriteResponse RewriteRedor(TNode node, bool prerewrite = false);
   static RewriteResponse RewriteRedand(TNode node, bool prerewrite = false);
   static RewriteResponse RewriteNego(TNode node, bool prerewrite = false);
-  static RewriteResponse RewriteUaddo(TNode node, bool prerewrite = false);
-  static RewriteResponse RewriteSaddo(TNode node, bool prerewrite = false);
-  static RewriteResponse RewriteUmulo(TNode node, bool prerewrite = false);
-  static RewriteResponse RewriteSmulo(TNode node, bool prerewrite = false);
-  static RewriteResponse RewriteUsubo(TNode node, bool prerewrite = false);
-  static RewriteResponse RewriteSsubo(TNode node, bool prerewrite = false);
   static RewriteResponse RewriteSdivo(TNode node, bool prerewrite = false);
   static RewriteResponse RewriteEagerAtom(TNode node, bool prerewrite = false);
   static RewriteResponse RewriteSize(TNode node, bool prerewrite = false);
