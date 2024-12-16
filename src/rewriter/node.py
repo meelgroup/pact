@@ -156,6 +156,8 @@ class Op(Enum):
 
     BV_TO_NAT = ('bv2nat', 'BITVECTOR_TO_NAT')
     INT_TO_BV = ('int2bv', 'INT_TO_BITVECTOR')
+    
+    TYPE_OF = ('@type_of', 'TYPE_OF')
 
     ###########################################################################
     # Strings
@@ -170,7 +172,7 @@ class Op(Enum):
     STRING_AT = ('str.at', 'STRING_CHARAT')
     STRING_CONTAINS = ('str.contains', 'STRING_CONTAINS')
     STRING_LT = ('str.<', 'STRING_LT')
-    STRING_LEQ = ('str.<=', 'STRING.LEQ')
+    STRING_LEQ = ('str.<=', 'STRING_LEQ')
     STRING_INDEXOF = ('str.indexof', 'STRING_INDEXOF')
     STRING_INDEXOF_RE = ('str.indexof_re', 'STRING_INDEXOF_RE')
     STRING_REPLACE = ('str.replace', 'STRING_REPLACE')
@@ -190,6 +192,7 @@ class Op(Enum):
 
     SEQ_UNIT = ('seq.unit', 'SEQ_UNIT')
     SEQ_NTH = ('seq.nth', 'SEQ_NTH')
+    SEQ_EMPTY_OF_TYPE = ('@seq.empty_of_type', 'SEQ_EMPTY_OF_TYPE')
 
     STRING_TO_REGEXP = ('str.to_re', 'STRING_TO_REGEXP')
     REGEXP_CONCAT = ('re.++', 'REGEXP_CONCAT')
@@ -221,6 +224,7 @@ class Op(Enum):
     SET_CARD = ('set.card', 'SET_CARD')
     SET_IS_EMPTY = ('set.is_empty', 'SET_IS_EMPTY')
     SET_IS_SINGLETON = ('set.is_singleton', 'SET_IS_SINGLETON')
+    SET_EMPTY_OF_TYPE = ('@set.empty_of_type', 'SET_EMPTY_OF_TYPE')
 
 
 class BaseSort(Enum):

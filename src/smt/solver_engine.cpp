@@ -181,7 +181,6 @@ void SolverEngine::finishInit()
   SetDefaults sdefaults(*d_env, d_isInternalSubsolver);
   sdefaults.setDefaults(d_env->d_logic, getOptions());
 
-  ProofNodeManager* pnm = nullptr;
   if (d_env->getOptions().smt.produceProofs)
   {
     // ensure bound variable uses canonical bound variables
@@ -191,7 +190,6 @@ void SolverEngine::finishInit()
     // start the unsat core manager
     d_ucManager.reset(new UnsatCoreManager(
         *d_env.get(), *d_smtSolver.get(), *d_pfManager.get()));
-    pnm = d_pfManager->getProofNodeManager();
   }
   if (d_env->isOutputOn(OutputTag::RARE_DB))
   {
@@ -200,12 +198,11 @@ void SolverEngine::finishInit()
                != options::ProofGranularityMode::DSL_REWRITE)
     {
       Warning() << "WARNING: -o rare-db requires --produce-proofs and "
-                   "--proof-granularity=dsl-rewrite"
-                << std::endl;
+                   "--proof-granularity=dsl-rewrite" << std::endl;
     }
   }
   // enable proof support in the environment/rewriter
-  d_env->finishInit(pnm);
+  d_env->finishInit(d_pfManager.get());
 
   Trace("smt-debug") << "SolverEngine::finishInit" << std::endl;
   d_smtSolver->finishInit();
@@ -262,6 +259,7 @@ void SolverEngine::shutdown()
 
 SolverEngine::~SolverEngine()
 {
+
   try
   {
     shutdown();
@@ -292,8 +290,7 @@ SolverEngine::~SolverEngine()
   }
   catch (Exception& e)
   {
-    d_env->warning() << "cvc5 threw an exception during cleanup." << std::endl
-                     << e << std::endl;
+    d_env->warning() << "cvc5 threw an exception during cleanup." << std::endl << e << std::endl;
   }
 }
 
@@ -363,10 +360,9 @@ void SolverEngine::setInfo(const std::string& key, const std::string& value)
   {
     if (value != "2" && value != "2.6")
     {
-      d_env->warning()
-          << "SMT-LIB version " << value
-          << " unsupported, defaulting to language (and semantics of) "
-             "SMT-LIB 2.6\n";
+      d_env->warning() << "SMT-LIB version " << value
+                << " unsupported, defaulting to language (and semantics of) "
+                   "SMT-LIB 2.6\n";
     }
     getOptions().write_base().inputLanguage = Language::LANG_SMTLIB_V2_6;
     // also update the output language
@@ -764,61 +760,6 @@ QuantifiersEngine* SolverEngine::getAvailableQuantifiersEngine(
   return qe;
 }
 
-// bound = 0 is no bound
-
-int32_t SolverEngine::boundedSat(uint64_t bound,
-                                 int num_hashes,
-                                 const std::vector<Node>& terms_to_block)
-{
-  uint64_t count = 0;
-  Result res;
-  const Options& opts = d_env->getOptions();
-
-  push();
-  do
-  {
-    auto time_before = std::chrono::high_resolution_clock::now();
-    // getSolver()->getStatistics().get("global::totalTime");
-    res = checkSat();
-    auto time_after = std::chrono::high_resolution_clock::now();
-    auto time_elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
-                            time_after - time_before)
-                            .count();
-    double elapsed_time_in_ms = time_elapsed / 1E3;
-
-    Trace("satcall-time") << "c it ----------- " << num_hashes << ","
-                          << count + 1 << "," << elapsed_time_in_ms
-                          << std::endl;
-
-    if (opts.counting.listint && res.getStatus() == Result::SAT)
-    {
-      // block the model
-      for (const Node& t : terms_to_block)
-      {
-        Node val = getValue(t);
-        Trace("satcall-block") << "c " << t << ": " << val << std::endl;
-      }
-    }
-
-    if (res.getStatus() == Result::SAT)
-    {
-      finishInit();
-      if (opts.counting.projcount || opts.counting.enumerateCount || true)
-      {
-        blockModelValues(terms_to_block);
-      }
-      else
-      {
-        blockModel(cvc5::modes::BlockModelsMode::VALUES);
-      }
-      count++;
-    }
-  } while (res.getStatus() == Result::SAT && (count < bound || bound == 0));
-  pop();
-
-  return count;
-}
-
 Result SolverEngine::checkSat()
 {
   beginCall(true);
@@ -1166,9 +1107,9 @@ void SolverEngine::declareOracleFun(
     const std::vector<TypeNode>& argTypes = tn.getArgTypes();
     for (const TypeNode& t : argTypes)
     {
-      inputs.push_back(nm->mkBoundVar(t));
+      inputs.push_back(NodeManager::mkBoundVar(t));
     }
-    outputs.push_back(nm->mkBoundVar(tn.getRangeType()));
+    outputs.push_back(NodeManager::mkBoundVar(tn.getRangeType()));
     std::vector<Node> appc;
     appc.push_back(var);
     appc.insert(appc.end(), inputs.begin(), inputs.end());
@@ -1176,7 +1117,7 @@ void SolverEngine::declareOracleFun(
   }
   else
   {
-    outputs.push_back(nm->mkBoundVar(tn.getRangeType()));
+    outputs.push_back(NodeManager::mkBoundVar(tn.getRangeType()));
     app = var;
   }
   // makes equality assumption
@@ -1277,8 +1218,8 @@ Node SolverEngine::getValue(const Node& t) const
   // holds for models that do not have approximate values.
   if (!m->isValue(resultNode))
   {
-    d_env->warning() << "Could not evaluate " << resultNode << " in getValue."
-                     << std::endl;
+    d_env->warning() << "Could not evaluate " << resultNode
+                     << " in getValue." << std::endl;
   }
 
   if (d_env->getOptions().smt.abstractValues)
@@ -1596,7 +1537,7 @@ void SolverEngine::checkProof()
   {
     // connect proof to assertions, which will fail if the proof is malformed
     d_pfManager->connectProofToAssertions(
-        pePfn, *d_smtSolver.get(), ProofScopeMode::UNIFIED);
+        pePfn, d_smtSolver->getAssertions(), ProofScopeMode::UNIFIED);
   }
 }
 
@@ -1685,10 +1626,9 @@ void SolverEngine::checkUnsatCore()
                     << std::endl;
   if (r.isUnknown())
   {
-    d_env->warning()
-        << "SolverEngine::checkUnsatCore(): could not check core result "
-           "unknown."
-        << std::endl;
+    d_env->warning() << "SolverEngine::checkUnsatCore(): could not check core result "
+                 "unknown."
+              << std::endl;
   }
   else if (r.getStatus() == Result::SAT)
   {
@@ -1844,7 +1784,7 @@ std::vector<std::shared_ptr<ProofNode>> SolverEngine::getProof(
     {
       Assert(p != nullptr);
       p = d_pfManager->connectProofToAssertions(
-          p, *d_smtSolver.get(), scopeMode);
+          p, d_smtSolver->getAssertions(), scopeMode);
     }
   }
   return ps;
@@ -1853,8 +1793,10 @@ std::vector<std::shared_ptr<ProofNode>> SolverEngine::getProof(
 void SolverEngine::proofToString(std::ostream& out,
                                  std::shared_ptr<ProofNode> fp)
 {
-  options::ProofFormatMode format_mode = getOptions().proof.proofFormatMode;
-  d_pfManager->printProof(out, fp, format_mode);
+  options::ProofFormatMode format_mode =
+      getOptions().proof.proofFormatMode;
+  d_pfManager->printProof(
+      out, fp, format_mode, ProofScopeMode::DEFINITIONS_AND_ASSERTIONS);
 }
 
 void SolverEngine::printInstantiations(std::ostream& out)
@@ -1997,12 +1939,10 @@ Node SolverEngine::getInterpolant(const Node& conj, const TypeNode& grammarType)
   beginCall(true);
   // Analogous to getAbduct, ensure that assertions are current.
   d_smtDriver->refreshAssertions();
-  std::vector<Node> axioms = getSubstitutedAssertions();
-  // expand definitions in the conjecture as well
-  Node conje = d_smtSolver->getPreprocessor()->applySubstitutions(conj);
+  std::vector<Node> axioms = getAssertions();
   Node interpol;
   bool success =
-      d_interpolSolver->getInterpolant(axioms, conje, grammarType, interpol);
+      d_interpolSolver->getInterpolant(axioms, conj, grammarType, interpol);
   // notify the state of whether the get-interpolant call was successfuly, which
   // impacts the SMT mode.
   d_state->notifyGetInterpol(success);
@@ -2035,11 +1975,10 @@ Node SolverEngine::getAbduct(const Node& conj, const TypeNode& grammarType)
   beginCall(true);
   // ensure that assertions are current
   d_smtDriver->refreshAssertions();
-  std::vector<Node> axioms = getSubstitutedAssertions();
+  std::vector<Node> axioms = getAssertions();
   // expand definitions in the conjecture as well
-  Node conje = d_smtSolver->getPreprocessor()->applySubstitutions(conj);
   Node abd;
-  bool success = d_abductSolver->getAbduct(axioms, conje, grammarType, abd);
+  bool success = d_abductSolver->getAbduct(axioms, conj, grammarType, abd);
   // notify the state of whether the get-abduct call was successful, which
   // impacts the SMT mode.
   d_state->notifyGetAbduct(success);
@@ -2247,14 +2186,13 @@ void SolverEngine::setOption(const std::string& key,
         for (size_t i = 0; i < 2; i++)
         {
           const std::string& rkey = i == 0 ? d_safeOptsRegularOption : key;
-          const std::string& rvalue =
-              i == 0 ? d_safeOptsRegularOptionValue : value;
+          const std::string& rvalue = i == 0 ? d_safeOptsRegularOptionValue : value;
           bool isDefault = i == 0 ? d_safeOptsSetRegularOptionToDefault
                                   : (getOption(key) == value);
           if (isDefault)
           {
-            ss << " The value for " << rkey << " is already its current value ("
-               << rvalue
+            ss << " The value for " << rkey
+               << " is already its current value (" << rvalue
                << "). Omitting this option will avoid this exception.";
           }
         }

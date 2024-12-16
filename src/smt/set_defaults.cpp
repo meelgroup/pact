@@ -53,6 +53,20 @@ namespace cvc5::internal {
 namespace smt {
 
 /**
+ * Throw an option exception if domain.optName is set by the user and not the
+ * given value. Give an error message where reason is given.
+ * Note this macro should be used if the value is concrete.
+ */
+#define OPTION_EXCEPTION_IF_NOT(domain, optName, value, reason)               \
+  if (opts.write_##domain().optName##WasSetByUser                             \
+      && opts.write_##domain().optName != value)                              \
+  {                                                                           \
+    std::stringstream ss;                                                     \
+    ss << "Cannot use --" << options::domain::longName::optName << " due to " \
+       << reason << ".";                                                      \
+    throw OptionException(ss.str());                                          \
+  }
+/**
  * Set domain.optName to value due to reason. Notify if value changes.
  * Note this macro should be used if the value is concrete.
  */
@@ -126,35 +140,29 @@ void SetDefaults::setDefaultsPre(Options& opts)
   {
     // all "experimental" theories that are enabled by default should be
     // disabled here
-    SET_AND_NOTIFY_IF_NOT_USER(uf, hoExp, false, "safe options");
-    SET_AND_NOTIFY_IF_NOT_USER(uf, cardExp, false, "safe options");
+    SET_AND_NOTIFY_IF_NOT_USER(sep, sep, false, "safe options");
+    SET_AND_NOTIFY_IF_NOT_USER(bags, bags, false, "safe options");
+    SET_AND_NOTIFY_IF_NOT_USER(ff, ff, false, "safe options");
+    SET_AND_NOTIFY_IF_NOT_USER(fp, fp, false, "safe options");
+    // expert extensions to theories
+    SET_AND_NOTIFY_IF_NOT_USER(uf, ufHoExp, false, "safe options");
+    SET_AND_NOTIFY_IF_NOT_USER(uf, ufCardExp, false, "safe options");
+    SET_AND_NOTIFY_IF_NOT_USER(datatypes, datatypesExp, false, "safe options");
     SET_AND_NOTIFY_IF_NOT_USER(arith, arithExp, false, "safe options");
-    SET_AND_NOTIFY_IF_NOT_USER(sep, sepExp, false, "safe options");
-    SET_AND_NOTIFY_IF_NOT_USER(bags, bagsExp, false, "safe options");
-    SET_AND_NOTIFY_IF_NOT_USER(ff, ffExp, false, "safe options");
-    SET_AND_NOTIFY_IF_NOT_USER(
-        datatypes, codatatypesExp, false, "safe options");
+    SET_AND_NOTIFY_IF_NOT_USER(sets, relsExp, false, "safe options");
+    SET_AND_NOTIFY_IF_NOT_USER(sets, setsCardExp, false, "safe options");
     // these are disabled by default but are listed here in case they are
     // enabled by default later
     SET_AND_NOTIFY_IF_NOT_USER(fp, fpExp, false, "safe options");
     SET_AND_NOTIFY_IF_NOT_USER(sets, setsExp, false, "safe options");
+    // specific options that are disabled
+    OPTION_EXCEPTION_IF_NOT(arith, nlCov, false, "safe options");
+    SET_AND_NOTIFY_IF_NOT_USER(arith, nlCov, false, "safe options");
   }
   // implied options
   if (opts.smt.debugCheckModels)
   {
     SET_AND_NOTIFY(smt, checkModels, true, "debugCheckModels");
-  }
-  if (opts.counting.enumerateCount || opts.counting.smtapproxMC)
-  {
-    opts.write_base().incrementalSolving = true;
-    opts.write_smt().produceModels = true;
-    opts.write_smt().checkModels = true;
-    opts.write_driver().dumpModels = true;
-  }
-  if (opts.counting.bitblastApproxMC)
-  {
-    opts.write_bv().bvSatSolver = options::BvSatSolverMode::APPROXMC;
-    opts.write_bv().bitblastMode = options::BitblastMode::LAZY;
   }
   if (opts.smt.checkModels || opts.driver.dumpModels)
   {
@@ -177,13 +185,22 @@ void SetDefaults::setDefaultsPre(Options& opts)
     SET_AND_NOTIFY(
         smt, produceUnsatCores, true, "option requiring unsat cores");
   }
-  if (opts.smt.produceUnsatCores
-      && opts.smt.unsatCoresMode == options::UnsatCoresMode::OFF)
+  if (opts.smt.produceUnsatCores)
   {
-    SET_AND_NOTIFY(smt,
-                   unsatCoresMode,
-                   options::UnsatCoresMode::ASSUMPTIONS,
-                   "enabling unsat cores");
+    if (opts.prop.satSolver == options::SatSolverMode::CADICAL)
+    {
+      SET_AND_NOTIFY(prop,
+                     satSolver,
+                     options::SatSolverMode::MINISAT,
+                     "proofs and unsat cores not supported with CaDiCaL");
+    }
+    if (opts.smt.unsatCoresMode == options::UnsatCoresMode::OFF)
+    {
+      SET_AND_NOTIFY(smt,
+                     unsatCoresMode,
+                     options::UnsatCoresMode::ASSUMPTIONS,
+                     "enabling unsat cores");
+    }
   }
   if (opts.proof.checkProofSteps)
   {
@@ -202,12 +219,26 @@ void SetDefaults::setDefaultsPre(Options& opts)
       || opts.smt.proofMode == options::ProofMode::FULL
       || opts.smt.proofMode == options::ProofMode::FULL_STRICT)
   {
+    std::stringstream reasonNoProofs;
+    if (incompatibleWithProofs(opts, reasonNoProofs))
+    {
+      std::stringstream ss;
+      ss << reasonNoProofs.str() << " not supported with proofs or unsat cores";
+      throw OptionException(ss.str());
+    }
     SET_AND_NOTIFY(smt, produceProofs, true, "option requiring proofs");
   }
 
   // this check assumes the user has requested *full* proofs
   if (opts.smt.produceProofs)
   {
+    if (opts.prop.satSolver == options::SatSolverMode::CADICAL)
+    {
+      SET_AND_NOTIFY(prop,
+                     satSolver,
+                     options::SatSolverMode::MINISAT,
+                     "proofs and unsat cores not supported with CaDiCaL");
+    }
     // if the user requested proofs, proof mode is (at least) full
     if (opts.smt.proofMode < options::ProofMode::FULL)
     {
@@ -316,6 +347,13 @@ void SetDefaults::setDefaultsPre(Options& opts)
                        options::PropProofMode::SAT_EXTERNAL_PROVE,
                        "cadical");
       }
+    }
+    // upgrade to full strict if safe options
+    if (options().base.safeOptions
+        && opts.smt.proofMode == options::ProofMode::FULL)
+    {
+      SET_AND_NOTIFY_IF_NOT_USER(
+          smt, proofMode, options::ProofMode::FULL_STRICT, "safe options");
     }
   }
 
@@ -670,8 +708,10 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
     }
   }
 
-  // by default, symmetry breaker is on only for non-incremental QF_UF
-  if (!opts.uf.ufSymmetryBreakerWasSetByUser)
+  // By default, symmetry breaker is on only for non-incremental QF_UF.
+  // Note that if ufSymmetryBreaker is already set to false, we do not reenable
+  // it.
+  if (!opts.uf.ufSymmetryBreakerWasSetByUser && opts.uf.ufSymmetryBreaker)
   {
     // Only applies to non-incremental QF_UF.
     bool qf_uf_noinc = logic.isPure(THEORY_UF) && !logic.isQuantified()
@@ -681,8 +721,7 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
     // presolve.
     // We also disable it by default if safe unsat cores are enabled, or if
     // the proof mode is FULL_STRICT.
-    bool val = qf_uf_noinc && !safeUnsatCores(opts)
-               && opts.smt.proofMode != options::ProofMode::FULL_STRICT;
+    bool val = qf_uf_noinc && !safeUnsatCores(opts);
     SET_AND_NOTIFY_VAL_SYM(uf, ufSymmetryBreaker, val, "logic and options");
   }
 
@@ -922,47 +961,41 @@ void SetDefaults::setDefaultsPost(const LogicInfo& logic, Options& opts) const
         "any theory other than UF. ");
   }
 
-#ifdef CVC5_USE_POLY
-  if (logic == LogicInfo("QF_UFNRA"))
+  // Note that if nlCov is already set to false, we do not reenable it.
+  if (opts.arith.nlCov)
   {
-    if (!opts.arith.nlCov && !opts.arith.nlCovWasSetByUser)
+#ifdef CVC5_USE_POLY
+    if (logic == LogicInfo("QF_UFNRA"))
     {
-      SET_AND_NOTIFY(arith, nlCov, true, "QF_UFNRA");
+      // use only light nlExt techniques if we are using nlCov
       SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(
           arith, nlExt, options::NlExtMode::LIGHT, "QF_UFNRA");
     }
-  }
-  else if (logic.isQuantified() && logic.isTheoryEnabled(theory::THEORY_ARITH)
-           && logic.areRealsUsed() && !logic.areIntegersUsed()
-           && !logic.areTranscendentalsUsed())
-  {
-    if (!opts.arith.nlCov && !opts.arith.nlCovWasSetByUser)
+    else if (logic.isQuantified() && logic.isTheoryEnabled(theory::THEORY_ARITH)
+             && logic.areRealsUsed() && !logic.areIntegersUsed()
+             && !logic.areTranscendentalsUsed())
     {
-      SET_AND_NOTIFY(arith, nlCov, true, "logic with reals");
+      // use only light nlExt techniques if we are using nlCov
       SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(
           arith, nlExt, options::NlExtMode::LIGHT, "logic with reals");
     }
-  }
-#else
-  if (opts.arith.nlCov)
-  {
-    if (opts.arith.nlCovWasSetByUser)
-    {
-      std::stringstream ss;
-      ss << "Cannot use --" << options::arith::longName::nlCov
-         << " without configuring with --poly.";
-      throw OptionException(ss.str());
-    }
     else
     {
-      SET_AND_NOTIFY(arith, nlCov, false, "no support for libpoly");
-      SET_AND_NOTIFY_VAL_SYM(
-          arith, nlExt, options::NlExtMode::FULL, "no support for libpoly");
+      SET_AND_NOTIFY_IF_NOT_USER(
+          arith,
+          nlCov,
+          false,
+          "logic without reals, or involving integers or quantifiers");
     }
-  }
+#else
+    // must set to false if libpoly is not enabled
+    OPTION_EXCEPTION_IF_NOT(arith, nlCov, false, "configuring without --poly");
+    SET_AND_NOTIFY(arith, nlCov, false, "no support for libpoly");
+    SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(
+        arith, nlExt, options::NlExtMode::FULL, "no support for libpoly");
 #endif
-  if (logic.isTheoryEnabled(theory::THEORY_ARITH)
-      && logic.areTranscendentalsUsed())
+  }
+  if (logic.isTheoryEnabled(theory::THEORY_ARITH) && logic.areTranscendentalsUsed())
   {
     SET_AND_NOTIFY_IF_NOT_USER_VAL_SYM(
         arith, nlExt, options::NlExtMode::FULL, "logic with transcendentals");
@@ -1025,6 +1058,13 @@ bool SetDefaults::usesInputConversion(const Options& opts,
 bool SetDefaults::incompatibleWithProofs(Options& opts,
                                          std::ostream& reason) const
 {
+  if (opts.prop.satSolver == options::SatSolverMode::CADICAL)
+  {
+    SET_AND_NOTIFY(prop,
+                   satSolver,
+                   options::SatSolverMode::MINISAT,
+                   "proofs and unsat cores not supported with CaDiCaL");
+  }
   if (opts.parser.freshBinders)
   {
     // When fresh-binders is true, we do not support proof output.
@@ -1096,6 +1136,15 @@ bool SetDefaults::incompatibleWithProofs(Options& opts,
     // that are not tracked.
     reason << "lemma inprocessing";
     return true;
+  }
+  if (opts.smt.proofMode == options::ProofMode::FULL_STRICT)
+  {
+    // symmetry breaking does not have proof support
+    SET_AND_NOTIFY_VAL_SYM(uf, ufSymmetryBreaker, false, "full strict proofs");
+    // CEGQI with deltas and infinities is not supported
+    SET_AND_NOTIFY(quantifiers, cegqiMidpoint, true, "full strict proofs");
+    SET_AND_NOTIFY(quantifiers, cegqiUseInfInt, false, "full strict proofs");
+    SET_AND_NOTIFY(quantifiers, cegqiUseInfReal, false, "full strict proofs");
   }
   return false;
 }
@@ -1212,6 +1261,13 @@ bool SetDefaults::incompatibleWithIncremental(const LogicInfo& logic,
 bool SetDefaults::incompatibleWithUnsatCores(Options& opts,
                                              std::ostream& reason) const
 {
+  if (opts.prop.satSolver == options::SatSolverMode::CADICAL)
+  {
+    SET_AND_NOTIFY(prop,
+                   satSolver,
+                   options::SatSolverMode::MINISAT,
+                   "proofs and unsat cores not supported with CaDiCaL");
+  }
   // All techniques that are incompatible with unsat cores are listed here.
   // A preprocessing pass is incompatible with unsat cores if
   // (A) its reasoning is not local, i.e. it may replace an assertion A by A'
@@ -1752,47 +1808,47 @@ void SetDefaults::setDefaultDecisionMode(const LogicInfo& logic,
           logic.hasEverything()
           ? options::DecisionMode::JUSTIFICATION
           : (  // QF_BV
-                (!logic.isQuantified() && logic.isPure(THEORY_BV)) ||
-                        // QF_AUFBV or QF_ABV or QF_UFBV
-                        (!logic.isQuantified()
-                         && (logic.isTheoryEnabled(THEORY_ARRAYS)
-                             || logic.isTheoryEnabled(THEORY_UF))
-                         && logic.isTheoryEnabled(THEORY_BV))
-                        ||
-                        // QF_AUFLIA (and may be ends up enabling
-                        // QF_AUFLRA?)
-                        (!logic.isQuantified()
-                         && logic.isTheoryEnabled(THEORY_ARRAYS)
-                         && logic.isTheoryEnabled(THEORY_UF)
-                         && logic.isTheoryEnabled(THEORY_ARITH))
-                        ||
-                        // QF_LRA
-                        (!logic.isQuantified() && logic.isPure(THEORY_ARITH)
-                         && logic.isLinear() && !logic.isDifferenceLogic()
-                         && !logic.areIntegersUsed())
-                        ||
-                        // Quantifiers
-                        logic.isQuantified() ||
-                        // Strings
-                        logic.isTheoryEnabled(THEORY_STRINGS)
-                    ? options::DecisionMode::JUSTIFICATION
-                    : options::DecisionMode::INTERNAL);
+              (!logic.isQuantified() && logic.isPure(THEORY_BV)) ||
+                      // QF_AUFBV or QF_ABV or QF_UFBV
+                      (!logic.isQuantified()
+                       && (logic.isTheoryEnabled(THEORY_ARRAYS)
+                           || logic.isTheoryEnabled(THEORY_UF))
+                       && logic.isTheoryEnabled(THEORY_BV))
+                      ||
+                      // QF_AUFLIA (and may be ends up enabling
+                      // QF_AUFLRA?)
+                      (!logic.isQuantified()
+                       && logic.isTheoryEnabled(THEORY_ARRAYS)
+                       && logic.isTheoryEnabled(THEORY_UF)
+                       && logic.isTheoryEnabled(THEORY_ARITH))
+                      ||
+                      // QF_LRA
+                      (!logic.isQuantified() && logic.isPure(THEORY_ARITH)
+                       && logic.isLinear() && !logic.isDifferenceLogic()
+                       && !logic.areIntegersUsed())
+                      ||
+                      // Quantifiers
+                      logic.isQuantified() ||
+                      // Strings
+                      logic.isTheoryEnabled(THEORY_STRINGS)
+                  ? options::DecisionMode::JUSTIFICATION
+                  : options::DecisionMode::INTERNAL);
 
   bool stoponly =
       // ALL or its supersets
       logic.hasEverything() || logic.isTheoryEnabled(THEORY_STRINGS)
           ? false
           : (  // QF_AUFLIA
-                (!logic.isQuantified() && logic.isTheoryEnabled(THEORY_ARRAYS)
-                 && logic.isTheoryEnabled(THEORY_UF)
-                 && logic.isTheoryEnabled(THEORY_ARITH))
-                        ||
-                        // QF_LRA
-                        (!logic.isQuantified() && logic.isPure(THEORY_ARITH)
-                         && logic.isLinear() && !logic.isDifferenceLogic()
-                         && !logic.areIntegersUsed())
-                    ? true
-                    : false);
+              (!logic.isQuantified() && logic.isTheoryEnabled(THEORY_ARRAYS)
+               && logic.isTheoryEnabled(THEORY_UF)
+               && logic.isTheoryEnabled(THEORY_ARITH))
+                      ||
+                      // QF_LRA
+                      (!logic.isQuantified() && logic.isPure(THEORY_ARITH)
+                       && logic.isLinear() && !logic.isDifferenceLogic()
+                       && !logic.areIntegersUsed())
+                  ? true
+                  : false);
 
   if (stoponly)
   {
