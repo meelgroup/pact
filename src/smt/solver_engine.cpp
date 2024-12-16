@@ -760,6 +760,61 @@ QuantifiersEngine* SolverEngine::getAvailableQuantifiersEngine(
   return qe;
 }
 
+// bound = 0 is no bound
+
+int32_t SolverEngine::boundedSat(uint64_t bound,
+                                 int num_hashes,
+                                 const std::vector<Node>& terms_to_block)
+{
+  uint64_t count = 0;
+  Result res;
+  const Options& opts = d_env->getOptions();
+
+  push();
+  do
+  {
+    auto time_before = std::chrono::high_resolution_clock::now();
+    // getSolver()->getStatistics().get("global::totalTime");
+    res = checkSat();
+    auto time_after = std::chrono::high_resolution_clock::now();
+    auto time_elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+                            time_after - time_before)
+                            .count();
+    double elapsed_time_in_ms = time_elapsed / 1E3;
+
+    Trace("satcall-time") << "c it ----------- " << num_hashes << ","
+                          << count + 1 << "," << elapsed_time_in_ms
+                          << std::endl;
+
+    if (opts.counting.listint && res.getStatus() == Result::SAT)
+    {
+      // block the model
+      for (const Node& t : terms_to_block)
+      {
+        Node val = getValue(t);
+        Trace("satcall-block") << "c " << t << ": " << val << std::endl;
+      }
+    }
+
+    if (res.getStatus() == Result::SAT)
+    {
+      finishInit();
+      if (opts.counting.projcount || opts.counting.enumerateCount || true)
+      {
+        blockModelValues(terms_to_block);
+      }
+      else
+      {
+        blockModel(cvc5::modes::BlockModelsMode::VALUES);
+      }
+      count++;
+    }
+  } while (res.getStatus() == Result::SAT && (count < bound || bound == 0));
+  pop();
+
+  return count;
+}
+
 Result SolverEngine::checkSat()
 {
   beginCall(true);
