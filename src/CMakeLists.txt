@@ -252,6 +252,8 @@ libcvc5_add_sources(
   prop/cnf_stream.h
   prop/cryptominisat.cpp
   prop/cryptominisat.h
+  prop/approxmc.cpp
+  prop/approxmc.h
   prop/kissat.cpp
   prop/kissat.h
   prop/learned_db.cpp
@@ -325,6 +327,8 @@ libcvc5_add_sources(
   smt/logic_exception.h
   smt/interpolation_solver.cpp
   smt/interpolation_solver.h
+  smt/smt_approx_mc.h
+  smt/smt_approx_mc.cpp
   smt/model.cpp
   smt/model.h
   smt/model_core_builder.cpp
@@ -1330,6 +1334,7 @@ set(options_toml_files
   options/booleans_options.toml
   options/builtin_options.toml
   options/bv_options.toml
+  options/counting_options.toml
   options/datatypes_options.toml
   options/decision_options.toml
   options/expr_options.toml
@@ -1526,6 +1531,11 @@ if(USE_CRYPTOMINISAT)
   target_include_directories(cvc5-obj SYSTEM PRIVATE ${CryptoMiniSat_INCLUDE_DIR})
   target_link_libraries(cvc5 PRIVATE $<BUILD_INTERFACE:CryptoMiniSat> $<INSTALL_INTERFACE:cryptominisat5>)
   target_link_libraries(cvc5 PRIVATE Threads::Threads) # Required by CryptoMiniSat
+endif()
+if(USE_APPROXMC)
+  add_dependencies(cvc5-obj ApproxMC)
+  target_include_directories(cvc5-obj PRIVATE ${ApproxMC_INCLUDE_DIR})
+  target_link_libraries(cvc5 PRIVATE ApproxMC)
 endif()
 if(USE_KISSAT)
   add_dependencies(cvc5-obj Kissat)

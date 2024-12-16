@@ -47,6 +47,24 @@ SatSolver* SatSolverFactory::createCryptoMinisat(StatisticsRegistry& registry,
 #endif
 }
 
+SatSolver* SatSolverFactory::createApproxmc(StatisticsRegistry& registry,
+                                            ResourceManager* resmgr,
+                                            const std::string& name)
+{
+#ifdef CVC5_USE_APPROXMC
+  ApproxMCounter* res = new ApproxMCounter(registry, name);
+  res->init();
+  if (resmgr->limitOn())
+  {
+    res->setTimeLimit(resmgr);
+  }
+  return res;
+#else
+  Unreachable() << "cvc5 was not compiled with ApproxMC support.";
+  return nullptr;
+#endif
+}
+
 CDCLTSatSolver* SatSolverFactory::createCadical(Env& env,
                                                 StatisticsRegistry& registry,
                                                 ResourceManager* resmgr,

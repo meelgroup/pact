@@ -79,6 +79,36 @@ bool CnfStream::assertClause(TNode node, SatLiteral a, SatLiteral b)
   return assertClause(node, clause);
 }
 
+bool CnfStream::assertXorClause(TNode node, SatClause& c)
+{
+  Trace("cnf-xor") << "Inserting XOR into stream " << c << " node = " << node
+                   << "\n";
+
+  ClauseId clauseId = d_satSolver->addXorClause(c, 0, d_removable);
+
+  return clauseId != ClauseIdUndef;
+}
+
+bool CnfStream::assertXorClause(TNode node, SatLiteral a, SatLiteral b)
+{
+  SatClause clause(2);
+  clause[0] = a;
+  clause[1] = b;
+  return assertXorClause(node, clause);
+}
+
+bool CnfStream::assertXorClause(TNode node,
+                                SatLiteral a,
+                                SatLiteral b,
+                                SatLiteral c)
+{
+  SatClause clause(3);
+  clause[0] = a;
+  clause[1] = b;
+  clause[2] = c;
+  return assertXorClause(node, clause);
+}
+
 bool CnfStream::assertClause(TNode node,
                              SatLiteral a,
                              SatLiteral b,
@@ -458,17 +488,52 @@ void CnfStream::handleXor(TNode xorNode)
   Assert(xorNode.getKind() == Kind::XOR) << "Expecting an XOR expression!";
   Assert(xorNode.getNumChildren() == 2) << "Expecting exactly 2 children!";
   Assert(!d_removable) << "Removable clauses can not contain Boolean structure";
-  Trace("cnf") << "CnfStream::handleXor(" << xorNode << ")\n";
+  Trace("cnf-xor") << "CnfStream::handleXor(" << xorNode << ")\n";
 
-  SatLiteral a = getLiteral(xorNode[0]);
-  SatLiteral b = getLiteral(xorNode[1]);
+  if (true)
+  {
+    SatLiteral xorLit = newLiteral(xorNode);
+    SatLiteral a = getLiteral(xorNode[0]);
+    SatLiteral b = getLiteral(xorNode[1]);
+    // xorLit = true as addXorClause(c, *0*, d_removable);
+    assertXorClause(xorNode, a, b, xorLit);
+  }
+  else if (true)
+  {
+    size_t numChildren = xorNode.getNumChildren();
 
-  SatLiteral xorLit = newLiteral(xorNode);
+    // Get the literal for this node
+    SatLiteral xorLit = newLiteral(xorNode);
 
-  assertClause(xorNode.negate(), a, b, ~xorLit);
-  assertClause(xorNode.negate(), ~a, ~b, ~xorLit);
-  assertClause(xorNode, a, ~b, xorLit);
-  assertClause(xorNode, ~a, b, xorLit);
+    // Transform all the children first
+    SatClause clause(numChildren + 1);
+    for (size_t i = 0; i < numChildren; ++i)
+    {
+      clause[i] = getLiteral(xorNode[i]);
+
+      // lit <- (a_1 x a_2 x a_3 x ... x a_n)
+      // lit | ~(a_1 | a_2 | a_3 | ... | a_n)
+      // (lit | ~a_1) & (lit | ~a_2) & (lit & ~a_3) & ... & (lit & ~a_n)
+      assertClause(xorNode, xorLit, ~clause[i]);
+    }
+
+    // lit -> (a_1 | a_2 | a_3 | ... | a_n)
+    // ~lit | a_1 | a_2 | a_3 | ... | a_n
+    clause[numChildren] = ~xorLit;
+    // This needs to go last, as the clause might get modified by the SAT solver
+    assertClause(xorNode.negate(), clause);
+  }
+  else
+  {
+    SatLiteral a = getLiteral(xorNode[0]);
+    SatLiteral b = getLiteral(xorNode[1]);
+
+    SatLiteral xorLit = newLiteral(xorNode);
+    assertClause(xorNode.negate(), a, b, ~xorLit);
+    assertClause(xorNode.negate(), ~a, ~b, ~xorLit);
+    assertClause(xorNode, a, ~b, xorLit);
+    assertClause(xorNode, ~a, b, xorLit);
+  }
 }
 
 void CnfStream::handleOr(TNode orNode)
@@ -774,9 +839,10 @@ void CnfStream::convertAndAssertOr(TNode node, bool negated)
 void CnfStream::convertAndAssertXor(TNode node, bool negated)
 {
   Assert(node.getKind() == Kind::XOR);
-  Trace("cnf") << "CnfStream::convertAndAssertXor(" << node
-               << ", negated = " << (negated ? "true" : "false") << ")\n";
-  if (!negated) {
+  Trace("cnf-xor") << "CnfStream::convertAndAssertXor(" << node
+                   << ", negated = " << (negated ? "true" : "false") << ")\n";
+  if (!negated)
+  {
     // p XOR q
     SatLiteral p = toCNF(node[0], false);
     SatLiteral q = toCNF(node[1], false);

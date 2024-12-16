@@ -265,7 +265,7 @@ bool BVSolverBitblast::preNotifyFact(
   {
     d_bbFacts.push_back(fact);
   }
-  
+
   // Return false to enable equality engine reasoning in Theory, which is
   // available if we are using the equality engine.
   return !logicInfo().isSharingEnabled() && !options().bv.bvEqEngine;
@@ -340,6 +340,12 @@ void BVSolverBitblast::initSatSolver()
   {
     case options::BvSatSolverMode::CRYPTOMINISAT:
       d_satSolver.reset(prop::SatSolverFactory::createCryptoMinisat(
+          statisticsRegistry(),
+          d_env.getResourceManager(),
+          "theory::bv::BVSolverBitblast::"));
+      break;
+    case options::BvSatSolverMode::APPROXMC:
+      d_satSolver.reset(prop::SatSolverFactory::createApproxmc(
           statisticsRegistry(),
           d_env.getResourceManager(),
           "theory::bv::BVSolverBitblast::"));

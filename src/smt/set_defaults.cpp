@@ -24,6 +24,7 @@
 #include "options/base_options.h"
 #include "options/booleans_options.h"
 #include "options/bv_options.h"
+#include "options/counting_options.h"
 #include "options/datatypes_options.h"
 #include "options/decision_options.h"
 #include "options/ff_options.h"

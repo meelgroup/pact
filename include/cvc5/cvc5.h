@@ -5657,6 +5657,23 @@ class CVC5_EXPORT Solver
   Result checkSat() const;
 
   /**
+   * Model count the formula
+   * TODO the return type should be changed.
+   *
+   * @return The result of the satisfiability check.
+   */
+  Result modelCount(const std::vector<Sort>& sorts,
+                    const std::vector<Term>& vars) const;
+
+  /**
+   * Model count the formula with some bound
+   *
+   * @return SAT if count is more than bound, UNSAT otherwise
+   */
+  uint64_t boundedCount(uint64_t bound, const std::vector<Sort>& sorts,
+    const std::vector<Term>& vars ) const;
+
+  /**
    * Check satisfiability assuming the given formula.
    *
    * SMT-LIB:
@@ -5874,6 +5891,7 @@ class CVC5_EXPORT Solver
    * @return The list of asserted formulas.
    */
   std::vector<Term> getAssertions() const;
+  std::vector<Term> getVars(std::vector<cvc5::internal::Node> vars) const;
 
   /**
    * Get info from the solver.
@@ -6401,6 +6419,8 @@ class CVC5_EXPORT Solver
    * @param nscopes The number of levels to pop.
    */
   void pop(uint32_t nscopes = 1) const;
+
+  std::vector<internal::Node> termVectorToNodes1(std::vector<Term> term);
 
   /**
    * Get an interpolant.

@@ -348,7 +348,20 @@ void CheckSatCommand::invoke(cvc5::Solver* solver, SymManager* sm)
                            << std::endl;
   try
   {
-    d_result = solver->checkSat();
+    bool count = false;
+    if (solver->getOption("countenum") == "true"
+        || solver->getOption("smtapxmc") == "true")
+      count = true;
+    if (count)
+    {
+      std::vector<cvc5::Sort> declareSorts = sm->getDeclaredSorts();
+      std::vector<cvc5::Term> declareTerms = sm->getDeclaredTerms();
+      d_result = solver->modelCount(declareSorts, declareTerms);
+    }
+    else
+    {
+      d_result = solver->checkSat();
+    }
     d_commandStatus = CommandSuccess::instance();
   }
   catch (exception& e)

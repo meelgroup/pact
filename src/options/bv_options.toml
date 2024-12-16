@@ -12,6 +12,8 @@ name   = "Bitvector Theory"
   help_mode  = "SAT solver for bit-blasting backend."
 [[option.mode.MINISAT]]
   name = "minisat"
+[[option.mode.APPROXMC]]
+  name = "approxmc"
 [[option.mode.CRYPTOMINISAT]]
   name = "cryptominisat"
 [[option.mode.CADICAL]]

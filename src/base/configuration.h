@@ -101,6 +101,8 @@ public:
 
   static bool isBuiltWithCryptominisat();
 
+  static bool isBuiltWithApproxmc();
+
   static bool isBuiltWithKissat();
 
   static bool isBuiltWithEditline();

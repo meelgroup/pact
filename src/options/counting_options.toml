@@ -1,0 +1,145 @@
+id     = "Counting"
+name   = "ModelCounting"
+
+[[option]]
+  name       = "bitblastApproxMC"
+  category   = "regular"
+  long       = "blast-apxmc"
+  short      = "b"
+  type       = "bool"
+  default    = "false"
+  alternate  = false
+  help       = "bitblast and count using ApproxMC"
+
+[[option]]
+  name       = "enumerateCount"
+  category   = "regular"
+  long       = "countenum"
+  short      = "e"
+  type       = "bool"
+  default    = "false"
+  alternate  = false
+  help       = "count by enumeration"
+
+[[option]]
+  name       = "smtapproxMC"
+  category   = "regular"
+  long       = "smtapxmc"
+  short      = "S"
+  type       = "bool"
+  default    = "false"
+  alternate  = false
+  help       = "approximate model count using SMTApproxMC"
+
+[[option]]
+  name       = "countingverb"
+  category   = "regular"
+  long       = "cv"
+  type       = "bool"
+  default    = "false"
+  help       = "verbosity while counting"
+
+[[option]]
+  name       = "twofactorprime"
+  category   = "regular"
+  long       = "tfp"
+  type       = "bool"
+  default    = "true"
+  help       = "use two factor of primes to reach correct epsilon"
+
+[[option]]
+  name       = "lessbw"
+  category   = "regular"
+  long       = "lessbw"
+  type       = "bool"
+  default    = "false"
+  alternate  = false
+  help       = "Use less BW in BV hashing (count comes without guarantee)"
+
+[[option]]
+  name       = "printhash"
+  category   = "regular"
+  long       = "printhash"
+  type       = "bool"
+  default    = "false"
+  alternate  = false
+  help       = "Just Print 100 hash in a file and exit"
+
+[[option]]
+  name       = "hashatfile"
+  category   = "regular"
+  long       = "hashatfile=PREFIX"
+  type       = "std::string"
+  default    = '""'
+  help       = "filename where to store the hashfile"
+
+[[option]]
+  name       = "listint"
+  category   = "regular"
+  long       = "listint"
+  type       = "bool"
+  default    = "false"
+  alternate  = false
+  help       = "List models of integer variables"
+
+[[option]]
+  name       = "projcount"
+  category   = "regular"
+  long       = "projcount"
+  type       = "bool"
+  default    = "false"
+  alternate  = false
+  help       = "Project the count on reachability variables"
+
+[[option]]
+  name       = "projprefix"
+  category   = "regular"
+  long       = "projprefix=PREFIX"
+  type       = "std::string"
+  default    = '""'
+  help       = "prefix of projection variables"
+
+[[option]]
+  name       = "hashsm"
+  category   = "regular"
+  long       = "hashsm=MODE"
+  type       = "HashingMode"
+  default    = "BV"
+  help       = "choose which hashing method to use BV, INT, LEM or FF"
+  help_mode  = "choose which hashing method to use"
+[[option.mode.BV]]
+  name = "bv"
+[[option.mode.FF]]
+  name = "ff"
+[[option.mode.LEM]]
+  name = "lem"
+[[option.mode.XOR]]
+  name = "xor"
+[[option.mode.ASH]]
+  name = "ash"
+[[option.mode.INT]]
+  name = "int"
+
+[[option]]
+  name       = "slicesize"
+  category   = "regular"
+  long       = "slicesize=N"
+  type       = "uint64_t"
+  default    = "0"
+  help       = "slice size in SMTApproxMC"
+
+[[option]]
+  name       = "epsilon"
+  category   = "regular"
+  long       = "epsilon=N"
+  type       = "double"
+  default    = "0.8"
+  help       = "value for epsilon in SMTApproxMC"
+
+[[option]]
+  name       = "delta"
+  category   = "regular"
+  long       = "delta=N"
+  type       = "double"
+  default    = "0.2"
+  help       = "value for delta in SMTApproxMC"
