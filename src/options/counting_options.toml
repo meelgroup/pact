@@ -83,6 +83,16 @@ name   = "ModelCounting"
   help       = "List models of integer variables"
 
 [[option]]
+  name       = "listfp"
+  category   = "regular"
+  long       = "listfp"
+  type       = "bool"
+  default    = "false"
+  alternate  = false
+  help       = "Add FPs to projection set for listing them in models"
+
+
+[[option]]
   name       = "projcount"
   category   = "regular"
   long       = "projcount"

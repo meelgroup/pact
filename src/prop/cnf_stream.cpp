@@ -343,11 +343,11 @@ SatLiteral CnfStream::getLiteral(TNode node) {
     }
     if (printnode.getKind() == Kind::EQUAL || printnode.getKind() == Kind::GEQ)
     {
-      std::cout << "c " << printliteral << ":" << printnode << std::endl;
+      Trace("aiginfo") << "c " << printliteral << ":" << printnode << std::endl;
     }
     else
     {
-      std::cout << "c " << printliteral << ": skipit\n";
+      Trace("aiginfo") << "c " << printliteral << ": skipit\n";
     }
   }
   return literal;
@@ -385,13 +385,13 @@ uint64_t CnfStream::getAIGliteral(SatLiteral lit, Node node)
 
 vector<vector<uint64_t>> CnfStream::decomposeAndGate(vector<uint64_t> andGate)
 {
-  std::cout << "Decomposing AND gate" << std::endl;
-  std::cout << "AND gate: ";
+  Trace("aiginfo") << "Decomposing AND gate" << std::endl;
+  Trace("aiginfo") << "AND gate: ";
   for (auto aiglit : andGate)
   {
-    std::cout << aiglit << " ";
+    Trace("aiginfo") << aiglit << " ";
   }
-  std::cout << std::endl;
+  Trace("aiginfo") << std::endl;
   vector<vector<uint64_t>> decomposedGates;
   if (andGate.size() <= 2)
   {
@@ -408,14 +408,14 @@ vector<vector<uint64_t>> CnfStream::decomposeAndGate(vector<uint64_t> andGate)
     outputLit = nextLiteral;
   }
   std::reverse(decomposedGates.begin(), decomposedGates.end());
-  std::cout << "Decomposed AND gate" << std::endl;
+  Trace("aiginfo") << "Decomposed AND gate" << std::endl;
   for (auto decomposedGate : decomposedGates)
   {
     for (auto aiglit : decomposedGate)
     {
-      std::cout << aiglit << " ";
+      Trace("aiginfo") << aiglit << " ";
     }
-    std::cout << std::endl;
+    Trace("aiginfo") << std::endl;
   }
   return decomposedGates;
 }
@@ -426,7 +426,7 @@ void CnfStream::dumpAIG()
   std::string aigfilename =
       smtfilename.substr(smtfilename.find_last_of("/\\") + 1);
   aigfilename = aigfilename.substr(0, aigfilename.find_last_of(".")) + ".aag";
-  std::cout << "Writing AIG to " << aigfilename << std::endl;
+  Trace("aiginfo") << "Writing AIG to " << aigfilename << std::endl;
   std::ofstream outFile(aigfilename);
   if (!outFile)
   {
@@ -434,7 +434,7 @@ void CnfStream::dumpAIG()
     return;
   }
 
-  std::cout << "c AIG output\n";
+  Trace("aiginfo") << "c AIG output\n";
   // Let 1 be the output variable
   std::vector<uint64_t> outputLitLine = {2};
   for (auto aigAssertLit : aigAssertLits)
@@ -479,7 +479,7 @@ void CnfStream::dumpAIG()
     aigstring = aigstring.substr(1);
     outFile << aigstring << std::endl;
   }
-  std::cout << "c end AIG output\n";
+  Trace("aiginfo") << "c end AIG output\n";
 }
 
 void CnfStream::handleXor(TNode xorNode)

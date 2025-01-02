@@ -786,7 +786,8 @@ int32_t SolverEngine::boundedSat(uint64_t bound,
                           << count + 1 << "," << elapsed_time_in_ms
                           << std::endl;
 
-    if (opts.counting.listint && res.getStatus() == Result::SAT)
+    if ((opts.counting.listint || opts.counting.listfp)
+        && res.getStatus() == Result::SAT)
     {
       // block the model
       for (const Node& t : terms_to_block)

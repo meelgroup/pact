@@ -125,6 +125,12 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
     }
     else if (n.getSort().isFloatingPoint())
     {
+      if (d_slv->getOptions().counting.listfp)
+      {
+        bvs_in_projset.push_back(n);
+        std::cout << "c [smtappmc] Integer variable in projection set: "
+                  << n.getSymbol() << std::endl;
+      }
       num_floats++;
     }
     else if (n.getSort().isReal())
