@@ -358,9 +358,13 @@ uint64_t CnfStream::getAIGliteral(SatLiteral lit, Node node)
   // TODO some checks like the first literal can't be or and
   // should be good to have
 
+  bool wasNegated = false;
+
   if (node.getKind() == Kind::NOT)
   {
     node = node[0];
+    wasNegated = true;
+    std::cout << "Negated node" << std::endl;
   }
 
   auto nodeKind = node.getKind();
@@ -373,9 +377,11 @@ uint64_t CnfStream::getAIGliteral(SatLiteral lit, Node node)
   {
     maxAIGVar = lit.getSatVariable();
   }
-  if (lit.isNegated() || nodeKind == Kind::OR)
+  if (lit.isNegated() || nodeKind == Kind::OR || wasNegated)
   {
     return lit.getSatVariable() * 2 + 1;
+    if (lit.isNegated() || wasNegated) std::cout << "Negated literal" << std::endl;
+    else std::cout << "OR literal" << std::endl;
   }
   else
   {
@@ -436,16 +442,21 @@ void CnfStream::dumpAIG()
 
   Trace("aiginfo") << "c AIG output\n";
   // Let 1 be the output variable
-  std::vector<uint64_t> outputLitLine = {2};
-  for (auto aigAssertLit : aigAssertLits)
+ // In this case, we know that there is no output literal already set
+  if (aigOutputLit == 0)
   {
-    if (aigAssertLit == 2 || aigAssertLit == 5)
+      aigOutputLit = 2;
+    std::vector<uint64_t> outputLitLine = {2};
+    for (auto aigAssertLit : aigAssertLits)
     {
-      continue;
+      if (aigAssertLit == 2 || aigAssertLit == 5)
+      {
+        continue;
+      }
+      outputLitLine.push_back(aigAssertLit);
     }
-    outputLitLine.push_back(aigAssertLit);
-  }
-  aigGateLines.push_back(outputLitLine);
+    aigGateLines.push_back(outputLitLine);
+}
   vector<vector<uint64_t>> decomposedGates;
   for (auto aigline : aigGateLines)
   {
@@ -467,7 +478,7 @@ void CnfStream::dumpAIG()
   }
 
   // print the output literals
-  outFile << "2" << std::endl;
+  outFile << aigOutputLit << std::endl;
 
   for (auto aigdecomposedline : decomposedGates)
   {
@@ -554,8 +565,9 @@ void CnfStream::handleOr(TNode orNode)
   // orLit are not added as negation, as the gate output can't be negated
   // it is asserted during getAIGliteral that if a orLit is found
   // handle that after negating the literal
-  aigliterals.push_back(getAIGliteral(orLit, orNode) - 1);
-
+  aigliterals.push_back(getAIGliteral(orLit, orNode) + 1);
+  std::cout << "sending or clause:" << getAIGliteral(orLit, orNode) + 1
+            << std::endl;
   // Transform all the children first
   SatClause clause(numChildren + 1);
   for (size_t i = 0; i < numChildren; ++i)
@@ -566,6 +578,7 @@ void CnfStream::handleOr(TNode orNode)
     // lit | ~(a_1 | a_2 | a_3 | ... | a_n)
     // (lit | ~a_1) & (lit | ~a_2) & (lit & ~a_3) & ... & (lit & ~a_n)
     assertClause(orNode, orLit, ~clause[i]);
+    std::cout << "sending or clause" << std::endl;
     aigliterals.push_back(getAIGliteral(~clause[i], orNode[i]));
   }
 
@@ -593,6 +606,8 @@ void CnfStream::handleAnd(TNode andNode)
 
   std::vector<uint64_t> aigliterals;
   aigliterals.push_back(getAIGliteral(andLit, andNode));
+  std::cout << "sending and clause: " << getAIGliteral(andLit, andNode)
+            << std::endl;
 
   // Transform all the children first (remembering the negation)
   SatClause clause(numChildren + 1);
@@ -816,24 +831,34 @@ void CnfStream::convertAndAssertOr(TNode node, bool negated)
   Assert(node.getKind() == Kind::OR);
   Trace("cnf") << "CnfStream::convertAndAssertOr(" << node
                << ", negated = " << (negated ? "true" : "false") << ")\n";
+  std::vector<uint64_t> aigliterals;
   if (!negated) {
     // If the node is a disjunction, we construct a clause and assert it
+    Trace("aiginfo") << "OR gate ";
     int nChildren = node.getNumChildren();
     SatClause clause(nChildren);
     TNode::const_iterator disjunct = node.begin();
+    aigliterals.push_back(2);
+    aigOutputLit = 3;
     for(int i = 0; i < nChildren; ++ disjunct, ++ i) {
       Assert(disjunct != node.end());
       clause[i] = toCNF(*disjunct, false);
+      aigliterals.push_back(getAIGliteral(~clause[i], node));
+      Trace("aiginfo") << getAIGliteral(~clause[i], node) << " ";
     }
     Assert(disjunct == node.end());
     assertClause(node, clause);
+    Trace("aiginfo") << std::endl;
   } else {
     // If the node is a conjunction, we handle each conjunct separately
+    Trace("aiginfo") << "negated OR gate " << std::endl;
+
     for(TNode::const_iterator conjunct = node.begin(), node_end = node.end();
         conjunct != node_end; ++conjunct ) {
       convertAndAssert(*conjunct, true);
     }
   }
+  aigGateLines.push_back(aigliterals);
 }
 
 void CnfStream::convertAndAssertXor(TNode node, bool negated)

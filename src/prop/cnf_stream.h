@@ -30,6 +30,7 @@
 #include "context/cdinsert_hashmap.h"
 #include "context/cdlist.h"
 #include "expr/node.h"
+// #include "prop/aig_manager.h"
 #include "prop/registrar.h"
 #include "prop/sat_solver_types.h"
 #include "smt/env_obj.h"
@@ -82,6 +83,7 @@ class CnfStream : protected EnvObj
   vector<vector<uint64_t>> aigGateLines;
   vector<uint64_t> aigAssertLits;
   vector<uint64_t> aigInputLits;
+  uint64_t aigOutputLit = 0;
   uint64_t maxAIGVar = 0;
 
   /** Cache of what literals have been registered to a node. */
@@ -346,6 +348,8 @@ class CnfStream : protected EnvObj
 
   /** Map from literals to nodes */
   LiteralToNodeMap d_literalToNodeMap;
+
+  // AigStream d_aigStream;
 
   /**
    * True if the lit-to-Node map should be kept for all lits, not just
