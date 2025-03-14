@@ -84,7 +84,13 @@ class CnfStream : protected EnvObj
   vector<uint64_t> aigAssertLits;
   vector<uint64_t> aigInputLits;
   uint64_t aigOutputLit = 0;
+
+  // this is variable, to be used after multiplying by 2
   uint64_t maxAIGVar = 0;
+
+  // for each converAndAssert call, we store the literals that are asserted
+  // this is basically a mapping which will be added to maxAIGVar during dumpAIG
+  vector<uint64_t> aigOutputLits;
 
   /** Cache of what literals have been registered to a node. */
   typedef context::CDInsertHashMap<Node, SatLiteral> NodeToLiteralMap;
