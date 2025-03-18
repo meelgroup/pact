@@ -80,17 +80,19 @@ class CnfStream : protected EnvObj
   typedef context::CDInsertHashMap<SatLiteral, TNode, SatLiteralHashFunction>
       LiteralToNodeMap;
 
-  vector<vector<uint64_t>> aigGateLines;
-  vector<uint64_t> aigAssertLits;
-  vector<uint64_t> aigInputLits;
-  uint64_t aigOutputLit = 0;
+  vector<vector<int64_t>> aigGateLines;
+  vector<int64_t> aigAssertLits;
+  vector<int64_t> aigInputLits;
+  int64_t aigOutputLit = 0;
+  bool rootNodeSet = false;
 
   // this is variable, to be used after multiplying by 2
   uint64_t maxAIGVar = 0;
+  int64_t maxAIGrootvar = 0;
 
   // for each converAndAssert call, we store the literals that are asserted
   // this is basically a mapping which will be added to maxAIGVar during dumpAIG
-  vector<uint64_t> aigOutputLits;
+  vector<int64_t> aigOutputLits;
 
   /** Cache of what literals have been registered to a node. */
   typedef context::CDInsertHashMap<Node, SatLiteral> NodeToLiteralMap;
@@ -121,8 +123,10 @@ class CnfStream : protected EnvObj
    * @param node node to convert and assert
    * @param removable whether the sat solver can choose to remove the clauses
    * @param negated whether we are asserting the node negated
+   * @param root true if the call is being made from prop engine, false if it is
+   * being made from cnf stream as part of the recursive conversion.
    */
-  void convertAndAssert(TNode node, bool removable, bool negated);
+  void convertAndAssert(TNode node, bool removable, bool negated, bool root);
   /**
    * Get the node that is represented by the given SatLiteral.
    * @param literal the literal from the sat solver
@@ -226,14 +230,14 @@ class CnfStream : protected EnvObj
    * Same as above, except that uses the saved d_removable flag. It calls the
    * dedicated converter for the possible formula kinds.
    */
-  void convertAndAssert(TNode node, bool negated);
+  void convertAndAssert(TNode node, bool negated, bool root);
   /** Specific converters for each formula kind. */
-  void convertAndAssertAnd(TNode node, bool negated);
-  void convertAndAssertOr(TNode node, bool negated);
-  void convertAndAssertXor(TNode node, bool negated);
-  void convertAndAssertIff(TNode node, bool negated);
-  void convertAndAssertImplies(TNode node, bool negated);
-  void convertAndAssertIte(TNode node, bool negated);
+  void convertAndAssertAnd(TNode node, bool negated, bool root);
+  void convertAndAssertOr(TNode node, bool negated, bool root);
+  void convertAndAssertXor(TNode node, bool negated, bool root);
+  void convertAndAssertIff(TNode node, bool negated, bool root);
+  void convertAndAssertImplies(TNode node, bool negated, bool root);
+  void convertAndAssertIte(TNode node, bool negated, bool root );
 
   /**
    * Transforms the node into CNF recursively and yields a literal
@@ -264,8 +268,8 @@ class CnfStream : protected EnvObj
    * Returns the literal for AIG
    */
   void dumpAIG();
-  uint64_t getAIGliteral(SatLiteral lit, Node node);
-  vector<vector<uint64_t>> decomposeAndGate(vector<uint64_t> andGate);
+  int64_t getAIGliteral(SatLiteral lit, Node node);
+  vector<vector<int64_t>> decomposeAndGate(vector<int64_t> andGate);
 
   /** Stores the literal of the given node in d_literalToNodeMap.
    *

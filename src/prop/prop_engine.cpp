@@ -120,8 +120,8 @@ PropEngine::PropEngine(Env& env, TheoryEngine* te)
 void PropEngine::finishInit()
 {
   NodeManager* nm = nodeManager();
-  d_cnfStream->convertAndAssert(nm->mkConst(true), false, false);
-  d_cnfStream->convertAndAssert(nm->mkConst(false).notNode(), false, false);
+  d_cnfStream->convertAndAssert(nm->mkConst(true), false, false, false);
+  d_cnfStream->convertAndAssert(nm->mkConst(false).notNode(), false, false, false);
 }
 
 PropEngine::~PropEngine() {
@@ -277,7 +277,9 @@ void PropEngine::assertInternal(theory::InferenceId id,
   }
   else
   {
-    d_cnfStream->convertAndAssert(node, removable, negated);
+    d_cnfStream->convertAndAssert(node, removable, negated, !d_solveCalled);
+    Trace("prop") << "Asserted " << node << " as " << (negated ? "negated " : "")
+                  << (removable ? "removable" : "permanent") << std::endl;
   }
   if (addAssumption)
   {
@@ -432,6 +434,7 @@ Result PropEngine::checkSat() {
   // Mark that we are in the checkSat
   ScopedBool scopedBool(d_inCheckSat);
   d_inCheckSat = true;
+  d_solveCalled = true;
 
   if (options().base.preprocessOnly)
   {

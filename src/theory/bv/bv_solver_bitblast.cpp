@@ -181,7 +181,7 @@ void BVSolverBitblast::postCheck(Theory::Effort level)
       {
         d_bitblaster->bbAtom(fact);
         Node bb_fact = d_bitblaster->getStoredBBAtom(fact);
-        d_cnfStream->convertAndAssert(bb_fact, false, false);
+        d_cnfStream->convertAndAssert(bb_fact, false, false, false);
       }
     }
     d_assertions.push_back(fact);
@@ -404,7 +404,7 @@ void BVSolverBitblast::handleEagerAtom(TNode fact, bool assertFact)
 
   if (assertFact)
   {
-    d_cnfStream->convertAndAssert(fact[0], false, false);
+    d_cnfStream->convertAndAssert(fact[0], false, false, false);
   }
   else
   {
@@ -418,7 +418,7 @@ void BVSolverBitblast::handleEagerAtom(TNode fact, bool assertFact)
   for (auto atom : registeredAtoms)
   {
     Node bb_atom = d_bitblaster->getStoredBBAtom(atom);
-    d_cnfStream->convertAndAssert(atom.eqNode(bb_atom), false, false);
+    d_cnfStream->convertAndAssert(atom.eqNode(bb_atom), false, false, false);
   }
   // Clear cache since we only need to do this once per bit-blasted atom.
   registeredAtoms.clear();

@@ -417,6 +417,9 @@ class PropEngine : protected EnvObj
    */
   bool d_inCheckSat;
 
+  /** Indiacates that check-sat has been called at least once */
+  bool d_solveCalled = false;
+
   /** The theory engine we will be using */
   TheoryEngine* d_theoryEngine;
 
