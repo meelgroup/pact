@@ -489,7 +489,7 @@ void CnfStream::dumpAIG()
   {
     if (lit < 0)
     {
-      Trace("aiginfo") << "c asserting literal " << lit << " to "
+      Trace("aiginfo-debug") << "c asserting literal " << lit << " to "
                        << -lit + incrementForRootVar << std::endl;
       lit = -lit + incrementForRootVar;
     }
@@ -503,7 +503,7 @@ void CnfStream::dumpAIG()
   {
     outputLitLine = aigAssertLits;
     aigOutputLit = aigAssertLits[0];
-    Trace("aiginfo") << "c single literal output:" << outputLitLine[0] << std::endl;
+    Trace("aiginfo-debug") << "c single literal output:" << outputLitLine[0] << std::endl;
   }
   else {
 
@@ -552,7 +552,7 @@ void CnfStream::dumpAIG()
     for (auto aiglit : aigdecomposedline)
     {
       if(aiglit < 0){
-        Trace("aiginfo") << "c negative literal" << aiglit
+        Trace("aiginfo-debug") << "c negative literal" << aiglit
         << " incremented to " << -aiglit + incrementForRootVar << std::endl;
         aiglit = -aiglit + incrementForRootVar;
         if (aiglit %2 == 1) {
@@ -564,7 +564,7 @@ void CnfStream::dumpAIG()
     aigstring = aigstring.substr(1);
     outFile << aigstring << std::endl;
   }
-  Trace("aiginfo") << "c end AIG output\n";
+  Trace("aiginfo-debug") << "c end AIG output\n";
 }
 
 void CnfStream::handleXor(TNode xorNode)
