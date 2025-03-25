@@ -355,6 +355,7 @@ SatLiteral CnfStream::getLiteral(TNode node) {
   return literal;
 }
 
+// TODO URGENT: Cleanup
 int64_t CnfStream::getAIGliteral(SatLiteral lit, Node node)
 {
   // TODO some checks like the first literal can't be or and
@@ -372,19 +373,20 @@ int64_t CnfStream::getAIGliteral(SatLiteral lit, Node node)
   {
     node = node[0];
     wasNegated = true;
-    Trace("aig-debug") << "Negated node" << node << std::endl;
+    Trace("aig-debug") << "--- Negated node" << node << std::endl;
   }
 
   auto nodeKind = node.getKind();
 
   if (nodeKind == Kind::EQUAL || nodeKind == Kind::GEQ)
   {
-    if (wasNegated)
+    if (wasNegated){
+      aigVar += 1;
+      Trace("aig-debug") << "Negated input literal" << aigVar << std::endl;
+    }
     aigInputLits.push_back(aigVar);
-    Trace("aig-debug") << "Negated literal" << aigVar << std::endl;
     Trace("boolabsmap") << "c " << aigVar << ":" << node << std::endl;
-    aigVar += 1;
-
+    Trace("aig-debug") << "Non-Negated input literal" << aigVar << std::endl;
   }
 
   else if ((lit.isNegated() || nodeKind == Kind::OR || wasNegated))
@@ -1173,7 +1175,7 @@ void CnfStream::convertAndAssert(TNode node, bool negated, bool root)
       {
         int64_t aigAssertLit = {getAIGliteral(literal, node)};
         aigAssertLits.push_back(aigAssertLit);
-        Trace("aiginfo") << "Setting as assert lit root atom: " << aigAssertLit << std::endl;
+        Trace("aiginfo") << "Setting as assert lit root atom: " << aigAssertLit  << " for node " << node << std::endl;
       }
     }
     break;
