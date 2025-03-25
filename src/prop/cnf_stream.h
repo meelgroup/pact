@@ -83,6 +83,8 @@ class CnfStream : protected EnvObj
   vector<vector<int64_t>> aigGateLines;
   vector<int64_t> aigAssertLits;
   vector<int64_t> aigInputLits;
+  // Gates that are intended to be used negated
+  vector<int64_t> aigGatesNeg;
   int64_t aigOutputLit = 0;
   bool rootNodeSet = false;
 
@@ -268,7 +270,7 @@ class CnfStream : protected EnvObj
    * Returns the literal for AIG
    */
   void dumpAIG();
-  int64_t getAIGliteral(SatLiteral lit, Node node);
+  int64_t getAIGliteral(SatLiteral lit, Node node, bool isOutput = false, bool donegate = false);
   vector<vector<int64_t>> decomposeAndGate(vector<int64_t> andGate);
 
   /** Stores the literal of the given node in d_literalToNodeMap.
