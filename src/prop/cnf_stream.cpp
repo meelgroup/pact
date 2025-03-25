@@ -372,31 +372,36 @@ int64_t CnfStream::getAIGliteral(SatLiteral lit, Node node)
   {
     node = node[0];
     wasNegated = true;
-    Trace("aiginfo-debug") << "Negated node" << std::endl;
+    Trace("aig-debug") << "Negated node" << node << std::endl;
   }
 
   auto nodeKind = node.getKind();
 
   if (nodeKind == Kind::EQUAL || nodeKind == Kind::GEQ)
   {
+    if (wasNegated)
     aigInputLits.push_back(aigVar);
+    Trace("aig-debug") << "Negated literal" << aigVar << std::endl;
+    Trace("boolabsmap") << "c " << aigVar << ":" << node << std::endl;
+    aigVar += 1;
+
   }
 
   else if ((lit.isNegated() || nodeKind == Kind::OR || wasNegated))
   {
     aigVar += 1;
     if (nodeKind == Kind::OR)
-      Trace("aiginfo-debug") << "OR literal" << aigVar << std::endl;
+      Trace("aig-debug") << "OR literal" << aigVar << std::endl;
     if (lit.isNegated() && nodeKind != Kind::OR)
     {
-      Trace("aiginfo-debug") << "Double Negated literal" << aigVar << std::endl;
+      Trace("aig-debug") << "Double Negated literal" << aigVar << std::endl;
       aigVar -= 1;
     }
-    Trace("aiginfo-debug") << "Negated literal" << aigVar << std::endl;
+    Trace("aig-debug") << "Negated literal" << aigVar << std::endl;
   }
   else
   {
-    Trace("aiginfo-debug") << "Non Negated literal" << aigVar << std::endl;
+    Trace("aig-debug") << "Non Negated literal" << aigVar << std::endl;
   }
   return aigVar;
 }
@@ -489,7 +494,7 @@ void CnfStream::dumpAIG()
   {
     if (lit < 0)
     {
-      Trace("aiginfo-debug") << "c asserting literal " << lit << " to "
+      Trace("aig-debug") << "c asserting literal " << lit << " to "
                        << -lit + incrementForRootVar << std::endl;
       lit = -lit + incrementForRootVar;
     }
@@ -503,7 +508,7 @@ void CnfStream::dumpAIG()
   {
     outputLitLine = aigAssertLits;
     aigOutputLit = aigAssertLits[0];
-    Trace("aiginfo-debug") << "c single literal output:" << outputLitLine[0] << std::endl;
+    Trace("aig-debug") << "c single literal output:" << outputLitLine[0] << std::endl;
   }
   else {
 
@@ -552,7 +557,7 @@ void CnfStream::dumpAIG()
     for (auto aiglit : aigdecomposedline)
     {
       if(aiglit < 0){
-        Trace("aiginfo-debug") << "c negative literal" << aiglit
+        Trace("aig-debug") << "c negative literal" << aiglit
         << " incremented to " << -aiglit + incrementForRootVar << std::endl;
         aiglit = -aiglit + incrementForRootVar;
         if (aiglit %2 == 1) {
@@ -564,7 +569,7 @@ void CnfStream::dumpAIG()
     aigstring = aigstring.substr(1);
     outFile << aigstring << std::endl;
   }
-  Trace("aiginfo-debug") << "c end AIG output\n";
+  Trace("aig-debug") << "c end AIG output\n";
 }
 
 void CnfStream::handleXor(TNode xorNode)
@@ -640,7 +645,7 @@ void CnfStream::handleOr(TNode orNode)
   // it is asserted during getAIGliteral that if a orLit is found
   // handle that after negating the literal
   aigliterals.push_back(getAIGliteral(orLit, orNode) + 1);
-  Trace("aiginfo-debug") << "sending or clause:"
+  Trace("aig-debug") << "sending or clause:"
                          << getAIGliteral(orLit, orNode) + 1 << std::endl;
   // Transform all the children first
   SatClause clause(numChildren + 1);
@@ -652,7 +657,7 @@ void CnfStream::handleOr(TNode orNode)
     // lit | ~(a_1 | a_2 | a_3 | ... | a_n)
     // (lit | ~a_1) & (lit | ~a_2) & (lit & ~a_3) & ... & (lit & ~a_n)
     assertClause(orNode, orLit, ~clause[i]);
-    Trace("aiginfo-debug") << "sending or clause" << std::endl;
+    Trace("aig-debug") << "sending or clause" << std::endl;
     aigliterals.push_back(getAIGliteral(~clause[i], orNode[i]));
   }
 
@@ -680,7 +685,7 @@ void CnfStream::handleAnd(TNode andNode)
 
   std::vector<int64_t> aigliterals;
   aigliterals.push_back(getAIGliteral(andLit, andNode));
-  Trace("aiginfo-debug") << "sending and clause: "
+  Trace("aig-debug") << "sending and clause: "
                          << getAIGliteral(andLit, andNode) << std::endl;
 
   // Transform all the children first (remembering the negation)
