@@ -355,7 +355,25 @@ SatLiteral CnfStream::getLiteral(TNode node) {
   return literal;
 }
 
-// TODO URGENT: Cleanup
+int64_t CnfStream::negateAIGVar(int64_t aigVar)
+{
+  if (aigVar % 2 == 1)
+  {
+    aigVar -= 1;
+  }
+  else
+  {
+    aigVar += 1;
+  }
+  return aigVar;
+}
+
+int64_t CnfStream::newAIGVar(bool negated)
+{
+  (--maxAIGrootvar);
+  return 2 * maxAIGrootvar - (negated ? 1 : 0);
+}
+
 int64_t CnfStream::getAIGliteral(SatLiteral lit, Node node, bool isOutput, bool donegate )
 {
   // TODO some checks like the first literal can't be or and
@@ -392,19 +410,17 @@ int64_t CnfStream::getAIGliteral(SatLiteral lit, Node node, bool isOutput, bool 
     donegate = !donegate;
   }
   if (donegate){
-    if (aigVar % 2 == 1)
-    {
-      aigVar -= 1;
-    }
-    else {
-      aigVar += 1;
-    }
+    aigVar = negateAIGVar(aigVar);
   }
   if (isOutput && aigVar % 2 == 1)
   {
     aigVar -= 1;
   }
   Trace("aig-debug") << aigVar << std::endl;
+  if ((nodeKind == Kind::EQUAL || nodeKind == Kind::GEQ))
+  {
+    Trace("boolabs") << "c " << aigVar << ":" << node << std::endl;
+  }
   return aigVar;
 }
 
@@ -459,6 +475,20 @@ vector<vector<int64_t>> CnfStream::decomposeAndGate(vector<int64_t> andGate)
     Trace("aiginfo") << std::endl;
   }
   return decomposedGates;
+}
+
+void CnfStream::printAigGateLines(std::string name)
+{
+  Trace("aiginfo") << "Printing entire AIG gate lines from " << name
+                   << std::endl;
+  for (const auto& gateLine : aigGateLines)
+  {
+    for (const auto& lit : gateLine)
+    {
+      Trace("aiginfo") << lit << " ";
+    }
+    Trace("aiginfo") << std::endl;
+  }
 }
 
 void CnfStream::dumpAIG()
@@ -572,7 +602,7 @@ void CnfStream::dumpAIG()
     outFile << aigstring << std::endl;
   }
   Trace("aig-debug") << "c end AIG output\n";
-  std::cout << "-------------------------------------- [AIG Dump Done]" << std::endl;
+  std::cout << "exit -------------------------------------- [AIG Dump Done]" << std::endl;
 }
 
 void CnfStream::handleXor(TNode xorNode)
@@ -670,6 +700,7 @@ void CnfStream::handleOr(TNode orNode)
   // This needs to go last, as the clause might get modified by the SAT solver
   assertClause(orNode.negate(), clause);
   aigGateLines.push_back(aigliterals);
+  printAigGateLines("handleOr");
 }
 
 void CnfStream::handleAnd(TNode andNode)
@@ -705,6 +736,7 @@ void CnfStream::handleAnd(TNode andNode)
   }
 
   aigGateLines.push_back(aigliterals);
+  printAigGateLines("handleAnd");
 
   // lit <- (a_1 & a_2 & a_3 & ... a_n)
   // lit | ~(a_1 & a_2 & a_3 & ... & a_n)
@@ -893,13 +925,7 @@ void CnfStream::convertAndAssertAnd(TNode node, bool negated, bool root)
                << ")\n";
   std::vector<int64_t> aigliterals;
   int64_t aigOutputVar;
-  if (root)
-  {
-    (--maxAIGrootvar);
-    aigOutputVar = 2 * maxAIGrootvar;
-    Trace("aiginfo") << "AND gate root " << aigOutputVar << std::endl;
-    aigAssertLits.push_back(aigOutputVar);
-  }
+  aigOutputVar = newAIGVar(false);
   if (!negated)
   {
     // If the node is a conjunction, we handle each conjunct separately
@@ -929,11 +955,15 @@ void CnfStream::convertAndAssertAnd(TNode node, bool negated, bool root)
     }
     Assert(disjunct == node.end());
     assertClause(node.negate(), clause);
-  }
-  if (root)
-  {
+    if (root)
+    {
+      Trace("aiginfo") << "AND gate root " << aigOutputVar << std::endl;
+      aigAssertLits.push_back(aigOutputVar);
+    }
     aigGateLines.push_back(aigliterals);
+    printAigGateLines("convertAndAssertAnd");
   }
+
 }
 
 void CnfStream::convertAndAssertOr(TNode node, bool negated, bool root)
@@ -944,38 +974,33 @@ void CnfStream::convertAndAssertOr(TNode node, bool negated, bool root)
                 << ", root = " << (root ? "true" : "false") << ")\n";
   std::vector<int64_t> aigliterals;
   int64_t aigOutputVar;
-   if (root)
-  {
-    (--maxAIGrootvar);
-     aigOutputVar = 2*maxAIGrootvar - 1;
-    Trace("aiginfo") << "OR gate root " << aigOutputVar << std::endl;
-    aigAssertLits.push_back(aigOutputVar);
-  }
   if (!negated)
   {
     // If the node is a disjunction, we construct a clause and assert it
-    Trace("aiginfo") << "OR gate " << std::endl;
     int nChildren = node.getNumChildren();
     SatClause clause(nChildren);
     TNode::const_iterator disjunct = node.begin();
-
+    aigOutputVar = newAIGVar(true);
     aigliterals.push_back(aigOutputVar);
     for (int i = 0; i < nChildren; ++disjunct, ++i)
     {
       Assert(disjunct != node.end());
       clause[i] = toCNF(*disjunct, false);
       aigliterals.push_back(getAIGliteral(~clause[i], node));
-      Trace("aiginfo") << " +"<<getAIGliteral(clause[i], node) << " " << std::endl;
     }
     Assert(disjunct == node.end());
     assertClause(node, clause);
-    Trace("aiginfo") << " + done OR gate"<< std::endl;
+    if (root)
+    {
+      Trace("aiginfo") << "OR gate root " << aigOutputVar << std::endl;
+      aigAssertLits.push_back(aigOutputVar);
+    }
+    aigGateLines.push_back(aigliterals);
+    printAigGateLines("convertAndAssertOr");
   }
   else
   {
     // If the node is a conjunction, we handle each conjunct separately
-    Trace("aiginfo") << "negated OR gate " << std::endl;
-
     for (TNode::const_iterator conjunct = node.begin(), node_end = node.end();
          conjunct != node_end;
          ++conjunct)
@@ -983,10 +1008,7 @@ void CnfStream::convertAndAssertOr(TNode node, bool negated, bool root)
       convertAndAssert(*conjunct, true, root);
     }
   }
-  if(root)
-  {
-    aigGateLines.push_back(aigliterals);
-  }
+
 }
 
 void CnfStream::convertAndAssertXor(TNode node, bool negated, bool root)
@@ -1099,10 +1121,27 @@ void CnfStream::convertAndAssertIte(TNode node, bool negated, bool root)
                << ", negated = " << (negated ? "true" : "false")
                << ", root = " << (root ? "true" : "false")
                << ")\n";
+  std::vector<int64_t> aigliterals;
+  int64_t p_a, q_a, r_a, t_1, t_2;
+  int64_t aigOutputVar;
+  if (root)
+  {
+    aigOutputVar = newAIGVar(true);
+    Trace("aiginfo") << "ITE gate root " << aigOutputVar << std::endl;
+    aigAssertLits.push_back(aigOutputVar);
+  }
   // ITE(p, q, r)
   SatLiteral p = toCNF(node[0], false);
   SatLiteral q = toCNF(node[1], negated);
   SatLiteral r = toCNF(node[2], negated);
+
+  p_a = getAIGliteral(p, node[0]);
+  q_a = getAIGliteral(q, node[1]);
+  r_a = getAIGliteral(r, node[2]);
+
+  t_1 = newAIGVar(false);
+  t_2 = newAIGVar(false);
+
   // Construct the clauses:
   // (p => q) and (!p => r)
   //
@@ -1121,6 +1160,31 @@ void CnfStream::convertAndAssertIte(TNode node, bool negated, bool root)
   clause2[0] = p;
   clause2[1] = r;
   assertClause(nnode, clause2);
+
+  // Construct the AIG gates
+  // t_1 = (p & q)
+  // t_2 = (!p & r)
+  // out = (!t_1 & !t_2)
+
+
+  aigliterals.push_back(t_1);
+  aigliterals.push_back(p_a);
+  aigliterals.push_back(q_a);
+  aigGateLines.push_back(aigliterals);
+  aigliterals.clear();
+
+  aigliterals.push_back(t_2);
+  aigliterals.push_back(negateAIGVar(p_a));
+  aigliterals.push_back(r_a);
+  aigGateLines.push_back(aigliterals);
+  aigliterals.clear();
+
+  aigliterals.push_back(aigOutputVar);
+  aigliterals.push_back(negateAIGVar(t_1));
+  aigliterals.push_back(negateAIGVar(t_2));
+  aigGateLines.push_back(aigliterals);
+
+  printAigGateLines("convertAndAssertIte");
 }
 
 // At the top level we must ensure that all clauses that are asserted are

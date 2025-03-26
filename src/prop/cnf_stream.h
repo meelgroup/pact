@@ -271,6 +271,9 @@ class CnfStream : protected EnvObj
    */
   void dumpAIG();
   int64_t getAIGliteral(SatLiteral lit, Node node, bool isOutput = false, bool donegate = false);
+  int64_t newAIGVar(bool negated = false);
+  int64_t negateAIGVar(int64_t aigVar);
+  void printAigGateLines(std::string name = "");
   vector<vector<int64_t>> decomposeAndGate(vector<int64_t> andGate);
 
   /** Stores the literal of the given node in d_literalToNodeMap.
