@@ -357,6 +357,8 @@ SatLiteral CnfStream::getLiteral(TNode node) {
 
 int64_t CnfStream::negateAIGVar(int64_t aigVar)
 {
+  bool negative = (aigVar < 0);
+  aigVar = std::abs(aigVar);
   if (aigVar % 2 == 1)
   {
     aigVar -= 1;
@@ -364,6 +366,10 @@ int64_t CnfStream::negateAIGVar(int64_t aigVar)
   else
   {
     aigVar += 1;
+  }
+  if (negative)
+  {
+    aigVar = -aigVar;
   }
   return aigVar;
 }
@@ -925,7 +931,6 @@ void CnfStream::convertAndAssertAnd(TNode node, bool negated, bool root)
                << ")\n";
   std::vector<int64_t> aigliterals;
   int64_t aigOutputVar;
-  aigOutputVar = newAIGVar(false);
   if (!negated)
   {
     // If the node is a conjunction, we handle each conjunct separately
@@ -938,6 +943,8 @@ void CnfStream::convertAndAssertAnd(TNode node, bool negated, bool root)
   }
   else
   {
+    aigOutputVar = newAIGVar(false);
+
     Trace("aiginfo") << "AND gate " << std::endl;
 
     // If the node is a disjunction, we construct a clause and assert it
@@ -1095,16 +1102,33 @@ void CnfStream::convertAndAssertImplies(TNode node, bool negated, bool root)
                << ", negated = " << (negated ? "true" : "false")
                << ", root = " << (root ? "true" : "false")
                << ")\n";
+  std::vector<int64_t> aigliterals;
+
   if (!negated)
   {
+    int64_t aigOutputVar;
+    aigOutputVar = newAIGVar(false);
+
     // p => q
     SatLiteral p = toCNF(node[0], false);
     SatLiteral q = toCNF(node[1], false);
+
+    int64_t p_a = getAIGliteral(p, node[0]);
+    int64_t q_a = getAIGliteral(q, node[1]);
+    int64_t t_1 = newAIGVar(false);
+
     // Construct the clause ~p || q
     SatClause clause(2);
     clause[0] = ~p;
     clause[1] = q;
     assertClause(node, clause);
+
+    aigliterals.push_back(t_1);
+    aigliterals.push_back(p_a);
+    aigliterals.push_back(negateAIGVar(q_a));
+    aigGateLines.push_back(aigliterals);
+    aigAssertLits.push_back(negateAIGVar(t_1));
+    aigliterals.clear();
   }
   else
   {  // Construct the
