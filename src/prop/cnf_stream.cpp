@@ -385,6 +385,7 @@ int64_t CnfStream::getAIGliteral(SatLiteral lit, Node node, bool isOutput, bool 
   // TODO some checks like the first literal can't be or and
   // should be good to have
 
+
   bool wasNegated = false;
   SatVariable satVar = lit.getSatVariable();
   SatVariable aigVar = satVar * 2;
@@ -403,7 +404,7 @@ int64_t CnfStream::getAIGliteral(SatLiteral lit, Node node, bool isOutput, bool 
 
   auto nodeKind = node.getKind();
 
-  if (nodeKind == Kind::EQUAL || nodeKind == Kind::GEQ)
+  if (nodeKind == Kind::EQUAL || nodeKind == Kind::GEQ || nodeKind == Kind::VARIABLE)
   {
     aigInputLits.push_back(aigVar);
   }
@@ -423,10 +424,11 @@ int64_t CnfStream::getAIGliteral(SatLiteral lit, Node node, bool isOutput, bool 
     aigVar -= 1;
   }
   Trace("aig-debug") << aigVar << std::endl;
-  if ((nodeKind == Kind::EQUAL || nodeKind == Kind::GEQ))
+  if ((nodeKind == Kind::EQUAL || nodeKind == Kind::GEQ || nodeKind == Kind::VARIABLE))
   {
     Trace("boolabs") << "c " << aigVar << ":" << node << std::endl;
   }
+  Trace("aig-allvar") << "c " << aigVar << ":" << node << std::endl;
   return aigVar;
 }
 
@@ -435,7 +437,7 @@ int64_t CnfStream::getAIGliteral(SatLiteral lit, Node node, bool isOutput, bool 
 vector<vector<int64_t>> CnfStream::decomposeAndGate(vector<int64_t> andGate)
 {
   Trace("aiginfo") << "Decomposing AND gate" << std::endl;
-  Trace("aiginfo") << "AND gate: ";
+  Trace("aig-debug") << "AND gate: ";
   {
     int64_t first = andGate[0];
     std::vector<int64_t> uniqueAndGate;
@@ -452,9 +454,9 @@ vector<vector<int64_t>> CnfStream::decomposeAndGate(vector<int64_t> andGate)
   }
   for (auto aiglit : andGate)
   {
-    Trace("aiginfo") << aiglit << " ";
+    Trace("aig-debug") << aiglit << " ";
   }
-  Trace("aiginfo") << std::endl;
+  Trace("aig-debug") << std::endl;
   vector<vector<int64_t>> decomposedGates;
   if (andGate.size() <= 2)
   {
@@ -471,29 +473,29 @@ vector<vector<int64_t>> CnfStream::decomposeAndGate(vector<int64_t> andGate)
     outputLit = nextLiteral;
   }
   std::reverse(decomposedGates.begin(), decomposedGates.end());
-  Trace("aiginfo") << "Decomposed AND gate" << std::endl;
+  Trace("aig-debug") << "Decomposed AND gate" << std::endl;
   for (auto decomposedGate : decomposedGates)
   {
     for (auto aiglit : decomposedGate)
     {
-      Trace("aiginfo") << aiglit << " ";
+      Trace("aig-debug") << aiglit << " ";
     }
-    Trace("aiginfo") << std::endl;
+    Trace("aig-debug") << std::endl;
   }
   return decomposedGates;
 }
 
 void CnfStream::printAigGateLines(std::string name)
 {
-  Trace("aiginfo") << "Printing entire AIG gate lines from " << name
+  Trace("aig-debug") << "Printing entire AIG gate lines from " << name
                    << std::endl;
   for (const auto& gateLine : aigGateLines)
   {
     for (const auto& lit : gateLine)
     {
-      Trace("aiginfo") << lit << " ";
+      Trace("aig-debug") << lit << " ";
     }
-    Trace("aiginfo") << std::endl;
+    Trace("aig-debug") << std::endl;
   }
 }
 
@@ -1106,9 +1108,6 @@ void CnfStream::convertAndAssertImplies(TNode node, bool negated, bool root)
 
   if (!negated)
   {
-    int64_t aigOutputVar;
-    aigOutputVar = newAIGVar(false);
-
     // p => q
     SatLiteral p = toCNF(node[0], false);
     SatLiteral q = toCNF(node[1], false);
