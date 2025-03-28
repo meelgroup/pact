@@ -412,10 +412,10 @@ int64_t CnfStream::getAIGliteral(SatLiteral lit, Node node, bool isOutput, bool 
   {
     donegate = !donegate;
   }
-  if (wasNegated)
-  {
-    donegate = !donegate;
-  }
+  // if (wasNegated)
+  // {
+  //   donegate = !donegate;
+  // }
   if (donegate){
     aigVar = negateAIGVar(aigVar);
   }
@@ -685,9 +685,9 @@ void CnfStream::handleOr(TNode orNode)
   // orLit are not added as negation, as the gate output can't be negated
   // it is asserted during getAIGliteral that if a orLit is found
   // handle that after negating the literal
-  aigliterals.push_back(getAIGliteral(orLit, orNode) + 1);
+  aigliterals.push_back(getAIGliteral(orLit, orNode, false, true));
   Trace("aig-debug") << "sending or clause:"
-                         << getAIGliteral(orLit, orNode) + 1 << std::endl;
+                     << getAIGliteral(orLit, orNode, false, true) << std::endl;
   // Transform all the children first
   SatClause clause(numChildren + 1);
   for (size_t i = 0; i < numChildren; ++i)
@@ -726,7 +726,7 @@ void CnfStream::handleAnd(TNode andNode)
   SatLiteral andLit = newLiteral(andNode);
 
   std::vector<int64_t> aigliterals;
-  aigliterals.push_back(getAIGliteral(andLit, andNode, true));
+  aigliterals.push_back(getAIGliteral(andLit, andNode, true, false));
   Trace("aig-debug") << "sending and clause: "
                          << getAIGliteral(andLit, andNode) << std::endl;
 
@@ -740,7 +740,7 @@ void CnfStream::handleAnd(TNode andNode)
     // ~lit | (a_1 & a_2 & a_3 & ... & a_n)
     // (~lit | a_1) & (~lit | a_2) & ... & (~lit | a_n)
     assertClause(andNode.negate(), ~andLit, ~clause[i]);
-    aigliterals.push_back(getAIGliteral(clause[i], andNode[i]));
+    aigliterals.push_back(getAIGliteral(~clause[i], andNode[i]));
   }
 
   aigGateLines.push_back(aigliterals);
@@ -915,7 +915,7 @@ SatLiteral CnfStream::toCNF(TNode node, bool negated)
 
   nodeLit = getLiteral(node);
 
-  int64_t aigAssertLit = getAIGliteral(negated ? ~nodeLit : nodeLit, node);
+  int64_t aigAssertLit = getAIGliteral(nodeLit, node);
   Trace("aiginfo") << "toAIG(): skipped asserting " << aigAssertLit << std::endl;
   // aigAssertLits.push_back(aigAssertLit);
 
