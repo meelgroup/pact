@@ -23,6 +23,7 @@
 #include "options/base_options.h"
 #include "options/bv_options.h"
 #include "options/main_options.h"
+#include "options/counting_options.h"
 #include "printer/printer.h"
 #include "proof/clause_id.h"
 #include "prop/minisat/minisat.h"
@@ -623,7 +624,7 @@ void CnfStream::handleXor(TNode xorNode)
   Assert(!d_removable) << "Removable clauses can not contain Boolean structure";
   Trace("cnf-xor") << "CnfStream::handleXor(" << xorNode << ")\n";
 
-  if (true)
+  if (!options().counting.projcount)
   {
     SatLiteral xorLit = newLiteral(xorNode);
     SatLiteral a = getLiteral(xorNode[0]);
@@ -631,8 +632,9 @@ void CnfStream::handleXor(TNode xorNode)
     // xorLit = true as addXorClause(c, *0*, d_removable);
     assertXorClause(xorNode, a, b, xorLit);
   }
-  else if (true)
+  else if (false)
   {
+
     size_t numChildren = xorNode.getNumChildren();
 
     // Get the literal for this node
@@ -658,6 +660,7 @@ void CnfStream::handleXor(TNode xorNode)
   }
   else
   {
+    Trace("cnf-xor") << "CnfStream::handleXor: using xor encoding\n";
     SatLiteral a = getLiteral(xorNode[0]);
     SatLiteral b = getLiteral(xorNode[1]);
 

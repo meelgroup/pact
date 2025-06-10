@@ -128,7 +128,7 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
       if (d_slv->getOptions().counting.listfp)
       {
         bvs_in_projset.push_back(n);
-        std::cout << "c [smtappmc] Integer variable in projection set: "
+        std::cout << "c [pact] Integer variable in projection set: "
                   << n.getSymbol() << std::endl;
       }
       num_floats++;
@@ -142,7 +142,7 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
       if (d_slv->getOptions().counting.listint)
       {
         bvs_in_projset.push_back(n);
-        std::cout << "c [smtappmc] Integer variable in projection set: "
+        std::cout << "c [pact] Integer variable in projection set: "
                   << n.getSymbol() << std::endl;
       }
       num_integer++;
@@ -160,7 +160,7 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
                               booleans_in_projset.end());
   if (d_slv->getOptions().counting.listint)
   {
-    std::cout << "c [smtappmc] Number of varibales "
+    std::cout << "c [pact] Number of varibales "
               << projection_var_terms.size() << std::endl;
   }
   projection_vars = slv->getSolver()->termVectorToNodes1(projection_var_terms);
@@ -171,12 +171,12 @@ SmtApproxMc::SmtApproxMc(SolverEngine* slv)
   if (slice_size > 32) slice_size = 16;
   verb = slv->getOptions().counting.countingverb;
 
-  std::cout << "c [smtappmc] formula spec: Booleans: " << num_bool
+  std::cout << "c [pact] formula spec: Booleans: " << num_bool
             << " bitvectors: " << num_bv << " max width = " << max_bitwidth
             << std::endl
-            << "c [smtappmc] Reals: " << num_real << " FPs: " << num_floats
+            << "c [pact] Reals: " << num_real << " FPs: " << num_floats
             << " Integers: " << num_integer << std::endl
-            << "c [smtappmc] Sampling set: Booleans: " << num_bool_projset
+            << "c [pact] Sampling set: Booleans: " << num_bool_projset
             << " bitvectors: " << num_bv_projset << std::endl;
 }
 
@@ -185,15 +185,20 @@ Term SmtApproxMc::generate_boolean_hash()
   // cvc5::Solver* solver = d_slv->getSolver();
   TermManager& tm = d_slv->getSolver()->getTermManager();
   Solver solver(tm);
-  Term xorcons = tm.mkBoolean(Random::getRandom().pick(0, 1));
+  uint hash_val = Random::getRandom().pick(0, 1);
+  Term xorcons = tm.mkBoolean(hash_val);
+  Trace("smap-hash") << "Adding Hash: (";
+
   for (cvc5::Term x : booleans_in_projset)
   {
     Assert(x.getSort().isBoolean());
     if (Random::getRandom().pick(0, 1) == 1)
     {
       xorcons = tm.mkTerm(cvc5::Kind::XOR, {xorcons, x});
+      Trace("smap-hash") << x.getSymbol() << " (+) ";
     }
   }
+  Trace("smap-hash") << hash_val << ") \n";
   return xorcons;
 }
 
@@ -607,7 +612,7 @@ uint64_t SmtApproxMc::two_factor_check(uint32_t slice)
   }
 
   Trace("pact-tfc") << "should multiply by " << multiplier * last_count << "\n";
-  std::cout << "c [smtappmc] [ " << getTime()
+  std::cout << "c [pact] [ " << getTime()
             << "] two-factor check: last prime is " << multiplier << std::endl;
   return multiplier * last_count;
 }
@@ -694,20 +699,20 @@ uint64_t SmtApproxMc::smtApproxMcMain()
     prev_measure = hash_cnt;
     // if (countThisIter == 0 && numHashes > 0)
     // {
-    //   std::cout << "c [smtappmc] [ " << getTime()
+    //   std::cout << "c [pact] [ " << getTime()
     //             << "] completed round: " << iter << "] failing count "
     //             << std::endl;
     //   iter--;
     // }
     // else
     // {
-    std::cout << "c [smtappmc] [ " << getTime() << "] completed round: " << iter
+    std::cout << "c [pact] [ " << getTime() << "] completed round: " << iter
               << " count: " << countThisIter << std::endl;
     numList.push_back(countThisIter);
     // }
     if (exact_count == true)
     {
-      std::cout << "c [smtappmc] [ " << getTime()
+      std::cout << "c [pact] [ " << getTime()
                 << "] terminating as exact count is found" << std::endl;
       break;
     }
@@ -923,6 +928,7 @@ uint64_t SmtApproxMc::smtApproxMcCore()
   int64_t bound = getPivot();
   std::string ss = "";
   uint64_t final_count = 0, old_count = 42;
+  vector<cvc5::Term> hashes;
 
   bool start_of_iter = true;
   init_iteration_data();
@@ -979,30 +985,40 @@ uint64_t SmtApproxMc::smtApproxMcCore()
       for (int i = oldhashes; i < numHashes; ++i)
       {
         d_slv->getSolver()->push();
-        if (project_on_booleans && get_projected_count)
-          hash = generate_boolean_hash();
-        else if (d_slv->getOptions().counting.hashsm
-                 == options::HashingMode::ASH)
-          hash = generate_ashwin_hash(slice_size);
-        else if (d_slv->getOptions().counting.hashsm
-                 == options::HashingMode::BV)
-          hash = generate_hash(slice_size);
-        else if (d_slv->getOptions().counting.hashsm
-                 == options::HashingMode::LEM)
+        if (hashes.size() <= (uint32_t)i)
         {
-          hash = generate_lemire_hash(slice_size);
-        }
-        else if (d_slv->getOptions().counting.hashsm
-                 == options::HashingMode::XOR)
-        {
-          hash = generate_xor_hash();
+          if (project_on_booleans && get_projected_count)
+            hash = generate_boolean_hash();
+          else if (d_slv->getOptions().counting.hashsm
+                   == options::HashingMode::ASH)
+            hash = generate_ashwin_hash(slice_size);
+          else if (d_slv->getOptions().counting.hashsm
+                   == options::HashingMode::BV)
+            hash = generate_hash(slice_size);
+          else if (d_slv->getOptions().counting.hashsm
+                   == options::HashingMode::LEM)
+          {
+            hash = generate_lemire_hash(slice_size);
+          }
+          else if (d_slv->getOptions().counting.hashsm
+                   == options::HashingMode::XOR)
+          {
+            hash = generate_xor_hash();
+          }
+          else
+          {
+            Assert(d_slv->getOptions().counting.hashsm
+                   == options::HashingMode::INT);
+            hash = generate_integer_hash(i);
+          }
+          hashes.push_back(hash);
         }
         else
         {
-          Assert(d_slv->getOptions().counting.hashsm
-                 == options::HashingMode::INT);
-          hash = generate_integer_hash(i);
+          Trace("smap") << "Reusing hash for " << i << "\n";
+          hash = hashes[i];
         }
+
         d_slv->getSolver()->assertFormula(hash);
       }
       // prev_measure = oldhashes;
@@ -1031,7 +1047,7 @@ uint64_t SmtApproxMc::smtApproxMcCore()
       Trace("smap") << "No change in num hashes! This should not happen\n";
     }
 
-    std::cout << "c [smtappmc] [ " << getTime()
+    std::cout << "c [pact] [ " << getTime()
               << "] bounded_sol_count looking for " << bound + 1
               << " solutions -- hashes active: " << numHashes << std::endl;
 
@@ -1039,7 +1055,7 @@ uint64_t SmtApproxMc::smtApproxMcCore()
     if (!print_hash_at_file)
       count = d_slv->boundedSat(bound + 1, numHashes, projection_vars);
 
-    std::cout << "c [smtappmc] [ " << getTime() << "] got solutions: " << count
+    std::cout << "c [pact] [ " << getTime() << "] got solutions: " << count
               << " out of " << bound + 1 << std::endl;
     if (count >= bound || numHashes > 0)
     {
@@ -1047,7 +1063,7 @@ uint64_t SmtApproxMc::smtApproxMcCore()
     }
     else
     {
-      std::cout << "c [smtappmc] [ " << getTime()
+      std::cout << "c [pact] [ " << getTime()
                 << "] terminating as exact count is found" << std::endl;
       final_count = count;
       break;
