@@ -610,7 +610,9 @@ void CnfStream::dumpAIG()
     outFile << aigstring << std::endl;
   }
   Trace("aig-debug") << "c end AIG output\n";
-  std::cout << "exit -------------------------------------- [AIG Dump Done]" << std::endl;
+  Trace("aiginfo")
+      << "exit -------------------------------------- [AIG Dump Done]"
+      << std::endl;
 }
 
 void CnfStream::handleXor(TNode xorNode)

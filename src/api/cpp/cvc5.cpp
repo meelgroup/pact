@@ -7322,7 +7322,6 @@ Result Solver::modelCount(const std::vector<Sort>& sorts,
   }
   else
   {
-    std::cout << "c getting approximate count via SMTApproxMC" << std::endl;
     count = smap->smtApproxMcMain();
   }
 
