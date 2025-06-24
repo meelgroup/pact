@@ -5,7 +5,7 @@
 pact: Partition And Count on Theories
 ===============================================================================
 
-pact is a hashing-based projected approximate model counter for hybrid SMT formulas. pact takes input an SMT formula over any theory combination and returns the count projected over bitvector and Boolean variables. Please refer to our [paper](https://arijitsh.github.io/assets/pdf/DAC25-count-beyond-discrete.pdf) for details about pact.
+pact is a hashing-based projected approximate model counter for hybrid SMT formulas. pact takes input an SMT formula over any theory combination and returns the count projected over bitvector and Boolean variables. Please refer to our DAC'25 [paper](https://arijitsh.github.io/assets/pdf/DAC25-count-beyond-discrete.pdf) for details about pact.
 
 ## Build for Counting
 
