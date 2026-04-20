@@ -177,12 +177,14 @@ if(NOT Poly_FOUND_SYSTEM)
       <SOURCE_DIR>/src/upolynomial/factorization.c
     COMMAND
       # LibPoly uses a C99 VLA in polyxx/polynomial.cpp. Newer Clang (e.g.
-      # Apple Clang on macOS runners) treats this as an error under
-      # -Werror -Wvla-cxx-extension. Silence the warning in libpoly's own
-      # CXX flags. Unknown -Wno-* flags are ignored by GCC, so this is safe
-      # on Linux too.
+      # Apple Clang on macOS runners) treats this as an error under -Werror.
+      # -Wvla-cxx-extension is the clang >= 18 spelling; older clang (incl.
+      # Apple clang 15) only knows -Wvla-extension and would reject the new
+      # flag. Pair both, and add -Wno-unknown-warning-option so any future
+      # churn on either compiler is absorbed silently. GCC ignores unknown
+      # -Wno-* flags, so this is safe on Linux too.
       sed -i.orig
-      "s|-Werror -Wextra -std=c++11|-Werror -Wextra -std=c++11 -Wno-vla-cxx-extension|"
+      "s|-Werror -Wextra -std=c++11|-Werror -Wextra -std=c++11 -Wno-vla-extension -Wno-unknown-warning-option|"
       <SOURCE_DIR>/src/CMakeLists.txt
       ${POLY_PATCH_CMD}
     CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release
